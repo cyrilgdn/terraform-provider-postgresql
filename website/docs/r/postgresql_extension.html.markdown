@@ -23,3 +23,5 @@ resource "postgresql_extension" "my_extension" {
 ## Argument Reference
 
 * `name` - (Required) The name of the extension.
+* `schema` - (Optional) Sets the schema of an extension.
+* `version` - (Optional) Sets the version number of the extension.
