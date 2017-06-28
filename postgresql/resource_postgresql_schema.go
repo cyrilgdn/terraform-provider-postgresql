@@ -55,7 +55,7 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     true,
-				Description: "When true, use the existing schema if it exsts",
+				Description: "When true, use the existing schema if it exists",
 			},
 			schemaPolicyAttr: &schema.Schema{
 				Type:     schema.TypeSet,

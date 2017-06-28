@@ -58,6 +58,7 @@ resource "postgresql_schema" "my_schema" {
 * `name` - (Required) The name of the schema. Must be unique in the PostgreSQL
   database instance where it is configured.
 * `owner` - (Optional) The ROLE who owns the schema.
+* `if_not_exists` - (Optional) When true, use the existing schema if it exists. (Default: true)
 * `policy` - (Optional) Can be specified multiple times for each policy.  Each
     policy block supports fields documented below.
 
