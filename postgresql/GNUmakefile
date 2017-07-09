@@ -9,10 +9,10 @@ POSTGRES?=$(wildcard /usr/local/bin/postgres /opt/local/lib/postgresql96/bin/pos
 PSQL?=$(wildcard /usr/local/bin/psql /opt/local/lib/postgresql96/bin/psql)
 INITDB?=$(wildcard /usr/local/bin/initdb /opt/local/lib/postgresql96/bin/initdb)
 
-PGDATA?=$(GOPATH)/src/github.com/hashicorp/terraform/builtin/providers/postgresql/data
+PGDATA?=$(GOPATH)/src/github.com/terraform-providers/terraform-provider-postgresql/data
 
 initdb::
-	echo "" > pwfile
+	-cat /dev/urandom | strings | grep -o '[[:alnum:]]' | head -n 32 | tr -d '\n' > pwfile
 	$(INITDB) --no-locale -U postgres -A md5 --pwfile=pwfile -D $(PGDATA)
 
 startdb::
@@ -32,7 +32,7 @@ cleandb::
 freshdb:: cleandb initdb startdb
 
 test::
-	2>&1 PGSSLMODE=disable PGHOST=/tmp PGUSER=postgres make -C ../../.. testacc TEST=./builtin/providers/postgresql | tee test.log
+	2>&1 PGSSLMODE=disable PGHOST=/tmp PGUSER=postgres PGPASSWORD="`cat pwfile`" make -C ../ testacc TEST=./postgresql | tee test.log
 
 psql::
-	$(PSQL) -E postgres postgres
+	env PGPASSWORD="`cat pwfile`" $(PSQL) -E postgres postgres
