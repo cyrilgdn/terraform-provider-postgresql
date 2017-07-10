@@ -141,7 +141,7 @@ func (c *Config) featureSupported(name featureName) bool {
 	fn, found := featureSupported[name]
 	if !found {
 		// panic'ing because this is a provider-only bug
-		panic(fmt.Sprintf("unknown feature flag %s", name))
+		panic(fmt.Sprintf("unknown feature flag %v", name))
 	}
 
 	return fn(c.ExpectedVersion)
@@ -273,7 +273,7 @@ func (c *Client) featureSupported(name featureName) bool {
 	fn, found := featureSupported[name]
 	if !found {
 		// panic'ing because this is a provider-only bug
-		panic(fmt.Sprintf("unknown feature flag %s", name))
+		panic(fmt.Sprintf("unknown feature flag %v", name))
 	}
 
 	return fn(c.version)
