@@ -74,3 +74,5 @@ The following arguments are supported:
   [in the `libpq(3)` SSL guide](http://www.postgresql.org/docs/current/static/libpq-ssl.html#LIBPQ-SSL-PROTECTION).
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
+* `max_connections` - (Optional) Set the maximum number of open connections to
+  the database. The default is `4`.  Zero means unlimited open connections.

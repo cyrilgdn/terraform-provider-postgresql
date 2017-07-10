@@ -56,12 +56,6 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
 	extName := d.Get(extNameAttr).(string)
 
 	b := bytes.NewBufferString("CREATE EXTENSION ")
@@ -75,9 +69,8 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 		fmt.Fprint(b, " VERSION ", pq.QuoteIdentifier(v.(string)))
 	}
 
-	query := b.String()
-	_, err = conn.Query(query)
-	if err != nil {
+	sql := b.String()
+	if _, err := c.DB().Exec(sql); err != nil {
 		return errwrap.Wrapf("Error creating extension: {{err}}", err)
 	}
 
@@ -91,14 +84,9 @@ func resourcePostgreSQLExtensionExists(d *schema.ResourceData, meta interface{})
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-
-	var extName string
-	err = conn.QueryRow("SELECT extname FROM pg_catalog.pg_extension WHERE extname = $1", d.Id()).Scan(&extName)
+	var extensionName string
+	query := "SELECT extname FROM pg_catalog.pg_extension WHERE extname = $1"
+	err := c.DB().QueryRow(query, d.Id()).Scan(&extensionName)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -120,15 +108,12 @@ func resourcePostgreSQLExtensionRead(d *schema.ResourceData, meta interface{}) e
 func resourcePostgreSQLExtensionReadImpl(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
 
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
 	extID := d.Id()
 	var extName, extSchema, extVersion string
-	err = conn.QueryRow("SELECT e.extname, n.nspname, e.extversion FROM pg_catalog.pg_extension e, pg_catalog.pg_namespace n WHERE n.oid = e.extnamespace AND e.extname = $1", extID).Scan(&extName, &extSchema, &extVersion)
+	query := `SELECT e.extname, n.nspname, e.extversion ` +
+		`FROM pg_catalog.pg_extension e, pg_catalog.pg_namespace n ` +
+		`WHERE n.oid = e.extnamespace AND e.extname = $1`
+	err := c.DB().QueryRow(query, extID).Scan(&extName, &extSchema, &extVersion)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL extension (%s) not found", d.Id())
@@ -136,13 +121,14 @@ func resourcePostgreSQLExtensionReadImpl(d *schema.ResourceData, meta interface{
 		return nil
 	case err != nil:
 		return errwrap.Wrapf("Error reading extension: {{err}}", err)
-	default:
-		d.Set(extNameAttr, extName)
-		d.Set(extSchemaAttr, extSchema)
-		d.Set(extVersionAttr, extVersion)
-		d.SetId(extName)
-		return nil
 	}
+
+	d.Set(extNameAttr, extName)
+	d.Set(extSchemaAttr, extSchema)
+	d.Set(extVersionAttr, extVersion)
+	d.SetId(extName)
+
+	return nil
 }
 
 func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{}) error {
@@ -150,17 +136,10 @@ func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{})
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
 	extID := d.Id()
 
-	query := fmt.Sprintf("DROP EXTENSION %s", pq.QuoteIdentifier(extID))
-	_, err = conn.Query(query)
-	if err != nil {
+	sql := fmt.Sprintf("DROP EXTENSION %s", pq.QuoteIdentifier(extID))
+	if _, err := c.DB().Exec(sql); err != nil {
 		return errwrap.Wrapf("Error deleting extension: {{err}}", err)
 	}
 
@@ -174,26 +153,20 @@ func resourcePostgreSQLExtensionUpdate(d *schema.ResourceData, meta interface{})
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
 	// Can't rename a schema
 
-	if err := setExtSchema(conn, d); err != nil {
+	if err := setExtSchema(c.DB(), d); err != nil {
 		return err
 	}
 
-	if err := setExtVersion(conn, d); err != nil {
+	if err := setExtVersion(c.DB(), d); err != nil {
 		return err
 	}
 
 	return resourcePostgreSQLExtensionReadImpl(d, meta)
 }
 
-func setExtSchema(conn *sql.DB, d *schema.ResourceData) error {
+func setExtSchema(db *sql.DB, d *schema.ResourceData) error {
 	if !d.HasChange(extSchemaAttr) {
 		return nil
 	}
@@ -205,15 +178,16 @@ func setExtSchema(conn *sql.DB, d *schema.ResourceData) error {
 		return errors.New("Error setting extension name to an empty string")
 	}
 
-	query := fmt.Sprintf("ALTER EXTENSION %s SET SCHEMA %s", pq.QuoteIdentifier(extID), pq.QuoteIdentifier(n))
-	if _, err := conn.Query(query); err != nil {
+	sql := fmt.Sprintf("ALTER EXTENSION %s SET SCHEMA %s",
+		pq.QuoteIdentifier(extID), pq.QuoteIdentifier(n))
+	if _, err := db.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating extension SCHEMA: {{err}}", err)
 	}
 
 	return nil
 }
 
-func setExtVersion(conn *sql.DB, d *schema.ResourceData) error {
+func setExtVersion(db *sql.DB, d *schema.ResourceData) error {
 	if !d.HasChange(extVersionAttr) {
 		return nil
 	}
@@ -229,8 +203,8 @@ func setExtVersion(conn *sql.DB, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " TO %s", pq.QuoteIdentifier(n))
 	}
 
-	query := b.String()
-	if _, err := conn.Query(query); err != nil {
+	sql := b.String()
+	if _, err := db.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating extension version: {{err}}", err)
 	}
 

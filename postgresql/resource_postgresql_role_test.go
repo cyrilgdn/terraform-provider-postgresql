@@ -120,22 +120,16 @@ func testAccCheckPostgresqlRoleExists(n string, canLogin string) resource.TestCh
 }
 
 func checkRoleExists(client *Client, roleName string) (bool, error) {
-	conn, err := client.Connect()
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-
 	var _rez int
-	err = conn.QueryRow("SELECT 1 from pg_roles d WHERE rolname=$1", roleName).Scan(&_rez)
+	err := client.DB().QueryRow("SELECT 1 from pg_roles d WHERE rolname=$1", roleName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
 		return false, fmt.Errorf("Error reading info about role: %s", err)
-	default:
-		return true, nil
 	}
+
+	return true, nil
 }
 
 var testAccPostgresqlRoleConfig = `

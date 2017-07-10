@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
 )
@@ -214,22 +215,18 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 }
 
 func checkSchemaExists(client *Client, schemaName string) (bool, error) {
-	conn, err := client.Connect()
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-
 	var _rez string
-	err = conn.QueryRow("SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname=$1", schemaName).Scan(&_rez)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("Error reading info about schema: %s", err)
-	default:
-		return true, nil
+	if err := client.DB().QueryRow("SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname=$1", schemaName).Scan(&_rez); err != nil {
+		switch {
+		case err == sql.ErrNoRows:
+			return false, nil
+		default:
+			return false, errwrap.Wrapf("error reading info about schema: {{err}}", err)
+		}
 	}
+
+	return true, nil
+
 }
 
 const testAccPostgresqlSchemaConfig = `
