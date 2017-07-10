@@ -20,6 +20,7 @@ const (
 	featureCreateRoleWith featureName = iota
 	featureDBAllowConnections
 	featureDBIsTemplate
+	featureFallbackApplicationName
 	featureRLS
 	featureReassignOwnedCurrentUser
 	featureSchemaCreateIfNotExist
@@ -45,6 +46,9 @@ var (
 		// CREATE DATABASE has IS_TEMPLATE support
 		featureDBIsTemplate: semver.MustParseRange(">=9.5.0"),
 
+		// https://www.postgresql.org/docs/9.0/static/libpq-connect.html
+		featureFallbackApplicationName: semver.MustParseRange(">=9.0.0"),
+
 		// CREATE SCHEMA IF NOT EXISTS
 		featureSchemaCreateIfNotExist: semver.MustParseRange(">=9.3.0"),
 
@@ -68,6 +72,7 @@ type Config struct {
 	Timeout           int
 	ConnectTimeoutSec int
 	MaxConns          int
+	ExpectedVersion   semver.Version
 }
 
 // Client struct holding connection string
@@ -129,10 +134,40 @@ func (c *Config) NewClient() (*Client, error) {
 	return &client, nil
 }
 
+// featureSupported returns true if a given feature is supported or not.  This
+// is slightly different from Client's featureSupported in that here we're
+// evaluating against the expected version, not the fingerprinted version.
+func (c *Config) featureSupported(name featureName) bool {
+	fn, found := featureSupported[name]
+	if !found {
+		// panic'ing because this is a provider-only bug
+		panic(fmt.Sprintf("unknown feature flag %s", name))
+	}
+
+	return fn(c.ExpectedVersion)
+}
+
 func (c *Config) connStr() string {
 	// NOTE: dbname must come before user otherwise dbname will be set to
 	// user.
-	const dsnFmt = "host=%s port=%d dbname=%s user=%s password=%s sslmode=%s fallback_application_name=%s connect_timeout=%d"
+	var dsnFmt string
+	{
+		dsnFmtParts := []string{
+			"host=%s",
+			"port=%d",
+			"dbname=%s",
+			"user=%s",
+			"password=%s",
+			"sslmode=%s",
+			"connect_timeout=%d",
+		}
+
+		if c.featureSupported(featureFallbackApplicationName) {
+			dsnFmtParts = append(dsnFmtParts, "fallback_application_name=%s")
+		}
+
+		dsnFmt = strings.Join(dsnFmtParts, " ")
+	}
 
 	// Quote empty strings or strings that contain whitespace
 	quote := func(s string) string {
@@ -163,26 +198,40 @@ func (c *Config) connStr() string {
 		return str[1 : len(str)-1]
 	}
 
-	logDSN := fmt.Sprintf(dsnFmt,
-		quote(c.Host),
-		c.Port,
-		quote(c.Database),
-		quote(c.Username),
-		quote("<redacted>"),
-		quote(c.SSLMode),
-		quote(c.ApplicationName),
-		c.ConnectTimeoutSec)
-	log.Printf("[INFO] PostgreSQL DSN: `%s`", logDSN)
+	{
+		logValues := []interface{}{
+			quote(c.Host),
+			c.Port,
+			quote(c.Database),
+			quote(c.Username),
+			quote("<redacted>"),
+			quote(c.SSLMode),
+			c.ConnectTimeoutSec,
+		}
+		if c.featureSupported(featureFallbackApplicationName) {
+			logValues = append(logValues, quote(c.ApplicationName))
+		}
 
-	connStr := fmt.Sprintf(dsnFmt,
-		quote(c.Host),
-		c.Port,
-		quote(c.Database),
-		quote(c.Username),
-		quote(c.Password),
-		quote(c.SSLMode),
-		quote(c.ApplicationName),
-		c.ConnectTimeoutSec)
+		logDSN := fmt.Sprintf(dsnFmt, logValues...)
+		log.Printf("[INFO] PostgreSQL DSN: `%s`", logDSN)
+	}
+
+	var connStr string
+	{
+		connValues := []interface{}{
+			quote(c.Host),
+			c.Port,
+			quote(c.Database),
+			quote(c.Username),
+			quote(c.Password),
+			quote(c.SSLMode),
+			c.ConnectTimeoutSec,
+		}
+		if c.featureSupported(featureFallbackApplicationName) {
+			connValues = append(connValues, quote(c.ApplicationName))
+		}
+		connStr = fmt.Sprintf(dsnFmt, connValues...)
+	}
 
 	return connStr
 }
@@ -196,9 +245,9 @@ func (c *Client) DB() *sql.DB {
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
 // capabilities.  This is only run once per Client.
-func fingerprintCapabilities(conn *sql.DB) (*semver.Version, error) {
+func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	var pgVersion string
-	err := conn.QueryRow(`SELECT VERSION()`).Scan(&pgVersion)
+	err := db.QueryRow(`SELECT VERSION()`).Scan(&pgVersion)
 	if err != nil {
 		return nil, errwrap.Wrapf("error PostgreSQL version: {{err}}", err)
 	}
@@ -217,7 +266,9 @@ func fingerprintCapabilities(conn *sql.DB) (*semver.Version, error) {
 	return &version, nil
 }
 
-// featureSupported returns true if a given feature is supported or not
+// featureSupported returns true if a given feature is supported or not. This is
+// slightly different from Config's featureSupported in that here we're
+// evaluating against the fingerprinted version, not the expected version.
 func (c *Client) featureSupported(name featureName) bool {
 	fn, found := featureSupported[name]
 	if !found {
