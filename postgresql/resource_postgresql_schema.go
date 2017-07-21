@@ -113,8 +113,10 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 	schemaName := d.Get(schemaNameAttr).(string)
 	{
 		b := bytes.NewBufferString("CREATE SCHEMA ")
-		if v := d.Get(schemaIfNotExists); v.(bool) {
-			fmt.Fprint(b, "IF NOT EXISTS ")
+		if c.featureSupported(featureSchemaCreateIfNotExist) {
+			if v := d.Get(schemaIfNotExists); v.(bool) {
+				fmt.Fprint(b, "IF NOT EXISTS ")
+			}
 		}
 		fmt.Fprint(b, pq.QuoteIdentifier(schemaName))
 
@@ -156,21 +158,14 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return errwrap.Wrapf("Error connecting to PostgreSQL: {{err}}", err)
-	}
-	defer conn.Close()
-
-	txn, err := conn.Begin()
+	txn, err := c.DB().Begin()
 	if err != nil {
 		return err
 	}
 	defer txn.Rollback()
 
 	for _, query := range queries {
-		_, err = txn.Query(query)
-		if err != nil {
+		if _, err = txn.Exec(query); err != nil {
 			return errwrap.Wrapf(fmt.Sprintf("Error creating schema %s: {{err}}", schemaName), err)
 		}
 	}
@@ -189,13 +184,7 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	txn, err := conn.Begin()
+	txn, err := c.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -204,9 +193,8 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 	schemaName := d.Get(schemaNameAttr).(string)
 
 	// NOTE(sean@): Deliberately not performing a cascading drop.
-	query := fmt.Sprintf("DROP SCHEMA %s", pq.QuoteIdentifier(schemaName))
-	_, err = txn.Query(query)
-	if err != nil {
+	sql := fmt.Sprintf("DROP SCHEMA %s", pq.QuoteIdentifier(schemaName))
+	if _, err = txn.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error deleting schema: {{err}}", err)
 	}
 
@@ -224,14 +212,8 @@ func resourcePostgreSQLSchemaExists(d *schema.ResourceData, meta interface{}) (b
 	c.catalogLock.RLock()
 	defer c.catalogLock.RUnlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-
 	var schemaName string
-	err = conn.QueryRow("SELECT n.nspname FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", d.Id()).Scan(&schemaName)
+	err := c.DB().QueryRow("SELECT n.nspname FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", d.Id()).Scan(&schemaName)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -252,16 +234,11 @@ func resourcePostgreSQLSchemaRead(d *schema.ResourceData, meta interface{}) erro
 
 func resourcePostgreSQLSchemaReadImpl(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
 
 	schemaId := d.Id()
 	var schemaName, schemaOwner string
 	var schemaACLs []string
-	err = conn.QueryRow("SELECT n.nspname, pg_catalog.pg_get_userbyid(n.nspowner), COALESCE(n.nspacl, '{}'::aclitem[])::TEXT[] FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaId).Scan(&schemaName, &schemaOwner, pq.Array(&schemaACLs))
+	err := c.DB().QueryRow("SELECT n.nspname, pg_catalog.pg_get_userbyid(n.nspowner), COALESCE(n.nspacl, '{}'::aclitem[])::TEXT[] FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaId).Scan(&schemaName, &schemaOwner, pq.Array(&schemaACLs))
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL schema (%s) not found", schemaId)
@@ -305,13 +282,7 @@ func resourcePostgreSQLSchemaUpdate(d *schema.ResourceData, meta interface{}) er
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
-	conn, err := c.Connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	txn, err := conn.Begin()
+	txn, err := c.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -348,8 +319,8 @@ func setSchemaName(txn *sql.Tx, d *schema.ResourceData) error {
 		return errors.New("Error setting schema name to an empty string")
 	}
 
-	query := fmt.Sprintf("ALTER SCHEMA %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
-	if _, err := txn.Query(query); err != nil {
+	sql := fmt.Sprintf("ALTER SCHEMA %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
+	if _, err := txn.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating schema NAME: {{err}}", err)
 	}
 	d.SetId(n)
@@ -369,8 +340,8 @@ func setSchemaOwner(txn *sql.Tx, d *schema.ResourceData) error {
 		return errors.New("Error setting schema owner to an empty string")
 	}
 
-	query := fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
-	if _, err := txn.Query(query); err != nil {
+	sql := fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
+	if _, err := txn.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating schema OWNER: {{err}}", err)
 	}
 
@@ -437,7 +408,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	for _, query := range queries {
-		if _, err := txn.Query(query); err != nil {
+		if _, err := txn.Exec(query); err != nil {
 			return errwrap.Wrapf("Error updating schema DCL: {{err}}", err)
 		}
 	}

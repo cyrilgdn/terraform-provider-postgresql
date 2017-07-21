@@ -5,9 +5,10 @@
 # may change in the future and is likely not required when doing
 # non-delete related operations. But for now it is.
 
-POSTGRES?=$(wildcard /usr/local/bin/postgres /opt/local/lib/postgresql96/bin/postgres)
-PSQL?=$(wildcard /usr/local/bin/psql /opt/local/lib/postgresql96/bin/psql)
-INITDB?=$(wildcard /usr/local/bin/initdb /opt/local/lib/postgresql96/bin/initdb)
+PGVERSION?=96
+POSTGRES?=$(wildcard /usr/local/bin/postgres /opt/local/lib/postgresql$(PGVERSION)/bin/postgres)
+PSQL?=$(wildcard /usr/local/bin/psql /opt/local/lib/postgresql$(PGVERSION)/bin/psql)
+INITDB?=$(wildcard /usr/local/bin/initdb /opt/local/lib/postgresql$(PGVERSION)/bin/initdb)
 
 PGDATA?=$(GOPATH)/src/github.com/terraform-providers/terraform-provider-postgresql/data
 

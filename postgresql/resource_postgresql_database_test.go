@@ -86,6 +86,27 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.pathological_opts", "allow_connections", "true"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "is_template", "true"),
+
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pg_default_opts", "owner", "myrole"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pg_default_opts", "name", "pg_defaults_db"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pg_default_opts", "template", "DEFAULT"),
+					// resource.TestCheckResourceAttr(
+					// 	"postgresql_database.pg_default_opts", "encoding", "DEFAULT"),
+					// resource.TestCheckResourceAttr(
+					// 	"postgresql_database.pg_default_opts", "lc_collate", "DEFAULT"),
+					// resource.TestCheckResourceAttr(
+					//  "postgresql_database.pg_default_opts", "lc_ctype", "DEFAULT"),
+					// resource.TestCheckResourceAttr(
+					// 	"postgresql_database.pg_default_opts", "tablespace_name", "DEFAULT"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pg_default_opts", "connection_limit", "0"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pg_default_opts", "allow_connections", "true"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pg_default_opts", "is_template", "true"),
 				),
 			},
 		},
@@ -161,22 +182,16 @@ func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
 }
 
 func checkDatabaseExists(client *Client, dbName string) (bool, error) {
-	conn, err := client.Connect()
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-
 	var _rez int
-	err = conn.QueryRow("SELECT 1 from pg_database d WHERE datname=$1", dbName).Scan(&_rez)
+	err := client.DB().QueryRow("SELECT 1 from pg_database d WHERE datname=$1", dbName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
 		return false, fmt.Errorf("Error reading info about database: %s", err)
-	default:
-		return true, nil
 	}
+
+	return true, nil
 }
 
 var testAccPostgreSQLDatabaseConfig = `
@@ -232,6 +247,29 @@ resource "postgresql_database" "pathological_opts" {
    connection_limit = 0
    allow_connections = true
    is_template = true
+}
+
+resource "postgresql_database" "pg_default_opts" {
+  lifecycle {
+    ignore_changes = [
+      "template",
+      "encoding",
+      "lc_collate",
+      "lc_ctype",
+      "tablespace_name",
+    ]
+  }
+
+  name = "pg_defaults_db"
+  owner = "${postgresql_role.myrole.name}"
+  template = "DEFAULT"
+  encoding = "DEFAULT"
+  lc_collate = "DEFAULT"
+  lc_ctype = "DEFAULT"
+  tablespace_name = "DEFAULT"
+  connection_limit = 0
+  allow_connections = true
+  is_template = true
 }
 
 resource "postgresql_database" "mydb_default_owner" {

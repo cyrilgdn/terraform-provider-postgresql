@@ -24,12 +24,10 @@ func TestAccPostgresqlExtension_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_extension.myextension", "schema", "public"),
 
-					// NOTE(sean): Version 1.3 is what's
-					// shipped with PostgreSQL 9.6.1.  This
-					// version number may drift in the
-					// future.
-					resource.TestCheckResourceAttr(
-						"postgresql_extension.myextension", "version", "1.3"),
+					// NOTE(sean): The version number drifts.  PG 9.6 ships with pg_trgm
+					// version 1.3 and PG 9.2 ships with pg_trgm 1.0.
+					resource.TestCheckResourceAttrSet(
+						"postgresql_extension.myextension", "version"),
 				),
 			},
 		},
@@ -121,22 +119,16 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 }
 
 func checkExtensionExists(client *Client, extensionName string) (bool, error) {
-	conn, err := client.Connect()
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-
 	var _rez bool
-	err = conn.QueryRow("SELECT TRUE from pg_catalog.pg_extension d WHERE extname=$1", extensionName).Scan(&_rez)
+	err := client.DB().QueryRow("SELECT TRUE from pg_catalog.pg_extension d WHERE extname=$1", extensionName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
 		return false, fmt.Errorf("Error reading info about extension: %s", err)
-	default:
-		return true, nil
 	}
+
+	return true, nil
 }
 
 var testAccPostgresqlExtensionConfig = `

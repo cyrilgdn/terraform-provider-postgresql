@@ -3,9 +3,15 @@ package postgresql
 import (
 	"fmt"
 
+	"github.com/blang/semver"
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
+)
+
+const (
+	defaultProviderMaxOpenConnections = uint(4)
+	defaultExpectedPostgreSQLVersion  = "9.0.0"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -60,6 +66,20 @@ func Provider() terraform.ResourceProvider {
 				Description:  "Maximum wait for connection, in seconds. Zero or not specified means wait indefinitely.",
 				ValidateFunc: validateConnTimeout,
 			},
+			"max_connections": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderMaxOpenConnections,
+				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
+				ValidateFunc: validateMaxConnections,
+			},
+			"expected_version": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      defaultExpectedPostgreSQLVersion,
+				Description:  "Specify the expected version of PostgreSQL.",
+				ValidateFunc: validateExpectedVersion,
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -81,6 +101,21 @@ func validateConnTimeout(v interface{}, key string) (warnings []string, errors [
 	return
 }
 
+func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
+	if _, err := semver.Parse(v.(string)); err != nil {
+		errors = append(errors, fmt.Errorf("invalid version (%q): %v", v.(string), err))
+	}
+	return
+}
+
+func validateMaxConnections(v interface{}, key string) (warnings []string, errors []error) {
+	value := v.(int)
+	if value < 1 {
+		errors = append(errors, fmt.Errorf("%s can not be less than 1", key))
+	}
+	return
+}
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -88,6 +123,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	} else {
 		sslMode = d.Get("ssl_mode").(string)
 	}
+	versionStr := d.Get("expected_version").(string)
+	version, _ := semver.Parse(versionStr)
+
 	config := Config{
 		Host:              d.Get("host").(string),
 		Port:              d.Get("port").(int),
@@ -97,6 +135,8 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		SSLMode:           sslMode,
 		ApplicationName:   tfAppName(),
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),
+		MaxConns:          d.Get("max_connections").(int),
+		ExpectedVersion:   version,
 	}
 
 	client, err := config.NewClient()
