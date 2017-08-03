@@ -220,6 +220,20 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 
 	dbName := d.Get(dbNameAttr).(string)
 
+	// Needed in order to set the owner of the db if the connection user is not a
+	// superuser
+	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+	if err != nil {
+		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+	}
+	defer func() {
+		//undo the grant if the connection user is not a superuser
+		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+		if err != nil {
+			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+		}
+	}()
+
 	if c.featureSupported(featureDBIsTemplate) {
 		if isTemplate := d.Get(dbIsTemplateAttr).(bool); isTemplate {
 			// Template databases must have this attribute cleared before
