@@ -47,6 +47,7 @@ func Provider() terraform.ResourceProvider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PGPASSWORD", nil),
 				Description: "Password to be used if the PostgreSQL server demands password authentication",
+				Sensitive:   true,
 			},
 			"sslmode": {
 				Type:        schema.TypeString,
