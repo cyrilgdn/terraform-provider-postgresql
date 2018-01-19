@@ -122,7 +122,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
 		sslMode = sslModeRaw.(string)
 	} else {
-		sslMode = d.Get("ssl_mode").(string)
+		sslModeDeprecated := d.Get("ssl_mode").(string)
+		if sslModeDeprecated != "" {
+			sslMode = sslModeDeprecated
+		}
 	}
 	versionStr := d.Get("expected_version").(string)
 	version, _ := semver.Parse(versionStr)
