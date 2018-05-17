@@ -258,7 +258,7 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 		return nil, fmt.Errorf("error determining the server version: %q", pgVersion)
 	}
 
-	version, err := semver.Parse(fields[1])
+	version, err := semver.ParseTolerant(fields[1])
 	if err != nil {
 		return nil, errwrap.Wrapf("error parsing version: {{err}}", err)
 	}
