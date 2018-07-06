@@ -1,8 +1,8 @@
-## 0.1.2 (Unreleased)
+## 0.1.2 (July 06, 2018)
 
 FEATURES:
 
-* support for Postgresql v10 [GH-31]
+* support for Postgresql v10 ([#31](https://github.com/terraform-providers/terraform-provider-postgresql/issues/31))
 
 ## 0.1.1 (January 19, 2018)
 
