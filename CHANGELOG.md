@@ -1,4 +1,10 @@
 ## 0.1.3 (Unreleased)
+
+BUG FIXES:
+
+* Parse Azure PostgreSQL version
+  ([#40](https://github.com/terraform-providers/terraform-provider-postgresql/pull/40))
+
 ## 0.1.2 (July 06, 2018)
 
 FEATURES:
