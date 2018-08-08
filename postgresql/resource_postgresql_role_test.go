@@ -35,6 +35,8 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "name", "role_with_create_database"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "create_database", "true"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "name", "role_with_superuser"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "superuser", "true"),
 				),
 			},
 		},
@@ -178,6 +180,13 @@ resource "postgresql_role" "role_with_defaults" {
 resource "postgresql_role" "role_with_create_database" {
   name = "role_with_create_database"
   create_database = true
+}
+
+resource "postgresql_role" "role_with_superuser" {
+  name = "role_with_superuser"
+  superuser = true
+  login = true
+  password = "mypass"
 }
 `
 
