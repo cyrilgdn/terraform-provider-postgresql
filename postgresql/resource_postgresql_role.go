@@ -1,7 +1,9 @@
 package postgresql
 
 import (
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -52,7 +54,6 @@ func resourcePostgreSQLRole() *schema.Resource {
 			rolePasswordAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Computed:    true,
 				Sensitive:   true,
 				DefaultFunc: schema.EnvDefaultFunc("PGPASSWORD", nil),
 				Description: "Sets the role's password",
@@ -388,18 +389,31 @@ func resourcePostgreSQLRoleReadImpl(d *schema.ResourceData, meta interface{}) er
 
 	d.SetId(roleName)
 
-	if !roleSuperuser {
-		// Return early if not superuser user
-		return nil
-	}
-
 	var rolePassword string
 	err = c.DB().QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", roleId).Scan(&rolePassword)
 	switch {
 	case err == sql.ErrNoRows:
-		return errwrap.Wrapf(fmt.Sprintf("PostgreSQL role (%s) not found in shadow database: {{err}}", roleId), err)
+		// They don't have a password
+		d.Set(rolePasswordAttr, "")
+		return nil
 	case err != nil:
 		return errwrap.Wrapf("Error reading role: {{err}}", err)
+	}
+
+	// If the password isn't already in md5 format, but hashing the input
+	// matches the password in the database for the user, they are the same
+	password := d.Get("password").(string)
+	if !strings.HasPrefix(password, "md5") {
+		hasher := md5.New()
+		hasher.Write([]byte(password + roleId))
+		hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
+
+		if hashedPassword == rolePassword {
+			// The passwords are actually the same
+			// make Terraform think they are the same
+			d.Set(rolePasswordAttr, password)
+			return nil
+		}
 	}
 
 	d.Set(rolePasswordAttr, rolePassword)

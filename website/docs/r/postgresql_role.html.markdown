@@ -82,11 +82,8 @@ resource "postgresql_role" "my_replication_role" {
   behavior of
   [PostgreSQL's `password_encryption` setting](https://www.postgresql.org/docs/current/static/runtime-config-connection.html#GUC-PASSWORD-ENCRYPTION).
 
-* `password` - (Optional) Sets the role's password. (A password is only of use
-  for roles having the `login` attribute set to true, but you can nonetheless
-  define one for roles without it.) Roles without a password explicitly set are
-  left alone.  If the password is set to the magic value `NULL`, the password
-  will be always be cleared.
+* `password` - (Optional) Sets the role's password. A password is only of use
+  for roles having the `login` attribute set to true.
 
 * `valid_until` - (Optional) Defines the date and time after which the role's
   password is no longer valid.  Established connections past this `valid_time`
