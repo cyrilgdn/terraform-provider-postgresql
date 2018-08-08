@@ -1,4 +1,9 @@
 ## 0.1.4 (Unreleased)
+BUG FIXES:
+
+* `create_database` is now being applied correctly on role creation
+  ([#43](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
+
 ## 0.1.3 (December 19, 2018)
 
 BUG FIXES:

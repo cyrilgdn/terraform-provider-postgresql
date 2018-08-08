@@ -32,6 +32,9 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "valid_until", "infinity"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_drop_role", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_reassign_owned", "false"),
+
+					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "name", "role_with_create_database"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "create_database", "true"),
 				),
 			},
 		},
@@ -175,6 +178,11 @@ resource "postgresql_role" "role_with_defaults" {
   skip_drop_role = false
   skip_reassign_owned = false
   valid_until = "infinity"
+}
+
+resource "postgresql_role" "role_with_create_database" {
+  name = "role_with_create_database"
+  create_database = true
 }
 `
 
