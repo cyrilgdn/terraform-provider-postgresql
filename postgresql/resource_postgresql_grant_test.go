@@ -10,10 +10,13 @@ import (
 
 func TestAccPostgresqlGrant(t *testing.T) {
 	// We have to create the database outside of resource.Test
-	// because we need to create a table to assert that grant are correctly applied
+	// because we need to create tables to assert that grant are correctly applied
 	// and we don't have this resource yet
-	dbSuffix, teardown := setupTestDatabase(t, true, true, true)
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
 	defer teardown()
+
+	testTables := []string{"test_table", "test_table2"}
+	createTestTables(t, dbSuffix, testTables)
 
 	dbName, roleName := getTestDBNames(dbSuffix)
 	var testGrantSelect = fmt.Sprintf(`
@@ -43,23 +46,23 @@ func TestAccPostgresqlGrant(t *testing.T) {
 			{
 				Config: testGrantSelect,
 				Check: resource.ComposeTestCheckFunc(
-					func(*terraform.State) error {
-						return testCheckTablePrivileges(t, dbSuffix, []string{"SELECT"}, false)
-					},
 					resource.TestCheckResourceAttr("postgresql_grant.test_ro", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test_ro", "privileges.3138006342", "SELECT"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{"SELECT"})
+					},
 				),
 			},
 			{
 				Config: testGrantSelectInsertUpdate,
 				Check: resource.ComposeTestCheckFunc(
-					func(*terraform.State) error {
-						return testCheckTablePrivileges(t, dbSuffix, []string{"SELECT", "INSERT", "UPDATE"}, false)
-					},
 					resource.TestCheckResourceAttr("postgresql_grant.test_ro", "privileges.#", "3"),
 					resource.TestCheckResourceAttr("postgresql_grant.test_ro", "privileges.3138006342", "SELECT"),
 					resource.TestCheckResourceAttr("postgresql_grant.test_ro", "privileges.892623219", "INSERT"),
 					resource.TestCheckResourceAttr("postgresql_grant.test_ro", "privileges.1759376126", "UPDATE"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{"SELECT", "INSERT", "UPDATE"})
+					},
 				),
 			},
 		},

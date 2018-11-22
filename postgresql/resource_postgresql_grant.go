@@ -229,7 +229,7 @@ GROUP BY pg_class.relname;
 // in the specified schema (specified in the resource)
 func getAllObjectsType(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 
-	query := `SELECT concat(nspname, '.', relname) FROM pg_class
+	query := `SELECT nspname || '.' || relname FROM pg_class
 	JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
 	WHERE nspname = $1 AND relkind = $2`
 

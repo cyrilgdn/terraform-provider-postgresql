@@ -4,6 +4,8 @@ FEATURES:
 
 * New resource: postgresql_grant. This resource allows to grant privileges on all existing tables or sequences for a specified role in a specified schema.
   ([#51](https://github.com/terraform-providers/terraform-provider-postgresql/pull/51))
+* New resource: postgresql_default_privileges. This resource allow to manage default privileges for tables or sequences for a specified role in a specified schema.
+  ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
 
 ## 0.2.1 (February 28, 2019)
 
