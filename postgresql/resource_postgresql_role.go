@@ -389,34 +389,38 @@ func resourcePostgreSQLRoleReadImpl(d *schema.ResourceData, meta interface{}) er
 
 	d.SetId(roleName)
 
-	var rolePassword string
-	err = c.DB().QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", roleId).Scan(&rolePassword)
-	switch {
-	case err == sql.ErrNoRows:
-		// They don't have a password
-		d.Set(rolePasswordAttr, "")
-		return nil
-	case err != nil:
-		return errwrap.Wrapf("Error reading role: {{err}}", err)
-	}
-
-	// If the password isn't already in md5 format, but hashing the input
-	// matches the password in the database for the user, they are the same
-	password := d.Get("password").(string)
-	if !strings.HasPrefix(password, "md5") {
-		hasher := md5.New()
-		hasher.Write([]byte(password + roleId))
-		hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
-
-		if hashedPassword == rolePassword {
-			// The passwords are actually the same
-			// make Terraform think they are the same
-			d.Set(rolePasswordAttr, password)
+	password := d.Get(rolePasswordAttr).(string)
+	// Role which cannot login does not have password in pg_shadow.
+	if roleCanLogin {
+		var rolePassword string
+		err = c.DB().QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", roleId).Scan(&rolePassword)
+		switch {
+		case err == sql.ErrNoRows:
+			// They don't have a password
+			d.Set(rolePasswordAttr, "")
 			return nil
+		case err != nil:
+			return errwrap.Wrapf("Error reading role: {{err}}", err)
 		}
-	}
 
-	d.Set(rolePasswordAttr, rolePassword)
+		// If the password isn't already in md5 format, but hashing the input
+		// matches the password in the database for the user, they are the same
+		if password != "" && !strings.HasPrefix(password, "md5") {
+			hasher := md5.New()
+			hasher.Write([]byte(password + roleId))
+			hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
+
+			if hashedPassword == rolePassword {
+				// The passwords are actually the same
+				// make Terraform think they are the same
+				d.Set(rolePasswordAttr, password)
+				return nil
+			}
+		}
+		d.Set(rolePasswordAttr, rolePassword)
+		return nil
+	}
+	d.Set(rolePasswordAttr, password)
 	return nil
 }
 
@@ -428,6 +432,10 @@ func resourcePostgreSQLRoleUpdate(d *schema.ResourceData, meta interface{}) erro
 	db := c.DB()
 
 	if err := setRoleName(db, d); err != nil {
+		return err
+	}
+
+	if err := setRolePassword(db, d); err != nil {
 		return err
 	}
 
@@ -489,6 +497,23 @@ func setRoleName(db *sql.DB, d *schema.ResourceData) error {
 
 	d.SetId(n)
 
+	return nil
+}
+
+func setRolePassword(db *sql.DB, d *schema.ResourceData) error {
+	// If role is renamed, password is reset (as the md5 sum is also base on the role name)
+	// so we need to update it
+	if !d.HasChange(rolePasswordAttr) && !d.HasChange(roleNameAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	password := d.Get(rolePasswordAttr).(string)
+
+	sql := fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(password))
+	if _, err := db.Exec(sql); err != nil {
+		return errwrap.Wrapf("Error updating role password: {{err}}", err)
+	}
 	return nil
 }
 
