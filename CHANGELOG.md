@@ -1,4 +1,4 @@
-## 0.1.3 (Unreleased)
+## 0.1.3 (December 19, 2018)
 
 BUG FIXES:
 
