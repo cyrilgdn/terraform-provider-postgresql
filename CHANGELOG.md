@@ -10,6 +10,8 @@ BUG FIXES:
 
 * Parse Azure PostgreSQL version
   ([#40](https://github.com/terraform-providers/terraform-provider-postgresql/pull/40))
+* Fix: Updating a role password doesn't actually update the role password
+  [https://github.com/terraform-providers/terraform-provider-postgresql/issues/16]
 
 ## 0.1.2 (July 06, 2018)
 

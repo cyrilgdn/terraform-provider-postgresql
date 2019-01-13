@@ -28,7 +28,7 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "bypass_row_level_security", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "encrypted_password", "true"),
-					resource.TestCheckNoResourceAttr("postgresql_role.role_with_defaults", "password"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "password", ""),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "valid_until", "infinity"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_drop_role", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_reassign_owned", "false"),
@@ -152,11 +152,6 @@ resource "postgresql_role" "role_with_pwd_encr" {
   login = true
   password = "mypass"
   encrypted = true
-}
-
-resource "postgresql_role" "role_with_pwd_no_login" {
-  name = "role_with_pwd_no_login"
-  password = "mypass"
 }
 
 resource "postgresql_role" "role_simple" {
