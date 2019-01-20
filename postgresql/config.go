@@ -67,6 +67,7 @@ type Config struct {
 	Database          string
 	Username          string
 	Password          string
+	DatabaseUsername  string
 	SSLMode           string
 	ApplicationName   string
 	Timeout           int
@@ -234,6 +235,13 @@ func (c *Config) connStr() string {
 	}
 
 	return connStr
+}
+
+func (c *Config) getDatabaseUsername() string {
+	if c.DatabaseUsername != "" {
+		return c.DatabaseUsername
+	}
+	return c.Username
 }
 
 // DB returns a copy to an sql.Open()'ed database connection.  Callers must

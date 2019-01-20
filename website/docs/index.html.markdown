@@ -63,6 +63,7 @@ The following arguments are supported:
 * `database` - (Optional) Database to connect to. The default is `postgres`.
 * `username` - (Required) Username for the server connection.
 * `password` - (Optional) Password for the server connection.
+* `database_username` - (Optional) Username of the user in the database if different than connection username (See [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)).
 * `sslmode` - (Optional) Set the priority for an SSL connection to the server.
   Valid values for `sslmode` are (note: `prefer` is not supported by Go's
   [`lib/pq`](https://godoc.org/github.com/lib/pq)):
