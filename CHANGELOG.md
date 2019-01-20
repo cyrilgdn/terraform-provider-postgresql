@@ -21,6 +21,11 @@ TESTS:
 
 * Travis: Run acceptance tests against multiple Postgres versions.
 
+FEATURES:
+
+* Add `database_username` in provider configuration to manage [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)
+  ([#58](https://github.com/terraform-providers/terraform-provider-postgresql/pull/58))
+
 ## 0.1.3 (December 19, 2018)
 
 BUG FIXES:
