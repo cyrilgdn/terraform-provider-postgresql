@@ -165,6 +165,7 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 		sqlKeyDisable string
 	}
 	boolOpts := []boolOptType{
+		{roleSuperuserAttr, "SUPERUSER", "NOSUPERUSER"},
 		{roleCreateDBAttr, "CREATEDB", "NOCREATEDB"},
 		{roleCreateRoleAttr, "CREATEROLE", "NOCREATEROLE"},
 		{roleInheritAttr, "INHERIT", "NOINHERIT"},
