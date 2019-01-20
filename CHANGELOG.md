@@ -3,6 +3,8 @@ BUG FIXES:
 
 * `create_database` is now being applied correctly on role creation
   ([#43](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
+* `postgresql_database`: Fix the way the database owner is granted / revoked during create/update/delete.
+  ([#59](https://github.com/terraform-providers/terraform-provider-postgresql/pull/59))
 
 FEATURES:
 
