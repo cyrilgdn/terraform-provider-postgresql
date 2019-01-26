@@ -24,6 +24,7 @@ const (
 	featureRLS
 	featureReassignOwnedCurrentUser
 	featureSchemaCreateIfNotExist
+	featureReplication
 )
 
 type dbRegistryEntry struct {

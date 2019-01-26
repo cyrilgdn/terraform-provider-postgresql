@@ -170,14 +170,16 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 		{roleCreateRoleAttr, "CREATEROLE", "NOCREATEROLE"},
 		{roleInheritAttr, "INHERIT", "NOINHERIT"},
 		{roleLoginAttr, "LOGIN", "NOLOGIN"},
-		{roleReplicationAttr, "REPLICATION", "NOREPLICATION"},
-
 		// roleEncryptedPassAttr is used only when rolePasswordAttr is set.
 		// {roleEncryptedPassAttr, "ENCRYPTED", "UNENCRYPTED"},
 	}
 
 	if c.featureSupported(featureRLS) {
 		boolOpts = append(boolOpts, boolOptType{roleBypassRLSAttr, "BYPASSRLS", "NOBYPASSRLS"})
+	}
+
+	if c.featureSupported(featureReplication) {
+		boolOpts = append(boolOpts, boolOptType{roleReplicationAttr, "REPLICATION", "NOREPLICATION"})
 	}
 
 	createOpts := make([]string, 0, len(stringOpts)+len(intOpts)+len(boolOpts))
