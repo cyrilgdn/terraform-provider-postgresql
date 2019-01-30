@@ -483,8 +483,8 @@ func setDBConnLimit(db *sql.DB, d *schema.ResourceData) error {
 
 	connLimit := d.Get(dbConnLimitAttr).(int)
 	dbName := d.Get(dbNameAttr).(string)
-	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = $1", pq.QuoteIdentifier(dbName))
-	if _, err := db.Exec(sql, connLimit); err != nil {
+	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
+	if _, err := db.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating database CONNECTION LIMIT: {{err}}", err)
 	}
 
@@ -502,8 +502,8 @@ func setDBAllowConns(c *Client, d *schema.ResourceData) error {
 
 	allowConns := d.Get(dbAllowConnsAttr).(bool)
 	dbName := d.Get(dbNameAttr).(string)
-	sql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS $1", pq.QuoteIdentifier(dbName))
-	if _, err := c.DB().Exec(sql, allowConns); err != nil {
+	sql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS %t", pq.QuoteIdentifier(dbName), allowConns)
+	if _, err := c.DB().Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating database ALLOW_CONNECTIONS: {{err}}", err)
 	}
 
@@ -527,8 +527,8 @@ func doSetDBIsTemplate(c *Client, dbName string, isTemplate bool) error {
 		return fmt.Errorf("PostgreSQL client is talking with a server (%q) that does not support database IS_TEMPLATE", c.version.String())
 	}
 
-	sql := fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE $1", pq.QuoteIdentifier(dbName))
-	if _, err := c.DB().Exec(sql, isTemplate); err != nil {
+	sql := fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE %t", pq.QuoteIdentifier(dbName), isTemplate)
+	if _, err := c.DB().Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating database IS_TEMPLATE: {{err}}", err)
 	}
 

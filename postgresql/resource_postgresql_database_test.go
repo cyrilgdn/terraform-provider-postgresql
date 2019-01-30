@@ -133,6 +133,45 @@ func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlDatabase_Update(t *testing.T) {
+
+	var createConfig = `
+resource postgresql_database test_db {
+    name = "test_db"
+}
+`
+	var updateConfig = `
+resource postgresql_database test_db {
+	name = "test_db"
+	connection_limit = 2
+	allow_connections = false
+}
+	`
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: createConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
+				),
+			},
+			{
+				Config: updateConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
