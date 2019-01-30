@@ -128,8 +128,9 @@ func (c *Config) NewClient() (*Client, error) {
 	}
 
 	client := Client{
-		config: *c,
-		db:     dbEntry.db,
+		config:  *c,
+		db:      dbEntry.db,
+		version: dbEntry.version,
 	}
 
 	return &client, nil
