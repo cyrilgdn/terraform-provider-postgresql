@@ -58,6 +58,9 @@ var (
 
 		// row-level security
 		featureRLS: semver.MustParseRange(">=9.5.0"),
+
+		// CREATE ROLE has REPLICATION support.
+		featureReplication: semver.MustParseRange(">=9.1.0"),
 	}
 )
 
