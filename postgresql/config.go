@@ -25,6 +25,7 @@ const (
 	featureReassignOwnedCurrentUser
 	featureSchemaCreateIfNotExist
 	featureReplication
+	featureExtension
 )
 
 type dbRegistryEntry struct {
@@ -61,6 +62,9 @@ var (
 
 		// CREATE ROLE has REPLICATION support.
 		featureReplication: semver.MustParseRange(">=9.1.0"),
+
+		// CREATE EXTENSION support.
+		featureExtension: semver.MustParseRange(">=9.1.0"),
 	}
 )
 
