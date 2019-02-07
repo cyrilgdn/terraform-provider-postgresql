@@ -5,9 +5,21 @@ BUG FIXES:
   ([#43](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
 * Updating a role password doesn't actually update the role password
   [https://github.com/terraform-providers/terraform-provider-postgresql/issues/16]
-  ([#54](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
+  ([#54](https://github.com/terraform-providers/terraform-provider-postgresql/pull/54))
 * `superuser` is now being applied correctly on role creation
-  ([#45](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
+  ([#45](https://github.com/terraform-providers/terraform-provider-postgresql/pull/45))
+* Feature flag system was not working.
+  ([#61](https://github.com/terraform-providers/terraform-provider-postgresql/pull/61))
+* Updating database does not work for connection_limit / allow_connection / is_template
+  ([#61](https://github.com/terraform-providers/terraform-provider-postgresql/pull/61))
+* Disable postgresql_extension for Postgres < 9.1
+  ([#61](https://github.com/terraform-providers/terraform-provider-postgresql/pull/61))
+* Disable REPLICATION flag in role for Postgres < 9.1.
+  ([#61](https://github.com/terraform-providers/terraform-provider-postgresql/pull/61))
+
+TESTS:
+
+* Travis: Run acceptance tests against multiple Postgres versions.
 
 ## 0.1.3 (December 19, 2018)
 
