@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform/helper/resource"
@@ -41,8 +42,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.default_opts", "allow_connections", "true"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "is_template", "false"),
 
 					resource.TestCheckResourceAttr(
@@ -61,8 +60,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.modified_opts", "tablespace_name", "pg_default"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "connection_limit", "10"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.modified_opts", "allow_connections", "false"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "is_template", "true"),
 
@@ -83,8 +80,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "connection_limit", "0"),
 					resource.TestCheckResourceAttr(
-						"postgresql_database.pathological_opts", "allow_connections", "true"),
-					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "is_template", "true"),
 
 					resource.TestCheckResourceAttr(
@@ -103,8 +98,6 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 					// 	"postgresql_database.pg_default_opts", "tablespace_name", "DEFAULT"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "connection_limit", "0"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.pg_default_opts", "allow_connections", "true"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "is_template", "true"),
 				),
@@ -127,6 +120,63 @@ func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 						"postgresql_database.mydb_default_owner", "name", "mydb_default_owner"),
 					resource.TestCheckResourceAttrSet(
 						"postgresql_database.mydb_default_owner", "owner"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlDatabase_Update(t *testing.T) {
+
+	// Version dependent features values will be set in PreCheck
+	// because we need to access database to check Postgres version.
+
+	// Allow connection depends of Postgres version (needs pg >= 9.5)
+	var allowConnections bool
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+
+			client := testAccProvider.Meta().(*Client)
+			allowConnections = client.featureSupported(featureDBAllowConnections)
+
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource postgresql_database test_db {
+    name = "test_db"
+	allow_connections = "%t"
+}
+`, allowConnections),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.test_db", "allow_connections",
+						strconv.FormatBool(allowConnections),
+					),
+				),
+			},
+			{
+				Config: `
+resource postgresql_database test_db {
+	name = "test_db"
+	connection_limit = 2
+	allow_connections = false
+}
+	`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.test_db", "allow_connections", "false",
+					),
 				),
 			},
 		},
@@ -219,7 +269,6 @@ resource "postgresql_database" "default_opts" {
    lc_ctype = "C"
    tablespace_name = "pg_default"
    connection_limit = -1
-   allow_connections = true
    is_template = false
 }
 
@@ -232,7 +281,6 @@ resource "postgresql_database" "modified_opts" {
    lc_ctype = "en_US.UTF-8"
    tablespace_name = "pg_default"
    connection_limit = 10
-   allow_connections = false
    is_template = true
 }
 
@@ -245,7 +293,6 @@ resource "postgresql_database" "pathological_opts" {
    lc_ctype = "C"
    tablespace_name = "pg_default"
    connection_limit = 0
-   allow_connections = true
    is_template = true
 }
 
@@ -268,7 +315,6 @@ resource "postgresql_database" "pg_default_opts" {
   lc_ctype = "DEFAULT"
   tablespace_name = "DEFAULT"
   connection_limit = 0
-  allow_connections = true
   is_template = true
 }
 

@@ -24,6 +24,8 @@ const (
 	featureRLS
 	featureReassignOwnedCurrentUser
 	featureSchemaCreateIfNotExist
+	featureReplication
+	featureExtension
 )
 
 type dbRegistryEntry struct {
@@ -57,6 +59,12 @@ var (
 
 		// row-level security
 		featureRLS: semver.MustParseRange(">=9.5.0"),
+
+		// CREATE ROLE has REPLICATION support.
+		featureReplication: semver.MustParseRange(">=9.1.0"),
+
+		// CREATE EXTENSION support.
+		featureExtension: semver.MustParseRange(">=9.1.0"),
 	}
 )
 
@@ -127,8 +135,9 @@ func (c *Config) NewClient() (*Client, error) {
 	}
 
 	client := Client{
-		config: *c,
-		db:     dbEntry.db,
+		config:  *c,
+		db:      dbEntry.db,
+		version: dbEntry.version,
 	}
 
 	return &client, nil

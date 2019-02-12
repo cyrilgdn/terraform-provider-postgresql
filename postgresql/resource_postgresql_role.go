@@ -170,14 +170,16 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 		{roleCreateRoleAttr, "CREATEROLE", "NOCREATEROLE"},
 		{roleInheritAttr, "INHERIT", "NOINHERIT"},
 		{roleLoginAttr, "LOGIN", "NOLOGIN"},
-		{roleReplicationAttr, "REPLICATION", "NOREPLICATION"},
-
 		// roleEncryptedPassAttr is used only when rolePasswordAttr is set.
 		// {roleEncryptedPassAttr, "ENCRYPTED", "UNENCRYPTED"},
 	}
 
 	if c.featureSupported(featureRLS) {
 		boolOpts = append(boolOpts, boolOptType{roleBypassRLSAttr, "BYPASSRLS", "NOBYPASSRLS"})
+	}
+
+	if c.featureSupported(featureReplication) {
+		boolOpts = append(boolOpts, boolOptType{roleReplicationAttr, "REPLICATION", "NOREPLICATION"})
 	}
 
 	createOpts := make([]string, 0, len(stringOpts)+len(intOpts)+len(boolOpts))
@@ -328,7 +330,7 @@ func resourcePostgreSQLRoleReadImpl(d *schema.ResourceData, meta interface{}) er
 	c := meta.(*Client)
 
 	roleId := d.Id()
-	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication bool
+	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
 
@@ -339,23 +341,33 @@ func resourcePostgreSQLRoleReadImpl(d *schema.ResourceData, meta interface{}) er
 		"rolcreaterole",
 		"rolcreatedb",
 		"rolcanlogin",
-		"rolreplication",
 		"rolconnlimit",
 		`COALESCE(rolvaliduntil::TEXT, 'infinity')`,
 	}
 
-	roleSQL := fmt.Sprintf("SELECT %s FROM pg_catalog.pg_roles WHERE rolname=$1", strings.Join(columns, ", "))
-	err := c.DB().QueryRow(roleSQL, roleId).Scan(
+	values := []interface{}{
 		&roleName,
 		&roleSuperuser,
 		&roleInherit,
 		&roleCreateRole,
 		&roleCreateDB,
 		&roleCanLogin,
-		&roleReplication,
 		&roleConnLimit,
 		&roleValidUntil,
-	)
+	}
+
+	if c.featureSupported(featureReplication) {
+		columns = append(columns, "rolreplication")
+		values = append(values, &roleReplication)
+	}
+
+	if c.featureSupported(featureRLS) {
+		columns = append(columns, "rolbypassrls")
+		values = append(values, &roleBypassRLS)
+	}
+
+	roleSQL := fmt.Sprintf("SELECT %s FROM pg_catalog.pg_roles WHERE rolname=$1", strings.Join(columns, ", "))
+	err := c.DB().QueryRow(roleSQL, roleId).Scan(values...)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL ROLE (%s) not found", roleId)
@@ -372,21 +384,13 @@ func resourcePostgreSQLRoleReadImpl(d *schema.ResourceData, meta interface{}) er
 	d.Set(roleEncryptedPassAttr, true)
 	d.Set(roleInheritAttr, roleInherit)
 	d.Set(roleLoginAttr, roleCanLogin)
-	d.Set(roleReplicationAttr, roleReplication)
 	d.Set(roleSkipDropRoleAttr, d.Get(roleSkipDropRoleAttr).(bool))
 	d.Set(roleSkipReassignOwnedAttr, d.Get(roleSkipReassignOwnedAttr).(bool))
 	d.Set(roleSuperuserAttr, roleSuperuser)
 	d.Set(roleValidUntilAttr, roleValidUntil)
 
-	if c.featureSupported(featureRLS) {
-		var roleBypassRLS bool
-		roleSQL := "SELECT rolbypassrls FROM pg_catalog.pg_roles WHERE rolname=$1"
-		err = c.DB().QueryRow(roleSQL, roleId).Scan(&roleBypassRLS)
-		if err != nil {
-			return errwrap.Wrapf("Error reading RLS properties for ROLE: {{err}}", err)
-		}
-		d.Set(roleBypassRLSAttr, roleBypassRLS)
-	}
+	d.Set(roleReplicationAttr, roleReplication)
+	d.Set(roleReplicationAttr, roleBypassRLS)
 
 	d.SetId(roleName)
 

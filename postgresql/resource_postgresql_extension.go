@@ -53,6 +53,14 @@ func resourcePostgreSQLExtension() *schema.Resource {
 
 func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
+
+	if !c.featureSupported(featureExtension) {
+		return fmt.Errorf(
+			"postgresql_extension resource is not supported for this Postgres version (%s)",
+			c.version,
+		)
+	}
+
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
@@ -81,6 +89,14 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 
 func resourcePostgreSQLExtensionExists(d *schema.ResourceData, meta interface{}) (bool, error) {
 	c := meta.(*Client)
+
+	if !c.featureSupported(featureExtension) {
+		return false, fmt.Errorf(
+			"postgresql_extension resource is not supported for this Postgres version (%s)",
+			c.version,
+		)
+	}
+
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
@@ -99,6 +115,14 @@ func resourcePostgreSQLExtensionExists(d *schema.ResourceData, meta interface{})
 
 func resourcePostgreSQLExtensionRead(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
+
+	if !c.featureSupported(featureExtension) {
+		return fmt.Errorf(
+			"postgresql_extension resource is not supported for this Postgres version (%s)",
+			c.version,
+		)
+	}
+
 	c.catalogLock.RLock()
 	defer c.catalogLock.RUnlock()
 
@@ -133,6 +157,14 @@ func resourcePostgreSQLExtensionReadImpl(d *schema.ResourceData, meta interface{
 
 func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
+
+	if !c.featureSupported(featureExtension) {
+		return fmt.Errorf(
+			"postgresql_extension resource is not supported for this Postgres version (%s)",
+			c.version,
+		)
+	}
+
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
@@ -150,6 +182,14 @@ func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{})
 
 func resourcePostgreSQLExtensionUpdate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
+
+	if !c.featureSupported(featureExtension) {
+		return fmt.Errorf(
+			"postgresql_extension resource is not supported for this Postgres version (%s)",
+			c.version,
+		)
+	}
+
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
