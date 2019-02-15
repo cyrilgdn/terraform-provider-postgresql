@@ -112,21 +112,23 @@ func resourcePostgreSQLDatabaseCreate(d *schema.ResourceData, meta interface{}) 
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
+	currentUser := c.config.getDatabaseUsername()
+
 	dbName := d.Get(dbNameAttr).(string)
 	b := bytes.NewBufferString("CREATE DATABASE ")
 	fmt.Fprint(b, pq.QuoteIdentifier(dbName))
 
 	// Needed in order to set the owner of the db if the connection user is not a
 	// superuser
-	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), currentUser)
 	if err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", currentUser, d.Get(dbOwnerAttr).(string)), err)
 	}
 	defer func() {
 		//undo the grant if the connection user is not a superuser
-		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), currentUser)
 		if err != nil {
-			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", currentUser, d.Get(dbOwnerAttr).(string)), err)
 		}
 	}()
 
@@ -139,7 +141,7 @@ func resourcePostgreSQLDatabaseCreate(d *schema.ResourceData, meta interface{}) 
 	default:
 		// No owner specified in the config, default to using
 		// the connecting username.
-		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(c.config.Username))
+		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(currentUser))
 	}
 
 	switch v, ok := d.GetOk(dbTemplateAttr); {
@@ -219,18 +221,19 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 	defer c.catalogLock.Unlock()
 
 	dbName := d.Get(dbNameAttr).(string)
+	currentUser := c.config.getDatabaseUsername()
 
 	// Needed in order to set the owner of the db if the connection user is not a
 	// superuser
-	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), currentUser)
 	if err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", currentUser, d.Get(dbOwnerAttr).(string)), err)
 	}
 	defer func() {
 		//undo the grant if the connection user is not a superuser
-		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), currentUser)
 		if err != nil {
-			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", currentUser, d.Get(dbOwnerAttr).(string)), err)
 		}
 	}()
 
@@ -432,17 +435,18 @@ func setDBOwner(c *Client, d *schema.ResourceData) error {
 	if owner == "" {
 		return nil
 	}
+	currentUser := c.config.getDatabaseUsername()
 
 	//needed in order to set the owner of the db if the connection user is not a superuser
-	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+	err := grantRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), currentUser)
 	if err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+		return errwrap.Wrapf(fmt.Sprintf("Error adding connection user (%q) to ROLE %q: {{err}}", currentUser, d.Get(dbOwnerAttr).(string)), err)
 	}
 	defer func() {
 		// undo the grant if the connection user is not a superuser
-		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), c.config.Username)
+		err = revokeRoleMembership(c.DB(), d.Get(dbOwnerAttr).(string), currentUser)
 		if err != nil {
-			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", c.config.Username, d.Get(dbOwnerAttr).(string)), err)
+			err = errwrap.Wrapf(fmt.Sprintf("Error removing connection user (%q) from ROLE %q: {{err}}", currentUser, d.Get(dbOwnerAttr).(string)), err)
 		}
 	}()
 

@@ -49,6 +49,14 @@ func Provider() terraform.ResourceProvider {
 				Description: "Password to be used if the PostgreSQL server demands password authentication",
 				Sensitive:   true,
 			},
+			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
+			// See https://www.postgresql.org/docs/current/auth-username-maps.html
+			"database_username": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Database username associated to the connected user (for user name maps)",
+			},
+
 			"sslmode": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -136,6 +144,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		Database:          d.Get("database").(string),
 		Username:          d.Get("username").(string),
 		Password:          d.Get("password").(string),
+		DatabaseUsername:  d.Get("database_username").(string),
 		SSLMode:           sslMode,
 		ApplicationName:   tfAppName(),
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),
