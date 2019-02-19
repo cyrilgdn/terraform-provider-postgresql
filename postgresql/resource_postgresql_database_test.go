@@ -183,6 +183,125 @@ resource postgresql_database test_db {
 	})
 }
 
+// Test the case where we need to grant the owner to the connected user.
+// The owner should be revoked
+func TestAccPostgresqlDatabase_GrantOwner(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dsn := config.connStr()
+
+	var stateConfig = `
+resource postgresql_role "test_owner" {
+       name = "test_owner"
+}
+resource postgresql_database "test_db" {
+       name  = "test_db"
+       owner = "${postgresql_role.test_owner.name}"
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: stateConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
+
+					// check if connected user still have test_owner granted.
+					checkUserMembership(t, dsn, config.Username, "test_owner", false),
+				),
+			},
+		},
+	})
+}
+
+// Test the case where the connected user is already a member of the owner.
+// There were a bug which was revoking the owner anyway.
+func TestAccPostgresqlDatabase_GrantOwnerNotNeeded(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dsn := config.connStr()
+
+	dbExecute(
+		t, dsn,
+		fmt.Sprintf("CREATE ROLE test_owner; GRANT test_owner TO %s", config.Username),
+	)
+	defer func() {
+		dbExecute(t, dsn, "DROP ROLE test_owner")
+	}()
+
+	var stateConfig = `
+resource postgresql_database "test_db" {
+       name  = "test_db"
+       owner = "test_owner"
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: stateConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
+
+					// check if connected user still have test_owner granted.
+					checkUserMembership(t, dsn, config.Username, "test_owner", true),
+				),
+			},
+		},
+	})
+}
+
+func checkUserMembership(
+	t *testing.T, dsn, member, role string, shouldHaveRole bool,
+) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			t.Fatalf("could to create connection pool: %v", err)
+		}
+		defer db.Close()
+
+		var _rez int
+		err = db.QueryRow(`
+                       SELECT 1 FROM pg_auth_members
+                       WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2
+               `, role, member).Scan(&_rez)
+
+		switch {
+		case err == sql.ErrNoRows:
+			if shouldHaveRole {
+				return fmt.Errorf(
+					"User %s is not a member of %s",
+					member, role,
+				)
+			}
+			return nil
+
+		case err != nil:
+			t.Fatalf("could not check granted role: %v", err)
+		}
+
+		if !shouldHaveRole {
+			return fmt.Errorf(
+				"User (%s) should not be a member of %s",
+				member, role,
+			)
+		}
+		return nil
+	}
+}
+
 func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
