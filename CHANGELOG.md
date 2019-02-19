@@ -1,11 +1,15 @@
-## 0.1.4 (Unreleased)
+## 0.2.0 (Unreleased)
+FEATURES:
+
+* Add `database_username` in provider configuration to manage [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html) (e.g.: needed for Azure)
+  ([#58](https://github.com/terraform-providers/terraform-provider-postgresql/pull/58))
+
 BUG FIXES:
 
 * `create_database` is now being applied correctly on role creation
   ([#43](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
 * Updating a role password doesn't actually update the role password
-  [https://github.com/terraform-providers/terraform-provider-postgresql/issues/16]
-  ([#54](https://github.com/terraform-providers/terraform-provider-postgresql/pull/54))
+  [https://github.com/terraform-providers/terraform-provider-postgresql/issues/16]([#54](https://github.com/terraform-providers/terraform-provider-postgresql/pull/54))
 * `superuser` is now being applied correctly on role creation
   ([#45](https://github.com/terraform-providers/terraform-provider-postgresql/pull/45))
 * Feature flag system was not working.
@@ -22,11 +26,6 @@ BUG FIXES:
 TESTS:
 
 * Travis: Run acceptance tests against multiple Postgres versions.
-
-FEATURES:
-
-* Add `database_username` in provider configuration to manage [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)
-  ([#58](https://github.com/terraform-providers/terraform-provider-postgresql/pull/58))
 
 ## 0.1.3 (December 19, 2018)
 
