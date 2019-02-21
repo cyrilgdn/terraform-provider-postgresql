@@ -7,6 +7,7 @@ go:
   - "1.11.x"
 
 env:
+  - GOFLAGS=-mod=vendor GO111MODULE=on
   - PGVERSION=latest
   - PGVERSION=10
   - PGVERSION=9
@@ -18,11 +19,9 @@ install:
 # packages that live there.
 # See: https://github.com/golang/go/issues/12933
 - bash scripts/gogetcookie.sh
-- go get github.com/kardianos/govendor
 
 script:
 - make test
-- make vendor-status
 - make vet
 - make website-test
 - source tests/env.sh
