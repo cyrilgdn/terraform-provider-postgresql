@@ -1,4 +1,4 @@
-## 0.2.0 (Unreleased)
+## 0.2.0 (February 21, 2019)
 FEATURES:
 
 * Add `database_username` in provider configuration to manage [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html) (e.g.: needed for Azure)
