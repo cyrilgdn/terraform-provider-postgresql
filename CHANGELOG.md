@@ -10,7 +10,7 @@ BUG FIXES:
 * `create_database` is now being applied correctly on role creation
   ([#43](https://github.com/terraform-providers/terraform-provider-postgresql/pull/43))
 * Updating a role password doesn't actually update the role password
-  [https://github.com/terraform-providers/terraform-provider-postgresql/issues/16]([#54](https://github.com/terraform-providers/terraform-provider-postgresql/pull/54))
+  ([#54](https://github.com/terraform-providers/terraform-provider-postgresql/pull/54))
 * `superuser` is now being applied correctly on role creation
   ([#45](https://github.com/terraform-providers/terraform-provider-postgresql/pull/45))
 * Feature flag system was not working.
