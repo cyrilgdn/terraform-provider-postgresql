@@ -36,4 +36,9 @@ func testAccPreCheck(t *testing.T) {
 	if v := os.Getenv("PGUSER"); v == "" {
 		t.Fatal("PGUSER must be set for acceptance tests")
 	}
+
+	err := testAccProvider.Configure(terraform.NewResourceConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
 }
