@@ -57,6 +57,14 @@ func Provider() terraform.ResourceProvider {
 				Description: "Database username associated to the connected user (for user name maps)",
 			},
 
+			"superuser": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+				Description: "Specify if the user to connect as is a Postgres superuser or not." +
+					"If not, some feature might be disabled (e.g.: Refreshing state password from Postgres)",
+			},
+
 			"sslmode": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -145,6 +153,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		Username:          d.Get("username").(string),
 		Password:          d.Get("password").(string),
 		DatabaseUsername:  d.Get("database_username").(string),
+		Superuser:         d.Get("superuser").(bool),
 		SSLMode:           sslMode,
 		ApplicationName:   tfAppName(),
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),

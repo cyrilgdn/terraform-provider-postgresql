@@ -394,39 +394,67 @@ func resourcePostgreSQLRoleReadImpl(d *schema.ResourceData, meta interface{}) er
 
 	d.SetId(roleName)
 
-	password := d.Get(rolePasswordAttr).(string)
-	// Role which cannot login does not have password in pg_shadow.
-	if roleCanLogin {
-		var rolePassword string
-		err = c.DB().QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", roleId).Scan(&rolePassword)
-		switch {
-		case err == sql.ErrNoRows:
-			// They don't have a password
-			d.Set(rolePasswordAttr, "")
-			return nil
-		case err != nil:
-			return errwrap.Wrapf("Error reading role: {{err}}", err)
-		}
-
-		// If the password isn't already in md5 format, but hashing the input
-		// matches the password in the database for the user, they are the same
-		if password != "" && !strings.HasPrefix(password, "md5") {
-			hasher := md5.New()
-			hasher.Write([]byte(password + roleId))
-			hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
-
-			if hashedPassword == rolePassword {
-				// The passwords are actually the same
-				// make Terraform think they are the same
-				d.Set(rolePasswordAttr, password)
-				return nil
-			}
-		}
-		d.Set(rolePasswordAttr, rolePassword)
-		return nil
+	password, err := readRolePassword(c, d, roleCanLogin)
+	if err != nil {
+		return err
 	}
+
 	d.Set(rolePasswordAttr, password)
 	return nil
+}
+
+// readRolePassword reads password either from Postgres if admin user is a superuser
+// or only from Terraform state.
+func readRolePassword(c *Client, d *schema.ResourceData, roleCanLogin bool) (string, error) {
+	statePassword := d.Get(rolePasswordAttr).(string)
+
+	// Role which cannot login does not have password in pg_shadow.
+	// Also, if user specifies that admin is not a superuser we don't try to read pg_shadow
+	// (only superuser can read pg_shadow)
+	if !roleCanLogin || !c.config.Superuser {
+		return statePassword, nil
+	}
+
+	// Otherwise we check if connected user is really a superuser
+	// (in order to warn user instead of having a permission denied error)
+	superuser, err := c.isSuperuser()
+	if err != nil {
+		return "", err
+	}
+	if !superuser {
+		return "", fmt.Errorf(
+			"could not read role password from Postgres as "+
+				"connected user %s is not a SUPERUSER. "+
+				"You can set `superuser = false` in the provider configuration "+
+				"so it will not try to read the password from Postgres",
+			c.config.getDatabaseUsername(),
+		)
+	}
+
+	var rolePassword string
+	err = c.DB().QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", d.Id()).Scan(&rolePassword)
+	switch {
+	case err == sql.ErrNoRows:
+		// They don't have a password
+		return "", nil
+	case err != nil:
+		return "", errwrap.Wrapf("Error reading role: {{err}}", err)
+	}
+
+	// If the password isn't already in md5 format, but hashing the input
+	// matches the password in the database for the user, they are the same
+	if statePassword != "" && !strings.HasPrefix(statePassword, "md5") {
+		hasher := md5.New()
+		hasher.Write([]byte(statePassword + d.Id()))
+		hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
+
+		if hashedPassword == rolePassword {
+			// The passwords are actually the same
+			// make Terraform think they are the same
+			return statePassword, nil
+		}
+	}
+	return rolePassword, nil
 }
 
 func resourcePostgreSQLRoleUpdate(d *schema.ResourceData, meta interface{}) error {
