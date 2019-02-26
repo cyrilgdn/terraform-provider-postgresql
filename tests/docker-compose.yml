@@ -4,6 +4,6 @@ services:
     postgres:
         image: postgres:${PGVERSION:-latest}
         environment:
-            POSTGRESQL_PASSWORD: ${PGPASSWORD}
+            POSTGRES_PASSWORD: ${PGPASSWORD}
         ports:
             - 25432:5432
