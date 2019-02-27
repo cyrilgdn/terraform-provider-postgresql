@@ -44,27 +44,47 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 }
 
 func TestAccPostgresqlRole_Update(t *testing.T) {
+
+	var configCreate = `
+resource "postgresql_role" "update_role" {
+  name = "update_role"
+  login = true
+  password = "toto"
+}
+`
+
+	var configUpdate = `
+resource "postgresql_role" "update_role" {
+  name = "update_role2"
+  login = true
+  connection_limit = 5
+  password = "titi"
+}
+`
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccPostgresqlRoleUpdate1Config,
+				Config: configCreate,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlRoleExists("postgresql_role.update_role", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "toto"),
+					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
 			{
-				Config: testAccPostgresqlRoleUpdate2Config,
+				Config: configUpdate,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlRoleExists("postgresql_role.update_role", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role2"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "5"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "titi"),
+					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
 			},
 		},
@@ -137,6 +157,22 @@ func checkRoleExists(client *Client, roleName string) (bool, error) {
 	return true, nil
 }
 
+func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		config := getTestConfig(t)
+		config.Username = role
+		config.Password = password
+		db, err := sql.Open("postgres", config.connStr())
+		if err != nil {
+			return fmt.Errorf("could not open SQL connection: %v", err)
+		}
+		if err := db.Ping(); err != nil {
+			return fmt.Errorf("could not connect as role %s: %v", role, err)
+		}
+		return nil
+	}
+}
+
 var testAccPostgresqlRoleConfig = `
 resource "postgresql_role" "myrole2" {
   name = "myrole2"
@@ -187,20 +223,5 @@ resource "postgresql_role" "role_with_superuser" {
   superuser = true
   login = true
   password = "mypass"
-}
-`
-
-var testAccPostgresqlRoleUpdate1Config = `
-resource "postgresql_role" "update_role" {
-  name = "update_role"
-  login = true
-}
-`
-
-var testAccPostgresqlRoleUpdate2Config = `
-resource "postgresql_role" "update_role" {
-  name = "update_role2"
-  login = true
-  connection_limit = 5
 }
 `

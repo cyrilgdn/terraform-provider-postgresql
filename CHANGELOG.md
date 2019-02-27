@@ -1,4 +1,9 @@
 ## 0.2.1 (Unreleased)
+BUG FIXES:
+
+* `provider`: Add a `superuser` setting to fix role password update when provider is not connected as a superuser.
+  ([#66](https://github.com/terraform-providers/terraform-provider-postgresql/pull/66))
+
 ## 0.2.0 (February 21, 2019)
 FEATURES:
 

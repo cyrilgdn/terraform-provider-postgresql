@@ -76,6 +76,7 @@ type Config struct {
 	Username          string
 	Password          string
 	DatabaseUsername  string
+	Superuser         bool
 	SSLMode           string
 	ApplicationName   string
 	Timeout           int
@@ -297,4 +298,15 @@ func (c *Client) featureSupported(name featureName) bool {
 	}
 
 	return fn(c.version)
+}
+
+// isSuperuser returns true if connected user is a Postgres SUPERUSER
+func (c *Client) isSuperuser() (bool, error) {
+	var superuser bool
+
+	if err := c.db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = CURRENT_USER").Scan(&superuser); err != nil {
+		return false, errwrap.Wrapf("could not check if current user is superuser: {{err}}", err)
+	}
+
+	return superuser, nil
 }
