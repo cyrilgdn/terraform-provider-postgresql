@@ -1,4 +1,4 @@
-## 0.2.1 (Unreleased)
+## 0.2.1 (February 28, 2019)
 BUG FIXES:
 
 * `provider`: Add a `superuser` setting to fix role password update when provider is not connected as a superuser.
