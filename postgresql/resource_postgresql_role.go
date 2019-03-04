@@ -266,7 +266,7 @@ func resourcePostgreSQLRoleDelete(d *schema.ResourceData, meta interface{}) erro
 	if err != nil {
 		return err
 	}
-	defer txn.Rollback()
+	defer deferredRollback(txn)
 
 	roleName := d.Get(roleNameAttr).(string)
 
