@@ -6,7 +6,9 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
+	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/resource"
 )
 
@@ -17,6 +19,14 @@ const (
 
 	testTableDef = "CREATE TABLE test_table (val text)"
 )
+
+// Can be used in a PreCheck function to disable test based on feature.
+func testCheckCompatibleVersion(t *testing.T, feature featureName) {
+	client := testAccProvider.Meta().(*Client)
+	if !client.featureSupported(feature) {
+		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", client.version))
+	}
+}
 
 func getTestConfig(t *testing.T) Config {
 	getEnv := func(key, fallback string) string {
@@ -37,7 +47,6 @@ func getTestConfig(t *testing.T) Config {
 		Port:     dbPort,
 		Username: getEnv("PGUSER", ""),
 		Password: getEnv("PGPASSWORD", ""),
-		Database: getEnv("PGDATABASE", "postgres"),
 		SSLMode:  getEnv("PGSSLMODE", ""),
 	}
 }
@@ -62,4 +71,95 @@ func dbExecute(t *testing.T, dsn, query string, args ...interface{}) {
 	if _, err = db.Exec(query, args...); err != nil {
 		t.Fatalf("could not execute query %s: %v", query, err)
 	}
+}
+
+func getTestDBNames(dbSuffix string) (dbName string, roleName string) {
+	dbName = fmt.Sprintf("%s_%s", dbNamePrefix, dbSuffix)
+	roleName = fmt.Sprintf("%s_%s", roleNamePrefix, dbSuffix)
+
+	return
+}
+
+// setupTestDatabase creates all needed resources before executing a terraform test
+// and provides the teardown function to delete all these resources.
+func setupTestDatabase(t *testing.T, createDB, createRole, createTable bool) (string, func()) {
+	config := getTestConfig(t)
+
+	suffix := strconv.Itoa(int(time.Now().UnixNano()))
+
+	dbName, roleName := getTestDBNames(suffix)
+
+	if createDB {
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("CREATE DATABASE %s", dbName))
+	}
+	if createRole {
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
+			"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
+			roleName, testRolePassword,
+		))
+	}
+
+	if createTable {
+		// Create a test table in this new database
+		dbExecute(t, config.connStr(dbName), testTableDef)
+	}
+
+	return suffix, func() {
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
+	}
+}
+
+func testCheckTablePrivileges(
+	t *testing.T, dbSuffix string, allowedPrivileges []string, createTable bool,
+) error {
+	config := getTestConfig(t)
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Some test (e.g.: default privileges) need the test table to be created only now
+	if createTable {
+		db, err := sql.Open("postgres", config.connStr(dbName))
+		if err != nil {
+			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+		}
+		defer db.Close()
+
+		if _, err := db.Exec(testTableDef); err != nil {
+			t.Fatalf("could not create test table in db %s: %v", dbName, err)
+		}
+		// In this case we need to drop table after each test.
+		defer func() {
+			db.Exec("DROP TABLE test_table")
+		}()
+	}
+
+	// Connect as the test role
+	config.Username = roleName
+	config.Password = testRolePassword
+
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer db.Close()
+
+	queries := map[string]string{
+		"SELECT": "SELECT count(*) FROM test_table",
+		"INSERT": "INSERT INTO test_table VALUES ('test')",
+		"UPDATE": "UPDATE test_table SET val = 'test'",
+		"DELETE": "DELETE FROM test_table",
+	}
+
+	for queryType, query := range queries {
+		_, err := db.Exec(query)
+
+		if err != nil && sliceContainsStr(allowedPrivileges, queryType) {
+			return errwrap.Wrapf(fmt.Sprintf("could not %s on test table: {{err}}", queryType), err)
+
+		} else if err == nil && !sliceContainsStr(allowedPrivileges, queryType) {
+			return errwrap.Wrapf(fmt.Sprintf("%s did not failed as expected: {{err}}", queryType), err)
+		}
+	}
+	return nil
 }

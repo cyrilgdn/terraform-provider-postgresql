@@ -9,18 +9,11 @@ import (
 	"github.com/hashicorp/terraform/terraform"
 )
 
-func testCheckCompatibleVersion(t *testing.T) {
-	client := testAccProvider.Meta().(*Client)
-	if !client.featureSupported(featureExtension) {
-		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", client.version))
-	}
-}
-
 func TestAccPostgresqlExtension_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			testCheckCompatibleVersion(t)
+			testCheckCompatibleVersion(t, featureExtension)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
@@ -96,7 +89,7 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			testCheckCompatibleVersion(t)
+			testCheckCompatibleVersion(t, featureExtension)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
