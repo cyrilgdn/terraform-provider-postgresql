@@ -16,8 +16,6 @@ const (
 	dbNamePrefix     = "tf_tests_db"
 	roleNamePrefix   = "tf_tests_role"
 	testRolePassword = "testpwd"
-
-	testTableDef = "CREATE TABLE test_table (val text)"
 )
 
 // Can be used in a PreCheck function to disable test based on feature.
@@ -82,7 +80,7 @@ func getTestDBNames(dbSuffix string) (dbName string, roleName string) {
 
 // setupTestDatabase creates all needed resources before executing a terraform test
 // and provides the teardown function to delete all these resources.
-func setupTestDatabase(t *testing.T, createDB, createRole, createTable bool) (string, func()) {
+func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func()) {
 	config := getTestConfig(t)
 
 	suffix := strconv.Itoa(int(time.Now().UnixNano()))
@@ -99,40 +97,38 @@ func setupTestDatabase(t *testing.T, createDB, createRole, createTable bool) (st
 		))
 	}
 
-	if createTable {
-		// Create a test table in this new database
-		dbExecute(t, config.connStr(dbName), testTableDef)
-	}
-
 	return suffix, func() {
 		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
 		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
 	}
 }
 
-func testCheckTablePrivileges(
-	t *testing.T, dbSuffix string, allowedPrivileges []string, createTable bool,
-) error {
+func createTestTables(t *testing.T, dbSuffix string, tables []string) func() {
 	config := getTestConfig(t)
+	dbName, _ := getTestDBNames(dbSuffix)
 
-	dbName, roleName := getTestDBNames(dbSuffix)
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer db.Close()
 
-	// Some test (e.g.: default privileges) need the test table to be created only now
-	if createTable {
-		db, err := sql.Open("postgres", config.connStr(dbName))
-		if err != nil {
-			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
-		}
-		defer db.Close()
-
-		if _, err := db.Exec(testTableDef); err != nil {
+	for _, table := range tables {
+		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (val text)", table)); err != nil {
 			t.Fatalf("could not create test table in db %s: %v", dbName, err)
 		}
-		// In this case we need to drop table after each test.
-		defer func() {
-			db.Exec("DROP TABLE test_table")
-		}()
 	}
+	// In this case we need to drop table after each test.
+	return func() {
+		for _, table := range tables {
+			db.Exec(fmt.Sprintf("DROP TABLE %s", table))
+		}
+	}
+}
+
+func testCheckTablesPrivileges(t *testing.T, dbSuffix string, tables []string, allowedPrivileges []string) error {
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
 
 	// Connect as the test role
 	config.Username = roleName
@@ -144,21 +140,29 @@ func testCheckTablePrivileges(
 	}
 	defer db.Close()
 
-	queries := map[string]string{
-		"SELECT": "SELECT count(*) FROM test_table",
-		"INSERT": "INSERT INTO test_table VALUES ('test')",
-		"UPDATE": "UPDATE test_table SET val = 'test'",
-		"DELETE": "DELETE FROM test_table",
-	}
+	for _, table := range tables {
+		queries := map[string]string{
+			"SELECT": fmt.Sprintf("SELECT count(*) FROM %s", table),
+			"INSERT": fmt.Sprintf("INSERT INTO %s VALUES ('test')", table),
+			"UPDATE": fmt.Sprintf("UPDATE %s SET val = 'test'", table),
+			"DELETE": fmt.Sprintf("DELETE FROM %s", table),
+		}
 
-	for queryType, query := range queries {
-		_, err := db.Exec(query)
+		for queryType, query := range queries {
+			_, err := db.Exec(query)
 
-		if err != nil && sliceContainsStr(allowedPrivileges, queryType) {
-			return errwrap.Wrapf(fmt.Sprintf("could not %s on test table: {{err}}", queryType), err)
+			if err != nil && sliceContainsStr(allowedPrivileges, queryType) {
+				return errwrap.Wrapf(
+					fmt.Sprintf("could not %s on test table %s: {{err}}", queryType, table),
+					err,
+				)
 
-		} else if err == nil && !sliceContainsStr(allowedPrivileges, queryType) {
-			return errwrap.Wrapf(fmt.Sprintf("%s did not failed as expected: {{err}}", queryType), err)
+			} else if err == nil && !sliceContainsStr(allowedPrivileges, queryType) {
+				return errwrap.Wrapf(
+					fmt.Sprintf("%s did not failed as expected for table %s: {{err}}", queryType, table),
+					err,
+				)
+			}
 		}
 	}
 	return nil
