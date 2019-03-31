@@ -7,6 +7,11 @@ FEATURES:
 * New resource: postgresql_default_privileges. This resource allow to manage default privileges for tables or sequences for a specified role in a specified schema.
   ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
 
+BUG FIXES:
+
+* `postgresql_role`: Fix syntax error with `valid_until` attribute.
+  ([#69](https://github.com/terraform-providers/terraform-provider-postgresql/pull/69))
+
 ## 0.2.1 (February 28, 2019)
 
 BUG FIXES:
