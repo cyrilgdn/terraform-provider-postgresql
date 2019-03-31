@@ -1,6 +1,14 @@
-## 0.2.2 (Unreleased)
+### 0.3.0 (Unreleased)
+
+FEATURES:
+
+* New resource: postgresql_grant. This resource allows to grant privileges on all existing tables or sequences for a specified role in a specified schema.
+  ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
+* New resource: postgresql_default_privileges. This resource allow to manage default privileges for tables or sequences for a specified role in a specified schema.
+  ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
 
 ## 0.2.1 (February 28, 2019)
+
 BUG FIXES:
 
 * `provider`: Add a `superuser` setting to fix role password update when provider is not connected as a superuser.

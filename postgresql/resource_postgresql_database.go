@@ -279,16 +279,13 @@ func resourcePostgreSQLDatabaseExists(d *schema.ResourceData, meta interface{}) 
 	c.catalogLock.RLock()
 	defer c.catalogLock.RUnlock()
 
-	var dbName string
-	err := c.DB().QueryRow("SELECT d.datname from pg_database d WHERE datname=$1", d.Id()).Scan(&dbName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
+	txn, err := startTransaction(c, "")
+	if err != nil {
 		return false, err
 	}
+	defer deferredRollback(txn)
 
-	return true, nil
+	return dbExists(txn, d.Id())
 }
 
 func resourcePostgreSQLDatabaseRead(d *schema.ResourceData, meta interface{}) error {

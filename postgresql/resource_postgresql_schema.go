@@ -162,7 +162,7 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return err
 	}
-	defer txn.Rollback()
+	defer deferredRollback(txn)
 
 	for _, query := range queries {
 		if _, err = txn.Exec(query); err != nil {
@@ -188,7 +188,7 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return err
 	}
-	defer txn.Rollback()
+	defer deferredRollback(txn)
 
 	schemaName := d.Get(schemaNameAttr).(string)
 
@@ -286,7 +286,7 @@ func resourcePostgreSQLSchemaUpdate(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return err
 	}
-	defer txn.Rollback()
+	defer deferredRollback(txn)
 
 	if err := setSchemaName(txn, d); err != nil {
 		return err

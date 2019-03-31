@@ -11,7 +11,10 @@ import (
 
 func TestAccPostgresqlRole_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
 		Steps: []resource.TestStep{
@@ -62,7 +65,10 @@ resource "postgresql_role" "update_role" {
 }
 `
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
 		Steps: []resource.TestStep{
@@ -162,7 +168,7 @@ func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.Test
 		config := getTestConfig(t)
 		config.Username = role
 		config.Password = password
-		db, err := sql.Open("postgres", config.connStr())
+		db, err := sql.Open("postgres", config.connStr("postgres"))
 		if err != nil {
 			return fmt.Errorf("could not open SQL connection: %v", err)
 		}
