@@ -53,6 +53,7 @@ resource "postgresql_role" "update_role" {
   name = "update_role"
   login = true
   password = "toto"
+  valid_until = "2019-05-04 12:00:00+00"
 }
 `
 
@@ -80,6 +81,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "toto"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "2019-05-04 12:00:00+00"),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
@@ -90,6 +92,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role2"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "titi"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "infinity"),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
 			},
