@@ -85,6 +85,8 @@ resource "postgresql_role" "my_replication_role" {
 * `password` - (Optional) Sets the role's password. A password is only of use
   for roles having the `login` attribute set to true.
 
+* `roles` - (Optional) Defines list of roles which will be granted to this new role.
+
 * `valid_until` - (Optional) Defines the date and time after which the role's
   password is no longer valid.  Established connections past this `valid_time`
   will have to be manually terminated.  This value corresponds to a PostgreSQL

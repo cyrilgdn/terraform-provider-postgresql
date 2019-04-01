@@ -6,6 +6,8 @@ FEATURES:
   ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
 * New resource: postgresql_default_privileges. This resource allow to manage default privileges for tables or sequences for a specified role in a specified schema.
   ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
+* `postgresql_role`: Add `roles` attribute.
+  ([#52](https://github.com/terraform-providers/terraform-provider-postgresql/pull/52))
 
 BUG FIXES:
 
