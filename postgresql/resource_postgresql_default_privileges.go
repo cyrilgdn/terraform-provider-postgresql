@@ -100,6 +100,8 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 	database := d.Get("database").(string)
 
 	client := meta.(*Client)
+	owner := d.Get("owner").(string)
+	currentUser := client.config.getDatabaseUsername()
 
 	client.catalogLock.Lock()
 	defer client.catalogLock.Unlock()
@@ -109,6 +111,18 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 		return err
 	}
 	defer deferredRollback(txn)
+
+	// Needed in order to set the owner of the db if the connection user is not a
+	// superuser
+	ownerGranted, err := grantRoleMembership(client.DB(), owner, currentUser)
+	if err != nil {
+		return err
+	}
+	if ownerGranted {
+		defer func() {
+			err = revokeRoleMembership(client.DB(), owner, currentUser)
+		}()
+	}
 
 	// Revoke all privileges before granting otherwise reducing privileges will not work.
 	// We just have to revoke them in the same transaction so role will not lost his privileges between revoke and grant.
@@ -137,6 +151,8 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 
 func resourcePostgreSQLDefaultPrivilegesDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client)
+	owner := d.Get("owner").(string)
+	currentUser := client.config.getDatabaseUsername()
 
 	client.catalogLock.Lock()
 	defer client.catalogLock.Unlock()
@@ -146,6 +162,18 @@ func resourcePostgreSQLDefaultPrivilegesDelete(d *schema.ResourceData, meta inte
 		return err
 	}
 	defer deferredRollback(txn)
+
+	// Needed in order to set the owner of the db if the connection user is not a
+	// superuser
+	ownerGranted, err := grantRoleMembership(client.DB(), owner, currentUser)
+	if err != nil {
+		return err
+	}
+	if ownerGranted {
+		defer func() {
+			err = revokeRoleMembership(client.DB(), owner, currentUser)
+		}()
+	}
 
 	revokeRoleDefaultPrivileges(txn, d)
 	if err := txn.Commit(); err != nil {
@@ -202,12 +230,6 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	for _, priv := range d.Get("privileges").(*schema.Set).List() {
 		privileges = append(privileges, priv.(string))
 	}
-
-	// TODO: We grant default privileges for the DB owner
-	// For that we need to be either superuser or a member of the owner role.
-	// With AWS RDS, It's not possible to create superusers as it is restricted by AWS itself.
-	// In that case, the only solution would be to have the PostgreSQL user used by Terraform
-	// to be also part of the database owner role.
 
 	query := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT %s ON %sS TO %s",
 		pq.QuoteIdentifier(d.Get("owner").(string)),
