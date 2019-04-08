@@ -212,7 +212,7 @@ resource postgresql_database "test_db" {
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
-					// check if connected user still have test_owner granted.
+					// check if connected user does not have test_owner granted anymore.
 					checkUserMembership(t, dsn, config.Username, "test_owner", false),
 				),
 			},
