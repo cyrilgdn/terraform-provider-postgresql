@@ -9,6 +9,8 @@ import (
 )
 
 func TestAccPostgresqlGrant(t *testing.T) {
+	skipIfNotAcc(t)
+
 	// We have to create the database outside of resource.Test
 	// because we need to create tables to assert that grant are correctly applied
 	// and we don't have this resource yet
