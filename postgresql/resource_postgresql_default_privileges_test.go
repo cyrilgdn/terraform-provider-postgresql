@@ -26,7 +26,7 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 		database    = "%s"
 		owner       = "%s"
 		role        = "%s"
-		schema      = "public"
+		schema      = "test_schema"
 		object_type = "table"
 		privileges   = ["SELECT"]
 	}
@@ -43,7 +43,7 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 				Config: testDPSelect,
 				Check: resource.ComposeTestCheckFunc(
 					func(*terraform.State) error {
-						tables := []string{"test_table"}
+						tables := []string{"test_schema.test_table"}
 						// To test default privileges, we need to create a table
 						// after having apply the state.
 						dropFunc := createTestTables(t, dbSuffix, tables)

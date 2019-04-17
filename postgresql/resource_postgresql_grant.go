@@ -304,7 +304,7 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 
 	// Check the schema exists (the SQL connection needs to be on the right database)
 	pgSchema := d.Get("schema").(string)
-	exists, err = schemaExists(txn, pgSchema)
+	exists, err = schemaExists(dbTxn, pgSchema)
 	if err != nil {
 		return false, err
 	}
