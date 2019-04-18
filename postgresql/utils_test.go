@@ -87,14 +87,18 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 
 	dbName, roleName := getTestDBNames(suffix)
 
-	if createDB {
-		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("CREATE DATABASE %s", dbName))
-	}
 	if createRole {
 		dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
 			"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
 			roleName, testRolePassword,
 		))
+	}
+
+	if createDB {
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("CREATE DATABASE %s", dbName))
+		// Create a test schema in this new database and grant usage to rolName
+		dbExecute(t, config.connStr(dbName), "CREATE SCHEMA test_schema")
+		dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", roleName))
 	}
 
 	return suffix, func() {
