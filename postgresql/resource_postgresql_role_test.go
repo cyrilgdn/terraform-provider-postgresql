@@ -3,6 +3,8 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/hashicorp/terraform/helper/resource"
@@ -21,8 +23,13 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 			{
 				Config: testAccPostgresqlRoleConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("postgresql_role.myrole2", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "name", "testing_role_with_defaults"),
+					testAccCheckPostgresqlRoleExists("myrole2", nil),
+					resource.TestCheckResourceAttr("postgresql_role.myrole2", "name", "myrole2"),
+					resource.TestCheckResourceAttr("postgresql_role.myrole2", "login", "true"),
+					resource.TestCheckResourceAttr("postgresql_role.myrole2", "roles.#", "0"),
+
+					testAccCheckPostgresqlRoleExists("role_default", nil),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "name", "role_default"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "superuser", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "create_database", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "create_role", "false"),
@@ -40,6 +47,15 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "create_database", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "name", "role_with_superuser"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "superuser", "true"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "roles.#", "0"),
+
+					testAccCheckPostgresqlRoleExists("sub_role", []string{"myrole2", "role_simple"}),
+					resource.TestCheckResourceAttr("postgresql_role.sub_role", "name", "sub_role"),
+					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.#", "2"),
+
+					// The int part in the attr name is the schema.HashString of the value.
+					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.719783566", "myrole2"),
+					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.1784536243", "role_simple"),
 				),
 			},
 		},
@@ -58,11 +74,16 @@ resource "postgresql_role" "update_role" {
 `
 
 	var configUpdate = `
+resource "postgresql_role" "group_role" {
+  name = "group_role"
+}
+
 resource "postgresql_role" "update_role" {
   name = "update_role2"
   login = true
   connection_limit = 5
   password = "titi"
+  roles = ["${postgresql_role.group_role.name}"]
 }
 `
 	resource.Test(t, resource.TestCase{
@@ -76,24 +97,46 @@ resource "postgresql_role" "update_role" {
 			{
 				Config: configCreate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("postgresql_role.update_role", "true"),
+					testAccCheckPostgresqlRoleExists("update_role", []string{}),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "toto"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "2019-05-04 12:00:00+00"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "0"),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
 			{
 				Config: configUpdate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("postgresql_role.update_role", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role2"),
+					testAccCheckPostgresqlRoleExists("update_role2", []string{"group_role"}),
+					resource.TestCheckResourceAttr(
+						"postgresql_role.update_role", "name", "update_role2",
+					),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "5"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "titi"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "infinity"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "1"),
+					// The int part in the attr name is the schema.HashString of the value.
+					resource.TestCheckResourceAttr(
+						"postgresql_role.update_role", "roles.2117325082", "group_role",
+					),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
+				),
+			},
+			// apply again the first one to tests the granted role is correctly revoked
+			{
+				Config: configCreate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("update_role", []string{}),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "toto"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "0"),
+					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
 		},
@@ -122,25 +165,11 @@ func testAccCheckPostgresqlRoleDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckPostgresqlRoleExists(n string, canLogin string) resource.TestCheckFunc {
+func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[n]
-		if !ok {
-			return fmt.Errorf("Resource not found: %s", n)
-		}
-
-		if rs.Primary.ID == "" {
-			return fmt.Errorf("No ID is set")
-		}
-
-		actualCanLogin := rs.Primary.Attributes["login"]
-		if actualCanLogin != canLogin {
-			return fmt.Errorf("Wrong value for login expected %s got %s", canLogin, actualCanLogin)
-		}
-
 		client := testAccProvider.Meta().(*Client)
-		exists, err := checkRoleExists(client, rs.Primary.ID)
 
+		exists, err := checkRoleExists(client, roleName)
 		if err != nil {
 			return fmt.Errorf("Error checking role %s", err)
 		}
@@ -149,6 +178,9 @@ func testAccCheckPostgresqlRoleExists(n string, canLogin string) resource.TestCh
 			return fmt.Errorf("Role not found")
 		}
 
+		if grantedRoles != nil {
+			return checkGrantedRoles(client, roleName, grantedRoles)
+		}
 		return nil
 	}
 }
@@ -182,6 +214,35 @@ func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.Test
 	}
 }
 
+func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) error {
+	rows, err := client.DB().Query(
+		"SELECT role_name FROM information_schema.applicable_roles WHERE grantee=$1 ORDER BY role_name",
+		roleName,
+	)
+	if err != nil {
+		return fmt.Errorf("Error reading granted roles: %v", err)
+	}
+	defer rows.Close()
+
+	grantedRoles := []string{}
+	for rows.Next() {
+		var grantedRole string
+		if err := rows.Scan(&grantedRole); err != nil {
+			return fmt.Errorf("Error scanning granted role: %v", err)
+		}
+		grantedRoles = append(grantedRoles, grantedRole)
+	}
+
+	sort.Strings(expectedRoles)
+	if !reflect.DeepEqual(grantedRoles, expectedRoles) {
+		return fmt.Errorf(
+			"Role %s is not a members of the expected list of roles. expected %v - got %v",
+			roleName, expectedRoles, grantedRoles,
+		)
+	}
+	return nil
+}
+
 var testAccPostgresqlRoleConfig = `
 resource "postgresql_role" "myrole2" {
   name = "myrole2"
@@ -206,7 +267,7 @@ resource "postgresql_role" "role_simple" {
 }
 
 resource "postgresql_role" "role_with_defaults" {
-  name = "testing_role_with_defaults"
+  name = "role_default"
   superuser = false
   create_database = false
   create_role = false
@@ -226,6 +287,15 @@ resource "postgresql_role" "role_with_create_database" {
   name = "role_with_create_database"
   create_database = true
 }
+
+resource "postgresql_role" "sub_role" {
+	name = "sub_role"
+	roles = [
+		"${postgresql_role.myrole2.id}",
+		"${postgresql_role.role_simple.id}",
+	]
+}
+
 
 resource "postgresql_role" "role_with_superuser" {
   name = "role_with_superuser"
