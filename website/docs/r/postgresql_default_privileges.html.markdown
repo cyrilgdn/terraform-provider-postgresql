@@ -15,7 +15,7 @@ The ``postgresql_default_privileges`` resource creates and manages default privi
 ## Usage
 
 ```hcl
-resource postgresql_default_privileges "read_only_tables" {
+resource "postgresql_default_privileges" "read_only_tables" {
   role     = "test_role"
   database = "test_db"
   schema   = "public"
