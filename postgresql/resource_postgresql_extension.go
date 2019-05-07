@@ -66,7 +66,7 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 
 	extName := d.Get(extNameAttr).(string)
 
-	b := bytes.NewBufferString("CREATE EXTENSION IF NOT EXISTS")
+	b := bytes.NewBufferString("CREATE EXTENSION IF NOT EXISTS ")
 	fmt.Fprint(b, pq.QuoteIdentifier(extName))
 
 	if v, ok := d.GetOk(extSchemaAttr); ok {
