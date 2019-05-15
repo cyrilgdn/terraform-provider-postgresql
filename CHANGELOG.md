@@ -1,4 +1,18 @@
-## 0.3.1 (Unreleased)
+## 0.4.0 (Unreleased)
+
+FEATURES:
+
+* `postgresql_role`: Add `roles` attribute.
+  ([#52](https://github.com/terraform-providers/terraform-provider-postgresql/pull/52))
+
+BUG FIXES:
+
+* `postgresql_grant`, `postgresql_default_privileges`: Fix schema verification.
+  ([#74](https://github.com/terraform-providers/terraform-provider-postgresql/pull/74))
+
+* `postgresql_extension`: Add `IF NOT EXISTS` when creating extension.
+  ([#76](https://github.com/terraform-providers/terraform-provider-postgresql/pull/76))
+
 ### 0.3.0 (April 16, 2019)
 
 FEATURES:
@@ -7,8 +21,6 @@ FEATURES:
   ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
 * New resource: postgresql_default_privileges. This resource allow to manage default privileges for tables or sequences for a specified role in a specified schema.
   ([#53](https://github.com/terraform-providers/terraform-provider-postgresql/pull/53))
-* `postgresql_role`: Add `roles` attribute.
-  ([#52](https://github.com/terraform-providers/terraform-provider-postgresql/pull/52))
 
 BUG FIXES:
 
