@@ -24,9 +24,6 @@ script:
 - make test
 - make vet
 - make website-test
-- source tests/env.sh
-- docker-compose -f tests/docker-compose.yml up -d
-- tests/wait-postgres-docker.sh tests/docker-compose.yml
 - make testacc
 
 branches:
