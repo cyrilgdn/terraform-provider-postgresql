@@ -8,7 +8,7 @@ log() {
 }
 
 setup() {
-    sh "$(pwd)"/tests/testacc_setup.sh
+    "$(pwd)"/tests/testacc_setup.sh
 }
 
 run() {
@@ -24,7 +24,7 @@ run() {
 }
 
 cleanup() {
-    sh "$(pwd)"/tests/testacc_cleanup.sh
+    "$(pwd)"/tests/testacc_cleanup.sh
 }
 
 ## main
