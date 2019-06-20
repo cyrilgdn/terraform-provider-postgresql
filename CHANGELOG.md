@@ -1,4 +1,9 @@
-## 0.4.1 (Unreleased)
+## 1.0.0 (Unreleased)
+
+BREAKING CHANGES:
+
+* `postgresql_role`: Remove default value for password field.
+
 ## 0.4.0 (May 15, 2019)
 
 FEATURES:

@@ -56,7 +56,6 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Sensitive:   true,
-				DefaultFunc: schema.EnvDefaultFunc("PGPASSWORD", nil),
 				Description: "Sets the role's password",
 			},
 			roleDepEncryptedAttr: {
