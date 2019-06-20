@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultProviderMaxOpenConnections = uint(4)
+	defaultProviderMaxOpenConnections = 4
 	defaultExpectedPostgreSQLVersion  = "9.0.0"
 )
 
