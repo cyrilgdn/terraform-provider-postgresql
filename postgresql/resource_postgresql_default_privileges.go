@@ -38,7 +38,7 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "The name of an existing role of which the current (connected user) role is a member (you can change default privileges only for objects that will be created by yourself or by roles that you are a member of)",
+				Description: "Target role for which to alter default privileges.",
 			},
 			"schema": {
 				Type:        schema.TypeString,
@@ -114,14 +114,9 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 
 	// Needed in order to set the owner of the db if the connection user is not a
 	// superuser
-	ownerGranted, err := grantRoleMembership(client.DB(), owner, currentUser)
+	ownerGranted, err := grantRoleMembership(txn, owner, currentUser)
 	if err != nil {
 		return err
-	}
-	if ownerGranted {
-		defer func() {
-			err = revokeRoleMembership(client.DB(), owner, currentUser)
-		}()
 	}
 
 	// Revoke all privileges before granting otherwise reducing privileges will not work.
@@ -132,6 +127,14 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 
 	if err = grantRoleDefaultPrivileges(txn, d); err != nil {
 		return err
+	}
+
+	// Revoke the owner privileges if we had to grant it.
+	if ownerGranted {
+		err = revokeRoleMembership(txn, owner, currentUser)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := txn.Commit(); err != nil {
@@ -165,17 +168,23 @@ func resourcePostgreSQLDefaultPrivilegesDelete(d *schema.ResourceData, meta inte
 
 	// Needed in order to set the owner of the db if the connection user is not a
 	// superuser
-	ownerGranted, err := grantRoleMembership(client.DB(), owner, currentUser)
+	ownerGranted, err := grantRoleMembership(txn, owner, currentUser)
 	if err != nil {
 		return err
 	}
-	if ownerGranted {
-		defer func() {
-			err = revokeRoleMembership(client.DB(), owner, currentUser)
-		}()
+
+	if err = revokeRoleDefaultPrivileges(txn, d); err != nil {
+		return err
 	}
 
-	revokeRoleDefaultPrivileges(txn, d)
+	// Revoke the owner privileges if we had to grant it.
+	if ownerGranted {
+		err = revokeRoleMembership(txn, owner, currentUser)
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := txn.Commit(); err != nil {
 		return err
 	}
@@ -258,8 +267,11 @@ func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		pq.QuoteIdentifier(d.Get("role").(string)),
 	)
 
-	_, err := txn.Exec(query)
-	return err
+	if _, err := txn.Exec(query); err != nil {
+		return errwrap.Wrapf("could not revoke default privileges: {{err}}", err)
+	}
+	return nil
+
 }
 
 func generateDefaultPrivilegesID(d *schema.ResourceData) string {

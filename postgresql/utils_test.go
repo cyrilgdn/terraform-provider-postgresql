@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -107,7 +108,7 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 	}
 }
 
-func createTestTables(t *testing.T, dbSuffix string, tables []string) func() {
+func createTestTables(t *testing.T, dbSuffix string, tables []string, owner string) func() {
 	config := getTestConfig(t)
 	dbName, _ := getTestDBNames(dbSuffix)
 
@@ -117,15 +118,35 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string) func() {
 	}
 	defer db.Close()
 
+	if owner != "" {
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
+			t.Fatalf("could not set role to %s: %v", owner, err)
+		}
+	}
+
 	for _, table := range tables {
 		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (val text)", table)); err != nil {
 			t.Fatalf("could not create test table in db %s: %v", dbName, err)
 		}
+		if owner != "" {
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s OWNER TO %s", table, owner)); err != nil {
+				t.Fatalf("could not set test_table owner to %s: %v", owner, err)
+			}
+		}
 	}
 	// In this case we need to drop table after each test.
 	return func() {
+		db, err := sql.Open("postgres", config.connStr(dbName))
+		defer db.Close()
+
+		if err != nil {
+			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+		}
+
 		for _, table := range tables {
-			db.Exec(fmt.Sprintf("DROP TABLE %s", table))
+			if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", table)); err != nil {
+				log.Fatalf("could not drop table %s: %v", table, err)
+			}
 		}
 	}
 }
