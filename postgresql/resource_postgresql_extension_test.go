@@ -45,7 +45,17 @@ func testAccCheckPostgresqlExtensionDestroy(s *terraform.State) error {
 			continue
 		}
 
-		exists, err := checkExtensionExists(client, rs.Primary.ID)
+		database, ok := rs.Primary.Attributes[extDatabaseAttr]
+		if !ok {
+			return fmt.Errorf("No Attribute for database is set")
+		}
+		txn, err := startTransaction(client, database)
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
+
+		exists, err := checkExtensionExists(txn, getExtensionNameFromID(rs.Primary.ID))
 
 		if err != nil {
 			return fmt.Errorf("Error checking extension %s", err)
@@ -70,8 +80,24 @@ func testAccCheckPostgresqlExtensionExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No ID is set")
 		}
 
+		database, ok := rs.Primary.Attributes[extDatabaseAttr]
+		if !ok {
+			return fmt.Errorf("No Attribute for database is set")
+		}
+
+		extName, ok := rs.Primary.Attributes[extNameAttr]
+		if !ok {
+			return fmt.Errorf("No Attribute for extension name is set")
+		}
+
 		client := testAccProvider.Meta().(*Client)
-		exists, err := checkExtensionExists(client, rs.Primary.ID)
+		txn, err := startTransaction(client, database)
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
+
+		exists, err := checkExtensionExists(txn, extName)
 
 		if err != nil {
 			return fmt.Errorf("Error checking extension %s", err)
@@ -124,9 +150,9 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 	})
 }
 
-func checkExtensionExists(client *Client, extensionName string) (bool, error) {
+func checkExtensionExists(txn *sql.Tx, extensionName string) (bool, error) {
 	var _rez bool
-	err := client.DB().QueryRow("SELECT TRUE from pg_catalog.pg_extension d WHERE extname=$1", extensionName).Scan(&_rez)
+	err := txn.QueryRow("SELECT TRUE from pg_catalog.pg_extension d WHERE extname=$1", extensionName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -135,6 +161,47 @@ func checkExtensionExists(client *Client, extensionName string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func TestAccPostgresqlExtension_Database(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	testAccPostgresqlExtensionDatabaseConfig := fmt.Sprintf(`
+	resource "postgresql_extension" "myextension" {
+		name     = "pg_trgm"
+		database = "%s"
+	}
+	`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureExtension)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlExtensionDatabaseConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlExtensionExists("postgresql_extension.myextension"),
+					resource.TestCheckResourceAttr(
+						"postgresql_extension.myextension", "name", "pg_trgm"),
+					resource.TestCheckResourceAttr(
+						"postgresql_extension.myextension", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_extension.myextension", "database", dbName),
+					resource.TestCheckResourceAttrSet(
+						"postgresql_extension.myextension", "version"),
+				),
+			},
+		},
+	})
 }
 
 var testAccPostgresqlExtensionConfig = `

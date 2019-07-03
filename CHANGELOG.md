@@ -1,4 +1,12 @@
 ## 1.1.0 (Unreleased)
+
+BREAKING CHANGES:
+
+FEATURES:
+
+* `postgresql_extension`: allow to create extension on another database from the provider.
+
+
 ## 1.0.0 (June 21, 2019)
 
 BREAKING CHANGES:

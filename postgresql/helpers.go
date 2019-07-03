@@ -12,6 +12,13 @@ import (
 	"github.com/lib/pq"
 )
 
+// QueryAble is a DB connection (sql.DB/Tx)
+type QueryAble interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
+
 // pqQuoteLiteral returns a string literal safe for inclusion in a PostgreSQL
 // query as a parameter.  The resulting string still needs to be wrapped in
 // single quotes in SQL (i.e. fmt.Sprintf(`'%s'`, pqQuoteLiteral("str"))).  See
@@ -153,8 +160,8 @@ func startTransaction(client *Client, database string) (*sql.Tx, error) {
 	return txn, nil
 }
 
-func dbExists(txn *sql.Tx, dbname string) (bool, error) {
-	err := txn.QueryRow("SELECT datname FROM pg_database WHERE datname=$1", dbname).Scan(&dbname)
+func dbExists(db QueryAble, dbname string) (bool, error) {
+	err := db.QueryRow("SELECT datname FROM pg_database WHERE datname=$1", dbname).Scan(&dbname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

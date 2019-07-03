@@ -25,3 +25,4 @@ resource "postgresql_extension" "my_extension" {
 * `name` - (Required) The name of the extension.
 * `schema` - (Optional) Sets the schema of an extension.
 * `version` - (Optional) Sets the version number of the extension.
+* `database` - (Optional) Which database to create the extension on. Defaults to provider database.
