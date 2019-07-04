@@ -1,7 +1,5 @@
 ## 1.1.0 (Unreleased)
 
-BREAKING CHANGES:
-
 FEATURES:
 
 * `postgresql_extension`: allow to create extension on another database from the provider.
