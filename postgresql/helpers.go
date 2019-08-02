@@ -37,7 +37,7 @@ func validateConnLimit(v interface{}, key string) (warnings []string, errors []e
 	return
 }
 
-func isRoleMember(db *sql.DB, role, member string) (bool, error) {
+func isRoleMember(db QueryAble, role, member string) (bool, error) {
 	var _rez int
 	err := db.QueryRow(
 		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
@@ -57,7 +57,7 @@ func isRoleMember(db *sql.DB, role, member string) (bool, error) {
 // grantRoleMembership grants the role *role* to the user *member*.
 // It returns false if the grant is not needed because the user is already
 // a member of this role.
-func grantRoleMembership(db *sql.DB, role, member string) (bool, error) {
+func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 	if member == role {
 		return false, nil
 	}
@@ -80,7 +80,7 @@ func grantRoleMembership(db *sql.DB, role, member string) (bool, error) {
 	return true, nil
 }
 
-func revokeRoleMembership(db *sql.DB, role, member string) error {
+func revokeRoleMembership(db QueryAble, role, member string) error {
 	if member == role {
 		return nil
 	}

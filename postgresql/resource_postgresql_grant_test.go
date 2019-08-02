@@ -18,7 +18,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 	defer teardown()
 
 	testTables := []string{"test_schema.test_table", "test_schema.test_table2"}
-	createTestTables(t, dbSuffix, testTables)
+	createTestTables(t, dbSuffix, testTables, "")
 
 	dbName, roleName := getTestDBNames(dbSuffix)
 	var testGrantSelect = fmt.Sprintf(`

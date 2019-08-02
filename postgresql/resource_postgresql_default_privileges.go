@@ -38,7 +38,7 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "Role for which apply default privileges (You can change default privileges only for objects that will be created by yourself or by roles that you are a member of)",
+				Description: "Target role for which to alter default privileges.",
 			},
 			"schema": {
 				Type:        schema.TypeString,
@@ -100,6 +100,8 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 	database := d.Get("database").(string)
 
 	client := meta.(*Client)
+	owner := d.Get("owner").(string)
+	currentUser := client.config.getDatabaseUsername()
 
 	client.catalogLock.Lock()
 	defer client.catalogLock.Unlock()
@@ -110,6 +112,13 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 	}
 	defer deferredRollback(txn)
 
+	// Needed in order to set the owner of the db if the connection user is not a
+	// superuser
+	ownerGranted, err := grantRoleMembership(txn, owner, currentUser)
+	if err != nil {
+		return err
+	}
+
 	// Revoke all privileges before granting otherwise reducing privileges will not work.
 	// We just have to revoke them in the same transaction so role will not lost his privileges between revoke and grant.
 	if err = revokeRoleDefaultPrivileges(txn, d); err != nil {
@@ -118,6 +127,14 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 
 	if err = grantRoleDefaultPrivileges(txn, d); err != nil {
 		return err
+	}
+
+	// Revoke the owner privileges if we had to grant it.
+	if ownerGranted {
+		err = revokeRoleMembership(txn, owner, currentUser)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := txn.Commit(); err != nil {
@@ -137,6 +154,8 @@ func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta inte
 
 func resourcePostgreSQLDefaultPrivilegesDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client)
+	owner := d.Get("owner").(string)
+	currentUser := client.config.getDatabaseUsername()
 
 	client.catalogLock.Lock()
 	defer client.catalogLock.Unlock()
@@ -147,7 +166,25 @@ func resourcePostgreSQLDefaultPrivilegesDelete(d *schema.ResourceData, meta inte
 	}
 	defer deferredRollback(txn)
 
-	revokeRoleDefaultPrivileges(txn, d)
+	// Needed in order to set the owner of the db if the connection user is not a
+	// superuser
+	ownerGranted, err := grantRoleMembership(txn, owner, currentUser)
+	if err != nil {
+		return err
+	}
+
+	if err = revokeRoleDefaultPrivileges(txn, d); err != nil {
+		return err
+	}
+
+	// Revoke the owner privileges if we had to grant it.
+	if ownerGranted {
+		err = revokeRoleMembership(txn, owner, currentUser)
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := txn.Commit(); err != nil {
 		return err
 	}
@@ -203,12 +240,6 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		privileges = append(privileges, priv.(string))
 	}
 
-	// TODO: We grant default privileges for the DB owner
-	// For that we need to be either superuser or a member of the owner role.
-	// With AWS RDS, It's not possible to create superusers as it is restricted by AWS itself.
-	// In that case, the only solution would be to have the PostgreSQL user used by Terraform
-	// to be also part of the database owner role.
-
 	query := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT %s ON %sS TO %s",
 		pq.QuoteIdentifier(d.Get("owner").(string)),
 		pq.QuoteIdentifier(pgSchema),
@@ -236,8 +267,11 @@ func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		pq.QuoteIdentifier(d.Get("role").(string)),
 	)
 
-	_, err := txn.Exec(query)
-	return err
+	if _, err := txn.Exec(query); err != nil {
+		return errwrap.Wrapf("could not revoke default privileges: {{err}}", err)
+	}
+	return nil
+
 }
 
 func generateDefaultPrivilegesID(d *schema.ResourceData) string {
