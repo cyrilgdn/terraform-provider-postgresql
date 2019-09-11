@@ -37,7 +37,7 @@ func testAccPreCheck(t *testing.T) {
 		t.Fatal("PGUSER must be set for acceptance tests")
 	}
 
-	err := testAccProvider.Configure(terraform.NewResourceConfig(nil))
+	err := testAccProvider.Configure(terraform.NewResourceConfigRaw(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
