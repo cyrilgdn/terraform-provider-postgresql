@@ -1,4 +1,15 @@
 ## 1.2.0 (Unreleased)
+
+BUG FIXES:
+
+* `postgresql_default_privileges`: Grant owner to connected role before applying default privileges.
+  ([#71](https://github.com/terraform-providers/terraform-provider-postgresql/pull/71))
+
+NOTES:
+
+* Terraform SDK upgrade to v0.12.8.
+
+
 ## 1.1.0 (July 04, 2019)
 
 FEATURES:
