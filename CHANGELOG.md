@@ -7,7 +7,7 @@ BUG FIXES:
 
 NOTES:
 
-* Terraform SDK upgrade to v0.12.8.
+* Terraform SDK migrated to new standalone Terraform plugin SDK v1.0.0
 
 
 ## 1.1.0 (July 04, 2019)
