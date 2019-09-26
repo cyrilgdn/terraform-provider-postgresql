@@ -5,8 +5,8 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/errwrap"
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
 const (
@@ -156,7 +156,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		DatabaseUsername:  d.Get("database_username").(string),
 		Superuser:         d.Get("superuser").(bool),
 		SSLMode:           sslMode,
-		ApplicationName:   tfAppName(),
+		ApplicationName:   "Terraform provider",
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),
 		MaxConns:          d.Get("max_connections").(int),
 		ExpectedVersion:   version,
@@ -168,8 +168,4 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	return client, nil
-}
-
-func tfAppName() string {
-	return fmt.Sprintf("Terraform v%s", terraform.VersionString())
 }
