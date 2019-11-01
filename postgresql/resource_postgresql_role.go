@@ -30,6 +30,7 @@ const (
 	roleSuperuserAttr         = "superuser"
 	roleValidUntilAttr        = "valid_until"
 	roleRolesAttr             = "roles"
+	roleSearchPathAttr        = "search_path"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -70,6 +71,13 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Set:         schema.HashString,
 				MinItems:    0,
 				Description: "Role(s) to grant to this new role",
+			},
+			roleSearchPathAttr: {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				MinItems:    0,
+				Description: "Sets the role's search path",
 			},
 			roleEncryptedPassAttr: {
 				Type:        schema.TypeBool,
@@ -270,6 +278,10 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
+	if err = alterSearchPath(txn, d); err != nil {
+		return err
+	}
+
 	if err = txn.Commit(); err != nil {
 		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
 	}
@@ -352,7 +364,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
-	var roleRoles pq.ByteaArray
+	var roleRoles, roleConfig pq.ByteaArray
 
 	roleID := d.Id()
 
@@ -365,6 +377,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 		"rolcanlogin",
 		"rolconnlimit",
 		`COALESCE(rolvaliduntil::TEXT, 'infinity')`,
+		"rolconfig",
 	}
 
 	values := []interface{}{
@@ -377,6 +390,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 		&roleCanLogin,
 		&roleConnLimit,
 		&roleValidUntil,
+		&roleConfig,
 	}
 
 	if c.featureSupported(featureReplication) {
@@ -421,6 +435,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	d.Set(roleReplicationAttr, roleReplication)
 	d.Set(roleReplicationAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
+	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 
 	d.SetId(roleName)
 
@@ -430,6 +445,18 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	}
 
 	d.Set(rolePasswordAttr, password)
+	return nil
+}
+
+// readSearchPath searches for a search_path entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readSearchPath(roleConfig pq.ByteaArray) []string {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, roleSearchPathAttr) {
+			return strings.Split(strings.TrimPrefix(config, roleSearchPathAttr+"="), ", ")
+		}
+	}
 	return nil
 }
 
@@ -548,6 +575,10 @@ func resourcePostgreSQLRoleUpdate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if err = grantRoles(txn, d); err != nil {
+		return err
+	}
+
+	if err = alterSearchPath(txn, d); err != nil {
 		return err
 	}
 
@@ -819,6 +850,33 @@ func grantRoles(txn *sql.Tx, d *schema.ResourceData) error {
 		if _, err := txn.Exec(query); err != nil {
 			return errwrap.Wrapf(fmt.Sprintf("could not grant role %s to %s: {{err}}", grantingRole, role), err)
 		}
+	}
+	return nil
+}
+
+func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
+	role := d.Get(roleNameAttr).(string)
+	searchPathInterface := d.Get(roleSearchPathAttr).([]interface{})
+
+	var searchPathString []string
+	if len(searchPathInterface) > 0 {
+		searchPathString = make([]string, len(searchPathInterface))
+		for i, searchPathPart := range searchPathInterface {
+			if strings.Contains(searchPathPart.(string), ", ") {
+				return fmt.Errorf("search_path cannot contain `, `: %v", searchPathPart)
+			}
+			searchPathString[i] = pq.QuoteIdentifier(searchPathPart.(string))
+		}
+	} else {
+		searchPathString = []string{"DEFAULT"}
+	}
+	searchPath := strings.Join(searchPathString[:], ", ")
+
+	query := fmt.Sprintf(
+		"ALTER ROLE %s SET search_path TO %s", pq.QuoteIdentifier(role), searchPath,
+	)
+	if _, err := txn.Exec(query); err != nil {
+		return errwrap.Wrapf(fmt.Sprintf("could not set search_path %s for %s: {{err}}", searchPath, role), err)
 	}
 	return nil
 }

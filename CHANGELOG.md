@@ -1,4 +1,10 @@
 ## 1.2.1 (Unreleased)
+
+FEATURES:
+
+* `postgresql_role`: Add `search_path` attribute.
+  ([#93](https://github.com/terraform-providers/terraform-provider-postgresql/pull/93))
+
 ## 1.2.0 (September 26, 2019)
 
 BUG FIXES:
