@@ -131,10 +131,15 @@ func (c *Config) NewClient(database string) (*Client, error) {
 		db.SetMaxIdleConns(0)
 		db.SetMaxOpenConns(c.MaxConns)
 
-		version, err := fingerprintCapabilities(db)
-		if err != nil {
-			db.Close()
-			return nil, errwrap.Wrapf("error detecting capabilities: {{err}}", err)
+		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
+		version := &c.ExpectedVersion
+		if defaultVersion.Equals(c.ExpectedVersion) {
+			// Version hint not set by user, need to fingerprint
+			version, err = fingerprintCapabilities(db)
+			if err != nil {
+				db.Close()
+				return nil, errwrap.Wrapf("error detecting capabilities: {{err}}", err)
+			}
 		}
 
 		dbEntry = dbRegistryEntry{
