@@ -121,7 +121,7 @@ func validateConnTimeout(v interface{}, key string) (warnings []string, errors [
 }
 
 func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
-	if _, err := semver.Parse(v.(string)); err != nil {
+	if _, err := semver.ParseTolerant(v.(string)); err != nil {
 		errors = append(errors, fmt.Errorf("invalid version (%q): %v", v.(string), err))
 	}
 	return
@@ -146,7 +146,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		}
 	}
 	versionStr := d.Get("expected_version").(string)
-	version, _ := semver.Parse(versionStr)
+	version, _ := semver.ParseTolerant(versionStr)
 
 	config := Config{
 		Host:              d.Get("host").(string),
