@@ -31,6 +31,7 @@ const (
 	roleValidUntilAttr        = "valid_until"
 	roleRolesAttr             = "roles"
 	roleSearchPathAttr        = "search_path"
+	roleStatementTimeoutAttr  = "statement_timeout"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -151,6 +152,13 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "Skip actually running the REASSIGN OWNED command when removing a role from PostgreSQL",
+			},
+			roleStatementTimeoutAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      0,
+				Description:  "Abort any statement that takes more than the specified number of milliseconds",
+				ValidateFunc: validateStatementTimeout,
 			},
 		},
 	}
@@ -361,7 +369,7 @@ func resourcePostgreSQLRoleRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
-	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
+	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS, roleStatementTimeout bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
 	var roleRoles, roleConfig pq.ByteaArray
@@ -391,6 +399,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 		&roleConnLimit,
 		&roleValidUntil,
 		&roleConfig,
+		&roleStatementTimeout,
 	}
 
 	if c.featureSupported(featureReplication) {
@@ -436,6 +445,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	d.Set(roleReplicationAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
+	d.Set(roleStatementTimeoutAttr, roleStatementTimeout)
 
 	d.SetId(roleName)
 
@@ -579,6 +589,10 @@ func resourcePostgreSQLRoleUpdate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if err = alterSearchPath(txn, d); err != nil {
+		return err
+	}
+
+	if err = setStatementTimeout(txn, d); err != nil {
 		return err
 	}
 
@@ -878,5 +892,20 @@ func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
 	if _, err := txn.Exec(query); err != nil {
 		return errwrap.Wrapf(fmt.Sprintf("could not set search_path %s for %s: {{err}}", searchPath, role), err)
 	}
+	return nil
+}
+
+func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleStatementTimeoutAttr) {
+		return nil
+	}
+
+	statementTimeout := d.Get(roleStatementTimeoutAttr).(int)
+	roleName := d.Get(roleNameAttr).(string)
+	sql := fmt.Sprintf("ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout)
+	if _, err := txn.Exec(sql); err != nil {
+		return errwrap.Wrapf("Error updating role STATEMENT TIMEOUT: {{err}}", err)
+	}
+
 	return nil
 }
