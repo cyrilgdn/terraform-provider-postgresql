@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/errwrap"
@@ -156,7 +157,6 @@ func resourcePostgreSQLRole() *schema.Resource {
 			roleStatementTimeoutAttr: {
 				Type:         schema.TypeInt,
 				Optional:     true,
-				Default:      0,
 				Description:  "Abort any statement that takes more than the specified number of milliseconds",
 				ValidateFunc: validateStatementTimeout,
 			},
@@ -290,6 +290,10 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
+	if err = setStatementTimeout(txn, d); err != nil {
+		return err
+	}
+
 	if err = txn.Commit(); err != nil {
 		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
 	}
@@ -369,7 +373,7 @@ func resourcePostgreSQLRoleRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
-	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS, roleStatementTimeout bool
+	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
 	var roleRoles, roleConfig pq.ByteaArray
@@ -399,7 +403,6 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 		&roleConnLimit,
 		&roleValidUntil,
 		&roleConfig,
-		&roleStatementTimeout,
 	}
 
 	if c.featureSupported(featureReplication) {
@@ -445,7 +448,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	d.Set(roleReplicationAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
-	d.Set(roleStatementTimeoutAttr, roleStatementTimeout)
+	d.Set(roleStatementTimeoutAttr, readStatementTimeout(roleConfig))
 
 	d.SetId(roleName)
 
@@ -464,10 +467,28 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 	for _, v := range roleConfig {
 		config := string(v)
 		if strings.HasPrefix(config, roleSearchPathAttr) {
-			return strings.Split(strings.TrimPrefix(config, roleSearchPathAttr+"="), ", ")
+			var result = strings.Split(strings.TrimPrefix(config, roleSearchPathAttr+"="), ", ")
+			return result
 		}
 	}
 	return nil
+}
+
+// readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readStatementTimeout(roleConfig pq.ByteaArray) int {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, roleStatementTimeoutAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				fmt.Println(err)
+			}
+			return res
+		}
+	}
+	return 0
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -900,11 +921,13 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 		return nil
 	}
 
-	statementTimeout := d.Get(roleStatementTimeoutAttr).(int)
 	roleName := d.Get(roleNameAttr).(string)
-	sql := fmt.Sprintf("ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout)
+	statementTimeout := d.Get(roleStatementTimeoutAttr).(int)
+	sql := fmt.Sprintf(
+		"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
+	)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role STATEMENT TIMEOUT: {{err}}", err)
+		return errwrap.Wrapf(fmt.Sprintf("could not set statementtimeout %d for %s: {{err}}", statementTimeout, roleName), err)
 	}
 
 	return nil
