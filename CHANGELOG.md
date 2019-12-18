@@ -1,4 +1,11 @@
-## 1.3.1 (Unreleased)
+## 1.4.0 (Unreleased)
+
+FEATURES:
+
+* `postgresql_schema`: Add `database` attribute.
+  ([#100](https://github.com/terraform-providers/terraform-provider-postgresql/pull/100))
+
+
 ## 1.3.0 (November 01, 2019)
 
 FEATURES:
