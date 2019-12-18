@@ -162,6 +162,40 @@ func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlSchema_Database(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	testAccPostgresqlSchemaDatabaseConfig := fmt.Sprintf(`
+	resource "postgresql_schema" "test_database" {
+		name     = "test_database"
+		database = "%s"
+	}
+	`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlSchemaDatabaseConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.test_database", "test_database"),
+					resource.TestCheckResourceAttr(
+						"postgresql_schema.test_database", "name", "test_database"),
+					resource.TestCheckResourceAttr(
+						"postgresql_schema.test_database", "database", dbName),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
@@ -170,7 +204,19 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 			continue
 		}
 
-		exists, err := checkSchemaExists(client, rs.Primary.ID)
+		database, ok := rs.Primary.Attributes[schemaDatabaseAttr]
+		if !ok {
+			return fmt.Errorf("No Attribute for database is set")
+		}
+
+		txn, err := startTransaction(client, database)
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
+
+		exists, err := checkSchemaExists(txn, getExtensionNameFromID(rs.Primary.ID))
+
 		if err != nil {
 			return fmt.Errorf("Error checking schema %s", err)
 		}
@@ -194,13 +240,24 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 			return fmt.Errorf("No ID is set")
 		}
 
+		database, ok := rs.Primary.Attributes[schemaDatabaseAttr]
+		if !ok {
+			return fmt.Errorf("No Attribute for database is set")
+		}
+
 		actualSchemaName := rs.Primary.Attributes["name"]
 		if actualSchemaName != schemaName {
 			return fmt.Errorf("Wrong value for schema name expected %s got %s", schemaName, actualSchemaName)
 		}
 
 		client := testAccProvider.Meta().(*Client)
-		exists, err := checkSchemaExists(client, rs.Primary.ID)
+		txn, err := startTransaction(client, database)
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
+
+		exists, err := checkSchemaExists(txn, schemaName)
 
 		if err != nil {
 			return fmt.Errorf("Error checking schema %s", err)
@@ -214,19 +271,17 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 	}
 }
 
-func checkSchemaExists(client *Client, schemaName string) (bool, error) {
-	var _rez string
-	if err := client.DB().QueryRow("SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname=$1", schemaName).Scan(&_rez); err != nil {
-		switch {
-		case err == sql.ErrNoRows:
-			return false, nil
-		default:
-			return false, errwrap.Wrapf("error reading info about schema: {{err}}", err)
-		}
+func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
+	var _rez bool
+	err := txn.QueryRow("SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname=$1", schemaName).Scan(&_rez)
+	switch {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, errwrap.Wrapf("error reading info about schema: {{err}}", err)
 	}
 
 	return true, nil
-
 }
 
 const testAccPostgresqlSchemaConfig = `

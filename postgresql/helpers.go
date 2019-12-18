@@ -208,3 +208,13 @@ func deferredRollback(txn *sql.Tx) {
 		log.Printf("[ERR] could not rollback transaction: %v", err)
 	}
 }
+
+func getDatabase(d *schema.ResourceData, client *Client) string {
+	database := client.databaseName
+
+	if v, ok := d.GetOk(extDatabaseAttr); ok {
+		database = v.(string)
+	}
+
+	return database
+}
