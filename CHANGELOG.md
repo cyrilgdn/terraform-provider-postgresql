@@ -5,6 +5,10 @@ FEATURES:
 * `postgresql_schema`: Add `database` attribute.
   ([#100](https://github.com/terraform-providers/terraform-provider-postgresql/pull/100))
 
+* `provider`: Trust expected_version if provided
+  ([#103](https://github.com/terraform-providers/terraform-provider-postgresql/pull/103))
+  This allows to disable the version detection which requires a database connection, so plan on empty state does not require a connection.
+
 
 ## 1.3.0 (November 01, 2019)
 
