@@ -196,6 +196,32 @@ func TestAccPostgresqlSchema_Database(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlSchema_DropCascade(t *testing.T) {
+	var testAccPostgresqlSchemaConfig = `
+resource "postgresql_schema" "test_cascade" {
+  name = "foo"
+  drop_cascade = true
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlSchemaConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.test_cascade", "foo"),
+					resource.TestCheckResourceAttr("postgresql_schema.test_cascade", "name", "foo"),
+
+					// This will create a table in the schema to check if the drop will work thanks to the cascade
+					testAccCreateSchemaTable("foo"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
@@ -282,6 +308,21 @@ func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func testAccCreateSchemaTable(schemaName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+
+		client := testAccProvider.Meta().(*Client)
+		db := client.DB()
+
+		_, err := db.Exec(fmt.Sprintf("CREATE TABLE %s.test_table (id serial)", schemaName))
+		if err != nil {
+			return fmt.Errorf("could not create test table in schema %s: %s", schemaName, err)
+		}
+
+		return nil
+	}
 }
 
 const testAccPostgresqlSchemaConfig = `

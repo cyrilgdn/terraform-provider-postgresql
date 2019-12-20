@@ -21,6 +21,7 @@ const (
 	schemaOwnerAttr    = "owner"
 	schemaPolicyAttr   = "policy"
 	schemaIfNotExists  = "if_not_exists"
+	schemaDropCascade  = "drop_cascade"
 
 	schemaPolicyCreateAttr          = "create"
 	schemaPolicyCreateWithGrantAttr = "create_with_grant"
@@ -63,6 +64,12 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Optional:    true,
 				Default:     true,
 				Description: "When true, use the existing schema if it exists",
+			},
+			schemaDropCascade: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "When true, will also drop all the objects that are contained in the schema",
 			},
 			schemaPolicyAttr: {
 				Type:     schema.TypeSet,
@@ -213,8 +220,12 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 
 	schemaName := d.Get(schemaNameAttr).(string)
 
-	// NOTE(sean@): Deliberately not performing a cascading drop.
-	sql := fmt.Sprintf("DROP SCHEMA %s", pq.QuoteIdentifier(schemaName))
+	dropMode := "RESTRICT"
+	if d.Get(schemaDropCascade).(bool) {
+		dropMode = "CASCADE"
+	}
+
+	sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
 	if _, err = txn.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error deleting schema: {{err}}", err)
 	}
