@@ -9,6 +9,9 @@ FEATURES:
   ([#103](https://github.com/terraform-providers/terraform-provider-postgresql/pull/103))
   This allows to disable the version detection which requires a database connection, so plan on empty state does not require a connection.
 
+* `postgresql_schema`: Add `drop_cascade` attribute.
+  ([#108](https://github.com/terraform-providers/terraform-provider-postgresql/pull/108))
+
 
 ## 1.3.0 (November 01, 2019)
 
