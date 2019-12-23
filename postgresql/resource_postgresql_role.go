@@ -448,7 +448,13 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	d.Set(roleReplicationAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
-	d.Set(roleStatementTimeoutAttr, readStatementTimeout(roleConfig))
+
+	statementTimeout, err := readStatementTimeout(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleStatementTimeoutAttr, statementTimeout)
 
 	d.SetId(roleName)
 
@@ -476,19 +482,19 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 
 // readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
 // In case no such value is present, it returns nil.
-func readStatementTimeout(roleConfig pq.ByteaArray) int {
+func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 	for _, v := range roleConfig {
 		config := string(v)
 		if strings.HasPrefix(config, roleStatementTimeoutAttr) {
 			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
-				fmt.Println(err)
+				return -1, err
 			}
-			return res
+			return res, nil
 		}
 	}
-	return 0
+	return 0, nil
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -923,12 +929,20 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 
 	roleName := d.Get(roleNameAttr).(string)
 	statementTimeout := d.Get(roleStatementTimeoutAttr).(int)
-	sql := fmt.Sprintf(
-		"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
-	)
-	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("could not set statementtimeout %d for %s: {{err}}", statementTimeout, roleName), err)
+	if statementTimeout != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return errwrap.Wrapf(fmt.Sprintf("could not set statement_timeout %d for %s: {{err}}", statementTimeout, roleName), err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET statement_timeout", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return errwrap.Wrapf(fmt.Sprintf("could not reset statement_timeout for %s: {{err}}", roleName), err)
+		}
 	}
-
 	return nil
 }
