@@ -37,6 +37,14 @@ func validateConnLimit(v interface{}, key string) (warnings []string, errors []e
 	return
 }
 
+func validateStatementTimeout(v interface{}, key string) (warnings []string, errors []error) {
+	value := v.(int)
+	if value < 0 {
+		errors = append(errors, fmt.Errorf("%s can not be less than 0", key))
+	}
+	return
+}
+
 func isRoleMember(db QueryAble, role, member string) (bool, error) {
 	var _rez int
 	err := db.QueryRow(
