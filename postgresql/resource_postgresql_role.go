@@ -489,7 +489,7 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
-				return -1, err
+				return -1, errwrap.Wrapf("Error reading statement_timeout: {{err}}", err)
 			}
 			return res, nil
 		}
