@@ -32,7 +32,8 @@ $ make build
 
 Using the provider
 ----------------------
-## Fill in for each provider
+
+Usage examples can be found in the Terraform [provider documentation](https://www.terraform.io/docs/providers/postgresql/index.html)
 
 Developing the Provider
 ---------------------------
