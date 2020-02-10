@@ -534,18 +534,23 @@ func readRolePassword(c *Client, d *schema.ResourceData, roleCanLogin bool) (str
 	case err != nil:
 		return "", errwrap.Wrapf("Error reading role: {{err}}", err)
 	}
-
 	// If the password isn't already in md5 format, but hashing the input
 	// matches the password in the database for the user, they are the same
-	if statePassword != "" && !strings.HasPrefix(statePassword, "md5") {
-		hasher := md5.New()
-		hasher.Write([]byte(statePassword + d.Id()))
-		hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
+	if statePassword != "" && !strings.HasPrefix(statePassword, "md5") && !strings.HasPrefix(statePassword, "SCRAM-SHA-256") {
+		if strings.HasPrefix(rolePassword, "md5") {
+			hasher := md5.New()
+			hasher.Write([]byte(statePassword + d.Id()))
+			hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
 
-		if hashedPassword == rolePassword {
-			// The passwords are actually the same
-			// make Terraform think they are the same
+			if hashedPassword == rolePassword {
+				// The passwords are actually the same
+				// make Terraform think they are the same
+				return statePassword, nil
+			}
+		}
+		if strings.HasPrefix(rolePassword, "SCRAM-SHA-256") {
 			return statePassword, nil
+			// TODO : implement scram-sha-256 challenge request to the server
 		}
 	}
 	return rolePassword, nil
