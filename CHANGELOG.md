@@ -1,4 +1,28 @@
 ## 1.4.1 (Unreleased)
+
+FEATURES:
+
+* `postgresql_role`: Allow to configure `statement_timeout` for a role.
+  ([#105](https://github.com/terraform-providers/terraform-provider-postgresql/pull/105))
+
+FIXES:
+
+* Don't md5 SCRAM-SHA-256 passwords.
+  ([#114](https://github.com/terraform-providers/terraform-provider-postgresql/pull/114))
+
+DEV IMPROVEMENTS:
+
+* Upgrade lib/pq to v1.3.0 to support SCRAM-SHA-256 password.
+  ([#113](https://github.com/terraform-providers/terraform-provider-postgresql/pull/113))
+
+DOCUMENTATION:
+
+* Update the "use" section to link to the official provider usage documentation.
+  ([#115](https://github.com/terraform-providers/terraform-provider-postgresql/pull/115))
+
+* `postgresql_schema`: Add missing documentation for `database` setting.
+  ([#118](https://github.com/terraform-providers/terraform-provider-postgresql/pull/118))
+
 ## 1.4.0 (December 25, 2019)
 
 FEATURES:
