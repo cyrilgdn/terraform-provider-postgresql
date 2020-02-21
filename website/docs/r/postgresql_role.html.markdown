@@ -114,6 +114,8 @@ resource "postgresql_role" "my_replication_role" {
   an implicit
   [`DROP OWNED`](https://www.postgresql.org/docs/current/static/sql-drop-owned.html)).
 
+* `statement_timeout` - (Optional) Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) setting for this role which allows to abort any statement that takes more than the specified amount of time.
+
 ## Import Example
 
 `postgresql_role` supports importing resources.  Supposing the following
