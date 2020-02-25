@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/lib/pq"
 )
 
@@ -88,7 +89,7 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Optional:     true,
 				Default:      -1,
 				Description:  "How many concurrent connections can be made to this database",
-				ValidateFunc: validateConnLimit,
+				ValidateFunc: validation.IntAtLeast(-1),
 			},
 			dbAllowConnsAttr: {
 				Type:        schema.TypeBool,

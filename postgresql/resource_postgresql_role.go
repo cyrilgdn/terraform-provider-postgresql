@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/lib/pq"
 )
 
@@ -98,7 +99,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:     true,
 				Default:      -1,
 				Description:  "How many concurrent connections can be made with this role",
-				ValidateFunc: validateConnLimit,
+				ValidateFunc: validation.IntAtLeast(-1),
 			},
 			roleSuperuserAttr: {
 				Type:        schema.TypeBool,
@@ -158,7 +159,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Description:  "Abort any statement that takes more than the specified number of milliseconds",
-				ValidateFunc: validateStatementTimeout,
+				ValidateFunc: validation.IntAtLeast(0),
 			},
 		},
 	}
