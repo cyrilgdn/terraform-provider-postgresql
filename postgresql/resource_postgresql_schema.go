@@ -12,7 +12,7 @@ import (
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/lib/pq"
-	"github.com/sean-/postgresql-acl"
+	acl "github.com/sean-/postgresql-acl"
 )
 
 const (
