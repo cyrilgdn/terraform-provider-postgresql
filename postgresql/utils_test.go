@@ -192,3 +192,28 @@ func testCheckTablesPrivileges(t *testing.T, dbSuffix string, tables []string, a
 	}
 	return nil
 }
+
+func testCheckDatabasesPrivileges(t *testing.T, dbSuffix string, allowedPrivileges []string) error {
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Connect as the test role
+	config.Username = roleName
+	config.Password = testRolePassword
+
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer db.Close()
+
+	queries := map[string]string{
+		"CREATE": fmt.Sprintf("CREATE DATABASE foo"),
+	}
+
+	for _, query := range queries {
+		db.Exec(query)
+	}
+
+	return nil
+}

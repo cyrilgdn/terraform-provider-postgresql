@@ -15,11 +15,19 @@ import (
 )
 
 var objectTypes = map[string]string{
+	"database": "d",
 	"table":    "r",
 	"sequence": "S",
 }
 
 func resourcePostgreSQLGrant() *schema.Resource {
+
+	allowedObjectTypes := make([]string, 0, len(objectTypes))
+
+	for k := range objectTypes {
+		allowedObjectTypes = append(allowedObjectTypes, k)
+	}
+
 	return &schema.Resource{
 		Create: resourcePostgreSQLGrantCreate,
 		// As create revokes and grants we can use it to update too
@@ -47,14 +55,11 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Description: "The database schema to grant privileges on for this role",
 			},
 			"object_type": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-				ValidateFunc: validation.StringInSlice([]string{
-					"table",
-					"sequence",
-				}, false),
-				Description: "The PostgreSQL object type to grant the privileges on (one of: table, sequence)",
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice(allowedObjectTypes, false),
+				Description:  "The PostgreSQL object type to grant the privileges on (one of: " + strings.Join(allowedObjectTypes, ", ") + ")",
 			},
 			"privileges": &schema.Schema{
 				Type:        schema.TypeSet,
@@ -63,6 +68,13 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Set:         schema.HashString,
 				MinItems:    1,
 				Description: "The list of privileges to grant",
+			},
+			"with_grant_option": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Default:     false,
+				Description: "Permit the grant recipient to grant it to others",
 			},
 		},
 	}
@@ -236,32 +248,70 @@ GROUP BY pg_class.relname;
 	return nil
 }
 
+func createGrantQuery(d *schema.ResourceData, privileges []string) string {
+	var query string
+
+	switch strings.ToUpper(d.Get("object_type").(string)) {
+	case "DATABASE":
+		query = fmt.Sprintf(
+			"GRANT %s ON DATABASE %s TO %s",
+			strings.Join(privileges, ","),
+			pq.QuoteIdentifier(d.Get("database").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "TABLE", "SEQUENCE":
+		query = fmt.Sprintf(
+			"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
+			strings.Join(privileges, ","),
+			strings.ToUpper(d.Get("object_type").(string)),
+			pq.QuoteIdentifier(d.Get("schema").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	}
+
+	if d.Get("with_grant_option").(bool) == true {
+		query = query + " WITH GRANT OPTION"
+	}
+
+	return query
+}
+
+func createRevokeQuery(d *schema.ResourceData) string {
+	var query string
+
+	switch strings.ToUpper(d.Get("object_type").(string)) {
+	case "DATABASE":
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s",
+			pq.QuoteIdentifier(d.Get("database").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "TABLE", "SEQUENCE":
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
+			strings.ToUpper(d.Get("object_type").(string)),
+			pq.QuoteIdentifier(d.Get("schema").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	}
+
+	return query
+}
+
 func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	privileges := []string{}
 	for _, priv := range d.Get("privileges").(*schema.Set).List() {
 		privileges = append(privileges, priv.(string))
 	}
 
-	query := fmt.Sprintf(
-		"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
-		strings.Join(privileges, ","),
-		strings.ToUpper(d.Get("object_type").(string)),
-		pq.QuoteIdentifier(d.Get("schema").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
-	)
+	query := createGrantQuery(d, privileges)
 
 	_, err := txn.Exec(query)
 	return err
 }
 
 func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	query := fmt.Sprintf(
-		"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
-		strings.ToUpper(d.Get("object_type").(string)),
-		pq.QuoteIdentifier(d.Get("schema").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
-	)
-
+	query := createRevokeQuery(d)
 	_, err := txn.Exec(query)
 	return err
 }
