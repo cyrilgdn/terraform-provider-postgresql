@@ -6,11 +6,12 @@ import (
 	"github.com/blang/semver"
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
 const (
-	defaultProviderMaxOpenConnections = 4
+	defaultProviderMaxOpenConnections = 20
 	defaultExpectedPostgreSQLVersion  = "9.0.0"
 )
 
@@ -81,14 +82,14 @@ func Provider() terraform.ResourceProvider {
 				Optional:     true,
 				DefaultFunc:  schema.EnvDefaultFunc("PGCONNECT_TIMEOUT", 180),
 				Description:  "Maximum wait for connection, in seconds. Zero or not specified means wait indefinitely.",
-				ValidateFunc: validateConnTimeout,
+				ValidateFunc: validation.IntAtLeast(-1),
 			},
 			"max_connections": {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Default:      defaultProviderMaxOpenConnections,
 				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
-				ValidateFunc: validateMaxConnections,
+				ValidateFunc: validation.IntAtLeast(-1),
 			},
 			"expected_version": {
 				Type:         schema.TypeString,
@@ -112,25 +113,9 @@ func Provider() terraform.ResourceProvider {
 	}
 }
 
-func validateConnTimeout(v interface{}, key string) (warnings []string, errors []error) {
-	value := v.(int)
-	if value < 0 {
-		errors = append(errors, fmt.Errorf("%s can not be less than 0", key))
-	}
-	return
-}
-
 func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
 	if _, err := semver.ParseTolerant(v.(string)); err != nil {
 		errors = append(errors, fmt.Errorf("invalid version (%q): %v", v.(string), err))
-	}
-	return
-}
-
-func validateMaxConnections(v interface{}, key string) (warnings []string, errors []error) {
-	value := v.(int)
-	if value < 1 {
-		errors = append(errors, fmt.Errorf("%s can not be less than 1", key))
 	}
 	return
 }
