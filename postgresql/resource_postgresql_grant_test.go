@@ -178,6 +178,9 @@ func TestAccPostgresqlGrant(t *testing.T) {
 			{
 				Config: testGrantSelect,
 				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"postgresql_grant.test", "id", fmt.Sprintf("%s_%s_test_schema_table", roleName, dbName),
+					),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3138006342", "SELECT"),
 					func(*terraform.State) error {
@@ -213,25 +216,27 @@ func TestAccPostgresqlGrant(t *testing.T) {
 }
 
 func TestAccPostgresqlGrantDatabase(t *testing.T) {
-	skipIfNotAcc(t)
+	// create a TF config with placeholder for privileges
+	// it will be filled in each step.
+	config := fmt.Sprintf(`
+resource "postgresql_role" "test" {
+	name     = "test_grant_role"
+	password = "%s"
+	login    = true
+}
 
-	// We have to create the database outside of resource.Test
-	// because we need to create tables to assert that grant are correctly applied
-	// and we don't have this resource yet
-	dbSuffix, teardown := setupTestDatabase(t, true, true)
-	defer teardown()
+resource "postgresql_database" "test_db" {
+	depends_on = [postgresql_role.test]
+	name = "test_grant_db"
+}
 
-	dbName, roleName := getTestDBNames(dbSuffix)
-	var testGrantSelect = fmt.Sprintf(`
-	resource "postgresql_grant" "test" {
-		database           = "%s"
-		role               = "%s"
-		schema             = "test_schema"
-		object_type        = "database"
-		privileges         = ["CONNECT", "CREATE"]
-		with_grant_option  = true
-	}
-	`, dbName, roleName)
+resource "postgresql_grant" "test" {
+	database    = postgresql_database.test_db.name
+	role        = postgresql_role.test.name
+	object_type = "database"
+	privileges  = %%s
+}
+`, testRolePassword)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -240,16 +245,36 @@ func TestAccPostgresqlGrantDatabase(t *testing.T) {
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
+			// Not allowed to create
 			{
-				Config: testGrantSelect,
+				Config: fmt.Sprintf(config, "[\"CONNECT\"]"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_grant_role_test_grant_db_database"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
+					testCheckDatabasesPrivileges(t, false),
+				),
+			},
+			// Can create but not grant
+			{
+				Config: fmt.Sprintf(config, "[\"CONNECT\", \"CREATE\"]"),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "2"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "true"),
-					func(*terraform.State) error {
-						return testCheckDatabasesPrivileges(t, dbSuffix, []string{"CONNECT"})
-					},
+					testCheckDatabasesPrivileges(t, true),
 				),
 			},
 		},
 	})
+}
+
+func testCheckDatabasesPrivileges(t *testing.T, canCreate bool) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		db := connectAsTestRole(t, "test_grant_role", "test_grant_db")
+		defer db.Close()
+
+		if err := testHasGrantForQuery(db, "CREATE SCHEMA plop", canCreate); err != nil {
+			return err
+		}
+		return nil
+	}
 }

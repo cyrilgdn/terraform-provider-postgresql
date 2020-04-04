@@ -1,11 +1,10 @@
 package postgresql
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"strings"
-
-	"database/sql"
 
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -111,7 +110,15 @@ var allowedPrivileges = map[string][]string{
 }
 
 // validatePrivileges checks that privileges to apply are allowed for this object type.
-func validatePrivileges(objectType string, privileges []interface{}) error {
+func validatePrivileges(d *schema.ResourceData) error {
+	objectType := d.Get("object_type").(string)
+	privileges := d.Get("privileges").(*schema.Set).List()
+
+	// Verify fields that are mandatory for specific object types
+	if objectType != "database" && d.Get("schema").(string) == "" {
+		return fmt.Errorf("parameter 'schema' is mandatory for object_type %s", objectType)
+	}
+
 	allowed, ok := allowedPrivileges[objectType]
 	if !ok {
 		return fmt.Errorf("unknown object type %s", objectType)

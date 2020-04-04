@@ -151,18 +151,45 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	}
 }
 
-func testCheckTablesPrivileges(t *testing.T, dbSuffix string, tables []string, allowedPrivileges []string) error {
+// testHasGrantForQuery executes a query and checks that it fails if
+// we were not allowed or succeses if we're allowed.
+func testHasGrantForQuery(db *sql.DB, query string, allowed bool) error {
+	_, err := db.Exec(query)
+	if err != nil {
+		if allowed {
+			return errwrap.Wrapf(
+				fmt.Sprintf(
+					"could not execute %s as expected: {{err}}", query,
+				), err,
+			)
+		}
+		return nil
+	}
+
+	if !allowed {
+		return fmt.Errorf("did not fail as expected when executing query '%s'", query)
+	}
+	return nil
+}
+
+func connectAsTestRole(t *testing.T, role, dbName string) *sql.DB {
 	config := getTestConfig(t)
-	dbName, roleName := getTestDBNames(dbSuffix)
 
 	// Connect as the test role
-	config.Username = roleName
+	config.Username = role
 	config.Password = testRolePassword
 
 	db, err := sql.Open("postgres", config.connStr(dbName))
 	if err != nil {
 		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 	}
+	return db
+}
+
+func testCheckTablesPrivileges(t *testing.T, dbSuffix string, tables []string, allowedPrivileges []string) error {
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	db := connectAsTestRole(t, roleName, dbName)
 	defer db.Close()
 
 	for _, table := range tables {
@@ -174,46 +201,10 @@ func testCheckTablesPrivileges(t *testing.T, dbSuffix string, tables []string, a
 		}
 
 		for queryType, query := range queries {
-			_, err := db.Exec(query)
-
-			if err != nil && sliceContainsStr(allowedPrivileges, queryType) {
-				return errwrap.Wrapf(
-					fmt.Sprintf("could not %s on test table %s: {{err}}", queryType, table),
-					err,
-				)
-
-			} else if err == nil && !sliceContainsStr(allowedPrivileges, queryType) {
-				return errwrap.Wrapf(
-					fmt.Sprintf("%s did not failed as expected for table %s: {{err}}", queryType, table),
-					err,
-				)
+			if err := testHasGrantForQuery(db, query, sliceContainsStr(allowedPrivileges, queryType)); err != nil {
+				return err
 			}
 		}
 	}
-	return nil
-}
-
-func testCheckDatabasesPrivileges(t *testing.T, dbSuffix string, allowedPrivileges []string) error {
-	config := getTestConfig(t)
-	dbName, roleName := getTestDBNames(dbSuffix)
-
-	// Connect as the test role
-	config.Username = roleName
-	config.Password = testRolePassword
-
-	db, err := sql.Open("postgres", config.connStr(dbName))
-	if err != nil {
-		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
-	}
-	defer db.Close()
-
-	queries := map[string]string{
-		"CREATE": fmt.Sprintf("CREATE DATABASE foo"),
-	}
-
-	for _, query := range queries {
-		db.Exec(query)
-	}
-
 	return nil
 }
