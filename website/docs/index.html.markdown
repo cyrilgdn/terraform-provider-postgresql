@@ -26,6 +26,22 @@ provider "postgresql" {
 }
 ```
 
+An SSL client certificate can be configured using the `clientcert` sub-resource.
+
+``` hcl
+provider "postgresql" {
+  host            = "postgres_server_ip"
+  port            = 5432
+  database        = "postgres"
+  username        = "postgres_user"
+  password        = "postgres_password"
+  sslmode         = "require"
+  clientcert {
+    cert = "/path/to/public-certificate.pem"
+    key  = "/path/to/private-key.pem"
+  }
+```
+
 Configuring multiple servers can be done by specifying the alias option.
 
 ```hcl
@@ -74,6 +90,10 @@ The following arguments are supported:
     * verify-full - Always SSL (verify that the certification presented by the server was signed by a trusted CA and the server host name matches the one in the certificate)
   Additional information on the options and their implications can be seen
   [in the `libpq(3)` SSL guide](http://www.postgresql.org/docs/current/static/libpq-ssl.html#LIBPQ-SSL-PROTECTION).
+* `clientcert` - (Optional) - Configure the SSL client certificate.
+  * `cert` - (Requrired) - The SSL client certificate file path. The file must contain PEM encoded data.
+  * `key` - (Required) - The SSL client certificate private key file path. The file must contain PEM encoded data.
+* `sslrootcert` - (Optional) - The SSL server root certificate file path. The file must contain PEM encoded data.
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
 * `max_connections` - (Optional) Set the maximum number of open connections to

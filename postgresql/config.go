@@ -73,6 +73,11 @@ var (
 	}
 )
 
+type ClientCertificateConfig struct {
+	CertificatePath string
+	KeyPath         string
+}
+
 // Config - provider config
 type Config struct {
 	Host              string
@@ -87,6 +92,8 @@ type Config struct {
 	ConnectTimeoutSec int
 	MaxConns          int
 	ExpectedVersion   semver.Version
+	SSLClientCert     *ClientCertificateConfig
+	SSLRootCertPath   string
 }
 
 // Client struct holding connection string
@@ -190,6 +197,16 @@ func (c *Config) connStr(database string) string {
 		if c.featureSupported(featureFallbackApplicationName) {
 			dsnFmtParts = append(dsnFmtParts, "fallback_application_name=%s")
 		}
+		if c.SSLClientCert != nil {
+			dsnFmtParts = append(
+				dsnFmtParts,
+				"sslcert=%s",
+				"sslkey=%s",
+			)
+		}
+		if c.SSLRootCertPath != "" {
+			dsnFmtParts = append(dsnFmtParts, "sslrootcert=%s")
+		}
 
 		dsnFmt = strings.Join(dsnFmtParts, " ")
 	}
@@ -236,6 +253,16 @@ func (c *Config) connStr(database string) string {
 		if c.featureSupported(featureFallbackApplicationName) {
 			logValues = append(logValues, quote(c.ApplicationName))
 		}
+		if c.SSLClientCert != nil {
+			logValues = append(
+				logValues,
+				quote(c.SSLClientCert.CertificatePath),
+				quote(c.SSLClientCert.KeyPath),
+			)
+		}
+		if c.SSLRootCertPath != "" {
+			logValues = append(logValues, quote(c.SSLRootCertPath))
+		}
 
 		logDSN := fmt.Sprintf(dsnFmt, logValues...)
 		log.Printf("[INFO] PostgreSQL DSN: `%s`", logDSN)
@@ -255,6 +282,17 @@ func (c *Config) connStr(database string) string {
 		if c.featureSupported(featureFallbackApplicationName) {
 			connValues = append(connValues, quote(c.ApplicationName))
 		}
+		if c.SSLClientCert != nil {
+			connValues = append(
+				connValues,
+				quote(c.SSLClientCert.CertificatePath),
+				quote(c.SSLClientCert.KeyPath),
+			)
+		}
+		if c.SSLRootCertPath != "" {
+			connValues = append(connValues, quote(c.SSLRootCertPath))
+		}
+
 		connStr = fmt.Sprintf(dsnFmt, connValues...)
 	}
 

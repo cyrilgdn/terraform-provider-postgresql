@@ -76,6 +76,32 @@ func Provider() terraform.ResourceProvider {
 				Optional:   true,
 				Deprecated: "Rename PostgreSQL provider `ssl_mode` attribute to `sslmode`",
 			},
+			"clientcert": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "SSL client certificate if required by the database.",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"cert": {
+							Type:        schema.TypeString,
+							Description: "The SSL client certificate file path. The file must contain PEM encoded data.",
+							Required:    true,
+						},
+						"key": {
+							Type:        schema.TypeString,
+							Description: "The SSL client certificate private key file path. The file must contain PEM encoded data.",
+							Required:    true,
+						},
+					},
+				},
+				MaxItems: 1,
+			},
+			"sslrootcert": {
+				Type:        schema.TypeString,
+				Description: "The SSL server root certificate file path. The file must contain PEM encoded data.",
+				Optional:    true,
+			},
+
 			"connect_timeout": {
 				Type:         schema.TypeInt,
 				Optional:     true,
@@ -160,6 +186,16 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),
 		MaxConns:          d.Get("max_connections").(int),
 		ExpectedVersion:   version,
+		SSLRootCertPath:   d.Get("sslrootcert").(string),
+	}
+
+	if value, ok := d.GetOk("clientcert"); ok {
+		if spec, ok := value.([]interface{})[0].(map[string]interface{}); ok {
+			config.SSLClientCert = &ClientCertificateConfig{
+				CertificatePath: spec["cert"].(string),
+				KeyPath:         spec["key"].(string),
+			}
+		}
 	}
 
 	client, err := config.NewClient(d.Get("database").(string))
