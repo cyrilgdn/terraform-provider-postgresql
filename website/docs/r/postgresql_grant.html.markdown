@@ -15,7 +15,7 @@ The ``postgresql_grant`` resource creates and manages privileges given to a user
 ## Usage
 
 ```hcl
-resource postgresql_grant "readonly_tables" {
+resource "postgresql_grant" "readonly_tables" {
   database    = "test_db"
   role        = "test_role"
   schema      = "public"
