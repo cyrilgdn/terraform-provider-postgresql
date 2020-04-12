@@ -14,6 +14,12 @@ import (
 	"github.com/lib/pq"
 )
 
+var allowedObjectTypes = []string{
+	"database",
+	"table",
+	"sequence",
+}
+
 var objectTypes = map[string]string{
 	"table":    "r",
 	"sequence": "S",
@@ -42,19 +48,16 @@ func resourcePostgreSQLGrant() *schema.Resource {
 			},
 			"schema": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
 				Description: "The database schema to grant privileges on for this role",
 			},
 			"object_type": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-				ValidateFunc: validation.StringInSlice([]string{
-					"table",
-					"sequence",
-				}, false),
-				Description: "The PostgreSQL object type to grant the privileges on (one of: table, sequence)",
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice(allowedObjectTypes, false),
+				Description:  "The PostgreSQL object type to grant the privileges on (one of: " + strings.Join(allowedObjectTypes, ", ") + ")",
 			},
 			"privileges": &schema.Schema{
 				Type:        schema.TypeSet,
@@ -63,6 +66,13 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Set:         schema.HashString,
 				MinItems:    1,
 				Description: "The list of privileges to grant",
+			},
+			"with_grant_option": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Default:     false,
+				Description: "Permit the grant recipient to grant it to others",
 			},
 		},
 	}
@@ -110,7 +120,7 @@ func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) err
 		)
 	}
 
-	if err := validatePrivileges(d.Get("object_type").(string), d.Get("privileges").(*schema.Set).List()); err != nil {
+	if err := validatePrivileges(d); err != nil {
 		return err
 	}
 
@@ -181,7 +191,38 @@ func resourcePostgreSQLGrantDelete(d *schema.ResourceData, meta interface{}) err
 	return nil
 }
 
+func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData) error {
+	query := `
+SELECT privilege_type
+FROM (
+	SELECT (aclexplode(datacl)).* FROM pg_database WHERE datname=$1
+) as privileges
+JOIN pg_roles ON grantee = pg_roles.oid WHERE rolname = $2
+`
+
+	privileges := []string{}
+	rows, err := txn.Query(query, d.Get("database"), d.Get("role"))
+	if err != nil {
+		return errwrap.Wrapf("could not read database privileges: {{err}}", err)
+	}
+
+	for rows.Next() {
+		var privilegeType string
+		if err := rows.Scan(&privilegeType); err != nil {
+			return errwrap.Wrapf("could not scan database privilege: {{err}}", err)
+		}
+		privileges = append(privileges, privilegeType)
+	}
+
+	d.Set("privileges", privileges)
+	return nil
+}
+
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+	if d.Get("object_type").(string) == "database" {
+		return readDatabaseRolePriviges(txn, d)
+	}
+
 	// This returns, for the specified role (rolname),
 	// the list of all object of the specified type (relkind) in the specified schema (namespace)
 	// with the list of the currently applied privileges (aggregation of privilege_type)
@@ -236,34 +277,74 @@ GROUP BY pg_class.relname;
 	return nil
 }
 
+func createGrantQuery(d *schema.ResourceData, privileges []string) string {
+	var query string
+
+	switch strings.ToUpper(d.Get("object_type").(string)) {
+	case "DATABASE":
+		query = fmt.Sprintf(
+			"GRANT %s ON DATABASE %s TO %s",
+			strings.Join(privileges, ","),
+			pq.QuoteIdentifier(d.Get("database").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "TABLE", "SEQUENCE":
+		query = fmt.Sprintf(
+			"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
+			strings.Join(privileges, ","),
+			strings.ToUpper(d.Get("object_type").(string)),
+			pq.QuoteIdentifier(d.Get("schema").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	}
+
+	if d.Get("with_grant_option").(bool) == true {
+		query = query + " WITH GRANT OPTION"
+	}
+
+	return query
+}
+
+func createRevokeQuery(d *schema.ResourceData) string {
+	var query string
+
+	switch strings.ToUpper(d.Get("object_type").(string)) {
+	case "DATABASE":
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s",
+			pq.QuoteIdentifier(d.Get("database").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "TABLE", "SEQUENCE":
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
+			strings.ToUpper(d.Get("object_type").(string)),
+			pq.QuoteIdentifier(d.Get("schema").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	}
+
+	return query
+}
+
 func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	privileges := []string{}
 	for _, priv := range d.Get("privileges").(*schema.Set).List() {
 		privileges = append(privileges, priv.(string))
 	}
 
-	query := fmt.Sprintf(
-		"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
-		strings.Join(privileges, ","),
-		strings.ToUpper(d.Get("object_type").(string)),
-		pq.QuoteIdentifier(d.Get("schema").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
-	)
+	query := createGrantQuery(d, privileges)
 
 	_, err := txn.Exec(query)
 	return err
 }
 
 func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	query := fmt.Sprintf(
-		"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
-		strings.ToUpper(d.Get("object_type").(string)),
-		pq.QuoteIdentifier(d.Get("schema").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
-	)
-
-	_, err := txn.Exec(query)
-	return err
+	query := createRevokeQuery(d)
+	if _, err := txn.Exec(query); err != nil {
+		return errwrap.Wrapf("could not execute revoke query: {{err}}", err)
+	}
+	return nil
 }
 
 func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, error) {
@@ -295,30 +376,37 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 		return false, nil
 	}
 
-	// Connect on this database to check if schema exists
-	dbTxn, err := startTransaction(client, database)
-	if err != nil {
-		return false, err
-	}
-	defer dbTxn.Rollback()
+	if d.Get("object_type").(string) != "database" {
+		// Connect on this database to check if schema exists
+		dbTxn, err := startTransaction(client, database)
+		if err != nil {
+			return false, err
+		}
+		defer dbTxn.Rollback()
 
-	// Check the schema exists (the SQL connection needs to be on the right database)
-	pgSchema := d.Get("schema").(string)
-	exists, err = schemaExists(dbTxn, pgSchema)
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		log.Printf("[DEBUG] schema %s does not exists", pgSchema)
-		return false, nil
+		// Check the schema exists (the SQL connection needs to be on the right database)
+		pgSchema := d.Get("schema").(string)
+		exists, err = schemaExists(dbTxn, pgSchema)
+		if err != nil {
+			return false, err
+		}
+		if !exists {
+			log.Printf("[DEBUG] schema %s does not exists", pgSchema)
+			return false, nil
+		}
 	}
 
 	return true, nil
 }
 
 func generateGrantID(d *schema.ResourceData) string {
-	return strings.Join([]string{
-		d.Get("role").(string), d.Get("database").(string),
-		d.Get("schema").(string), d.Get("object_type").(string),
-	}, "_")
+	parts := []string{d.Get("role").(string), d.Get("database").(string)}
+
+	objectType := d.Get("object_type").(string)
+	if objectType != "database" {
+		parts = append(parts, d.Get("schema").(string))
+	}
+	parts = append(parts, objectType)
+
+	return strings.Join(parts, "_")
 }

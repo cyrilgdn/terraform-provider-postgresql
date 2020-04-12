@@ -93,7 +93,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(d *schema.ResourceData, meta interf
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta interface{}) error {
-	if err := validatePrivileges(d.Get("object_type").(string), d.Get("privileges").(*schema.Set).List()); err != nil {
+	if err := validatePrivileges(d); err != nil {
 		return err
 	}
 
@@ -271,7 +271,6 @@ func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		return errwrap.Wrapf("could not revoke default privileges: {{err}}", err)
 	}
 	return nil
-
 }
 
 func generateDefaultPrivilegesID(d *schema.ResourceData) string {
