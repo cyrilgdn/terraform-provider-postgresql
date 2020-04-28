@@ -125,6 +125,7 @@ func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) err
 	}
 
 	database := d.Get("database").(string)
+	schemaName := d.Get("schema").(string)
 
 	client.catalogLock.Lock()
 	defer client.catalogLock.Unlock()
@@ -135,14 +136,35 @@ func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) err
 	}
 	defer deferredRollback(txn)
 
-	// Revoke all privileges before granting otherwise reducing privileges will not work.
-	// We just have to revoke them in the same transaction so the role will not lost its
-	// privileges between the revoke and grant statements.
-	if err = revokeRolePrivileges(txn, d); err != nil {
+	// If user we use for Terraform is not a superuser (e.g.: in RDS)
+	// we need to grant owner of the schema and owners of tables in the schema
+	// in order to change theirs permissions.
+	owners, err := getTablesOwner(txn, schemaName)
+	if err != nil {
 		return err
 	}
 
-	if err = grantRolePrivileges(txn, d); err != nil {
+	schemaOwner, err := getSchemaOwner(txn, schemaName)
+	if err != nil {
+		return err
+	}
+	owners = append(owners, schemaOwner)
+
+	if err = withRolesGranted(txn, owners, func() error {
+
+		// Revoke all privileges before granting otherwise reducing privileges will not work.
+		// We just have to revoke them in the same transaction so the role will not lost its
+		// privileges between the revoke and grant statements.
+		if err = revokeRolePrivileges(txn, d); err != nil {
+			return err
+		}
+
+		if err = grantRolePrivileges(txn, d); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
 		return err
 	}
 

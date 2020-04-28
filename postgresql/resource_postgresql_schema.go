@@ -51,6 +51,7 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Computed:    true,
+				ForceNew:    true,
 				Description: "The database name to alter schema",
 			},
 			schemaOwnerAttr: {
@@ -120,30 +121,63 @@ func resourcePostgreSQLSchema() *schema.Resource {
 }
 
 func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
+	client := meta.(*Client)
 
-	queries := []string{}
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
 
-	database := getDatabase(d, c)
-
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
-
-	txn, err := startTransaction(c, database)
+	database := getDatabase(d, client)
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
+	// If the admin user is not a superuser (e.g. on AWS RDS)
+	// we'll need to temporary grant him:
+	//  * the owner of the db to have the permissions to create the schema
+	//  * the owner of the schema if specified in order to change its owner.
+	var rolesToGrant []string
+
+	dbOwner, err := getDatabaseOwner(txn, database)
+	if err != nil {
+		return err
+	}
+	rolesToGrant = append(rolesToGrant, dbOwner)
+
+	schemaOwner := d.Get("owner").(string)
+	if schemaOwner != "" && schemaOwner != dbOwner {
+		rolesToGrant = append(rolesToGrant, schemaOwner)
+
+	}
+
+	err = withRolesGranted(txn, rolesToGrant, func() error {
+		return createSchema(d, client, txn)
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := txn.Commit(); err != nil {
+		return errwrap.Wrapf("Error committing schema: {{err}}", err)
+	}
+
+	d.SetId(generateSchemaID(d, client))
+
+	return resourcePostgreSQLSchemaReadImpl(d, client)
+}
+
+func createSchema(d *schema.ResourceData, client *Client, txn *sql.Tx) error {
 	schemaName := d.Get(schemaNameAttr).(string)
 
 	// Check if previous tasks haven't already create schema
 	var foundSchema bool
-	err = txn.QueryRow(`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName).Scan(&foundSchema)
+	err := txn.QueryRow(`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName).Scan(&foundSchema)
 
+	queries := []string{}
 	if err == sql.ErrNoRows {
 		b := bytes.NewBufferString("CREATE SCHEMA ")
-		if c.featureSupported(featureSchemaCreateIfNotExist) {
+		if client.featureSupported(featureSchemaCreateIfNotExist) {
 			if v := d.Get(schemaIfNotExists); v.(bool) {
 				fmt.Fprint(b, "IF NOT EXISTS ")
 			}
@@ -195,24 +229,18 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 		}
 	}
 
-	if err := txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error committing schema: {{err}}", err)
-	}
-
-	d.SetId(generateSchemaID(d, c))
-
-	return resourcePostgreSQLSchemaReadImpl(d, c)
+	return nil
 }
 
 func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
+	client := meta.(*Client)
 
-	database := getDatabase(d, c)
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
 
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
+	database := getDatabase(d, client)
 
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return err
 	}
@@ -220,14 +248,31 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 
 	schemaName := d.Get(schemaNameAttr).(string)
 
-	dropMode := "RESTRICT"
-	if d.Get(schemaDropCascade).(bool) {
-		dropMode = "CASCADE"
+	exists, err := schemaExists(txn, schemaName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		d.SetId("")
+		return nil
 	}
 
-	sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
-	if _, err = txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error deleting schema: {{err}}", err)
+	owner := d.Get("owner").(string)
+
+	if err = withRolesGranted(txn, []string{owner}, func() error {
+		dropMode := "RESTRICT"
+		if d.Get(schemaDropCascade).(bool) {
+			dropMode = "CASCADE"
+		}
+
+		sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
+		if _, err = txn.Exec(sql); err != nil {
+			return errwrap.Wrapf("Error deleting schema: {{err}}", err)
+		}
+
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if err := txn.Commit(); err != nil {
@@ -240,23 +285,23 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourcePostgreSQLSchemaExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	c := meta.(*Client)
+	client := meta.(*Client)
 
-	c.catalogLock.RLock()
-	defer c.catalogLock.RUnlock()
+	client.catalogLock.RLock()
+	defer client.catalogLock.RUnlock()
 
-	database, schemaName, err := getDBSchemaName(d, c)
+	database, schemaName, err := getDBSchemaName(d, client)
 	if err != nil {
 		return false, err
 	}
 
 	// Check if the database exists
-	exists, err := dbExists(c.DB(), database)
+	exists, err := dbExists(client.DB(), database)
 	if err != nil || !exists {
 		return false, err
 	}
 
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return false, err
 	}
@@ -274,20 +319,20 @@ func resourcePostgreSQLSchemaExists(d *schema.ResourceData, meta interface{}) (b
 }
 
 func resourcePostgreSQLSchemaRead(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
-	c.catalogLock.RLock()
-	defer c.catalogLock.RUnlock()
+	client := meta.(*Client)
+	client.catalogLock.RLock()
+	defer client.catalogLock.RUnlock()
 
-	return resourcePostgreSQLSchemaReadImpl(d, c)
+	return resourcePostgreSQLSchemaReadImpl(d, client)
 }
 
-func resourcePostgreSQLSchemaReadImpl(d *schema.ResourceData, c *Client) error {
-	database, schemaName, err := getDBSchemaName(d, c)
+func resourcePostgreSQLSchemaReadImpl(d *schema.ResourceData, client *Client) error {
+	database, schemaName, err := getDBSchemaName(d, client)
 	if err != nil {
 		return err
 	}
 
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return err
 	}
@@ -330,27 +375,27 @@ func resourcePostgreSQLSchemaReadImpl(d *schema.ResourceData, c *Client) error {
 		d.Set(schemaNameAttr, schemaName)
 		d.Set(schemaOwnerAttr, schemaOwner)
 		d.Set(schemaDatabaseAttr, database)
-		d.SetId(generateSchemaID(d, c))
+		d.SetId(generateSchemaID(d, client))
 
 		return nil
 	}
 }
 
 func resourcePostgreSQLSchemaUpdate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
+	client := meta.(*Client)
 
-	database := getDatabase(d, c)
+	database := getDatabase(d, client)
 
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
 
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
-	if err := setSchemaName(txn, d, c); err != nil {
+	if err := setSchemaName(txn, d, client); err != nil {
 		return err
 	}
 
@@ -366,10 +411,10 @@ func resourcePostgreSQLSchemaUpdate(d *schema.ResourceData, meta interface{}) er
 		return errwrap.Wrapf("Error committing schema: {{err}}", err)
 	}
 
-	return resourcePostgreSQLSchemaReadImpl(d, c)
+	return resourcePostgreSQLSchemaReadImpl(d, client)
 }
 
-func setSchemaName(txn *sql.Tx, d *schema.ResourceData, c *Client) error {
+func setSchemaName(txn *sql.Tx, d *schema.ResourceData, client *Client) error {
 	if !d.HasChange(schemaNameAttr) {
 		return nil
 	}
@@ -385,7 +430,7 @@ func setSchemaName(txn *sql.Tx, d *schema.ResourceData, c *Client) error {
 	if _, err := txn.Exec(sql); err != nil {
 		return errwrap.Wrapf("Error updating schema NAME: {{err}}", err)
 	}
-	d.SetId(generateSchemaID(d, c))
+	d.SetId(generateSchemaID(d, client))
 
 	return nil
 }
@@ -573,9 +618,9 @@ func schemaPolicyToACL(policyMap map[string]interface{}) acl.Schema {
 	return rolePolicy
 }
 
-func generateSchemaID(d *schema.ResourceData, c *Client) string {
+func generateSchemaID(d *schema.ResourceData, client *Client) string {
 	SchemaID := strings.Join([]string{
-		getDatabase(d, c),
+		getDatabase(d, client),
 		d.Get(schemaNameAttr).(string),
 	}, ".")
 
