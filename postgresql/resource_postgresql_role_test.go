@@ -49,7 +49,6 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "create_database", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "name", "role_with_superuser"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "superuser", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "roles.#", "0"),
 
 					testAccCheckPostgresqlRoleExists("sub_role", []string{"myrole2", "role_simple"}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "name", "sub_role"),

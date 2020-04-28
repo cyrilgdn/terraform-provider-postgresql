@@ -180,8 +180,6 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " LC_COLLATE DEFAULT")
 	case ok:
 		fmt.Fprintf(b, " LC_COLLATE '%s' ", pqQuoteLiteral(v.(string)))
-	case v.(string) == "":
-		fmt.Fprint(b, ` LC_COLLATE 'C'`)
 	}
 
 	switch v, ok := d.GetOk(dbCTypeAttr); {
@@ -189,8 +187,6 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " LC_CTYPE DEFAULT")
 	case ok:
 		fmt.Fprintf(b, " LC_CTYPE '%s' ", pqQuoteLiteral(v.(string)))
-	case v.(string) == "":
-		fmt.Fprint(b, ` LC_CTYPE 'C'`)
 	}
 
 	switch v, ok := d.GetOk(dbTablespaceAttr); {

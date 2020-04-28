@@ -126,6 +126,7 @@ func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) err
 	}
 
 	database := d.Get("database").(string)
+	schemaName := d.Get("schema").(string)
 
 	client.catalogLock.Lock()
 	defer client.catalogLock.Unlock()
@@ -136,14 +137,26 @@ func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) err
 	}
 	defer deferredRollback(txn)
 
-	// Revoke all privileges before granting otherwise reducing privileges will not work.
-	// We just have to revoke them in the same transaction so the role will not lost its
-	// privileges between the revoke and grant statements.
-	if err = revokeRolePrivileges(txn, d); err != nil {
-		return err
+	owners := []string{}
+	if d.Get("object_type").(string) != "database" {
+		owners, err = getRolesToGrantForSchema(txn, schemaName)
+		if err != nil {
+			return err
+		}
 	}
 
-	if err = grantRolePrivileges(txn, d); err != nil {
+	if err := withRolesGranted(txn, owners, func() error {
+		// Revoke all privileges before granting otherwise reducing privileges will not work.
+		// We just have to revoke them in the same transaction so the role will not lost its
+		// privileges between the revoke and grant statements.
+		if err := revokeRolePrivileges(txn, d); err != nil {
+			return err
+		}
+		if err := grantRolePrivileges(txn, d); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -181,7 +194,17 @@ func resourcePostgreSQLGrantDelete(d *schema.ResourceData, meta interface{}) err
 	}
 	defer deferredRollback(txn)
 
-	if err = revokeRolePrivileges(txn, d); err != nil {
+	owners := []string{}
+	if d.Get("object_type").(string) != "database" {
+		owners, err = getRolesToGrantForSchema(txn, d.Get("schema").(string))
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := withRolesGranted(txn, owners, func() error {
+		return revokeRolePrivileges(txn, d)
+	}); err != nil {
 		return err
 	}
 
@@ -431,4 +454,24 @@ func generateGrantID(d *schema.ResourceData) string {
 	parts = append(parts, objectType)
 
 	return strings.Join(parts, "_")
+}
+
+func getRolesToGrantForSchema(txn *sql.Tx, schemaName string) ([]string, error) {
+	// If user we use for Terraform is not a superuser (e.g.: in RDS)
+	// we need to grant owner of the schema and owners of tables in the schema
+	// in order to change theirs permissions.
+	owners, err := getTablesOwner(txn, schemaName)
+	if err != nil {
+		return nil, err
+	}
+
+	schemaOwner, err := getSchemaOwner(txn, schemaName)
+	if err != nil {
+		return nil, err
+	}
+	if !sliceContainsStr(owners, schemaOwner) {
+		owners = append(owners, schemaOwner)
+	}
+
+	return owners, nil
 }
