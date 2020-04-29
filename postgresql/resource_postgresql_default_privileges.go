@@ -53,8 +53,9 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 					"table",
 					"sequence",
 					"function",
+					"type",
 				}, false),
-				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function)",
+				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type)",
 			},
 			"privileges": &schema.Schema{
 				Type:        schema.TypeSet,

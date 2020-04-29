@@ -103,6 +103,7 @@ var allowedPrivileges = map[string][]string{
 	"table":    []string{"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
 	"sequence": []string{"ALL", "USAGE", "SELECT", "UPDATE"},
 	"function": []string{"ALL", "EXECUTE"},
+	"type":     []string{"ALL", "USAGE"},
 }
 
 // validatePrivileges checks that privileges to apply are allowed for this object type.
