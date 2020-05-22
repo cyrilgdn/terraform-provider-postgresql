@@ -1,4 +1,22 @@
 ## 1.6.0 (Unreleased)
+
+FEATURES:
+
+* `postgresql_grant`: Implement grant on database.
+  ([#123](https://github.com/terraform-providers/terraform-provider-postgresql/pull/123))
+
+* Support client/server SSL certificates.
+  ([#126](https://github.com/terraform-providers/terraform-provider-postgresql/pull/126))
+
+* Use SDK validations functions instead of custom ones.
+  ([#122](https://github.com/terraform-providers/terraform-provider-postgresql/pull/122))
+
+BUG FIXES:
+
+* Fix `max_connections` validation to allow 0 (unlimited).
+  ([#128](https://github.com/terraform-providers/terraform-provider-postgresql/pull/128))
+
+
 ## 1.5.0 (February 23, 2020)
 
 FEATURES:
