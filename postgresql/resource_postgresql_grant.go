@@ -17,11 +17,13 @@ var allowedObjectTypes = []string{
 	"database",
 	"table",
 	"sequence",
+	"function",
 }
 
 var objectTypes = map[string]string{
 	"table":    "r",
 	"sequence": "S",
+	"function": "f",
 }
 
 func resourcePostgreSQLGrant() *schema.Resource {
@@ -287,7 +289,7 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 			pq.QuoteIdentifier(d.Get("database").(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
-	case "TABLE", "SEQUENCE":
+	case "TABLE", "SEQUENCE", "FUNCTION":
 		query = fmt.Sprintf(
 			"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
 			strings.Join(privileges, ","),

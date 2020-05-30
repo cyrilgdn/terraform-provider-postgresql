@@ -39,6 +39,15 @@ func TestCreateGrantQuery(t *testing.T) {
 		},
 		{
 			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "function",
+				"schema":      databaseName,
+				"role":        roleName,
+			}),
+			privileges: []string{"EXECUTE"},
+			expected:   fmt.Sprintf("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
 				"object_type":       "TABLE",
 				"schema":            databaseName,
 				"role":              roleName,
