@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/lib/pq"
 	acl "github.com/sean-/postgresql-acl"
@@ -191,12 +190,12 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 
 	for _, query := range queries {
 		if _, err = txn.Exec(query); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf("Error creating schema %s: {{err}}", schemaName), err)
+			return fmt.Errorf("Error creating schema %s: %w", schemaName, err)
 		}
 	}
 
 	if err := txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error committing schema: {{err}}", err)
+		return fmt.Errorf("Error committing schema: %w", err)
 	}
 
 	d.SetId(generateSchemaID(d, c))
@@ -227,11 +226,11 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 
 	sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
 	if _, err = txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error deleting schema: {{err}}", err)
+		return fmt.Errorf("Error deleting schema: %w", err)
 	}
 
 	if err := txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error committing schema: {{err}}", err)
+		return fmt.Errorf("Error committing schema: %w", err)
 	}
 
 	d.SetId("")
@@ -267,7 +266,7 @@ func resourcePostgreSQLSchemaExists(d *schema.ResourceData, meta interface{}) (b
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, errwrap.Wrapf("Error reading schema: {{err}}", err)
+		return false, fmt.Errorf("Error reading schema: %w", err)
 	}
 
 	return true, nil
@@ -302,19 +301,19 @@ func resourcePostgreSQLSchemaReadImpl(d *schema.ResourceData, c *Client) error {
 		d.SetId("")
 		return nil
 	case err != nil:
-		return errwrap.Wrapf("Error reading schema: {{err}}", err)
+		return fmt.Errorf("Error reading schema: %w", err)
 	default:
 		type RoleKey string
 		schemaPolicies := make(map[RoleKey]acl.Schema, len(schemaACLs))
 		for _, aclStr := range schemaACLs {
 			aclItem, err := acl.Parse(aclStr)
 			if err != nil {
-				return errwrap.Wrapf("Error parsing aclitem: {{err}}", err)
+				return fmt.Errorf("Error parsing aclitem: %w", err)
 			}
 
 			schemaACL, err := acl.NewSchema(aclItem)
 			if err != nil {
-				return errwrap.Wrapf("invalid perms for schema: {{err}}", err)
+				return fmt.Errorf("invalid perms for schema: %w", err)
 			}
 
 			roleKey := RoleKey(strings.ToLower(schemaACL.Role))
@@ -363,7 +362,7 @@ func resourcePostgreSQLSchemaUpdate(d *schema.ResourceData, meta interface{}) er
 	}
 
 	if err := txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error committing schema: {{err}}", err)
+		return fmt.Errorf("Error committing schema: %w", err)
 	}
 
 	return resourcePostgreSQLSchemaReadImpl(d, c)
@@ -383,7 +382,7 @@ func setSchemaName(txn *sql.Tx, d *schema.ResourceData, c *Client) error {
 
 	sql := fmt.Sprintf("ALTER SCHEMA %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating schema NAME: {{err}}", err)
+		return fmt.Errorf("Error updating schema NAME: %w", err)
 	}
 	d.SetId(generateSchemaID(d, c))
 
@@ -404,7 +403,7 @@ func setSchemaOwner(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(schemaOwner))
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating schema OWNER: {{err}}", err)
+		return fmt.Errorf("Error updating schema OWNER: %w", err)
 	}
 
 	return nil
@@ -437,7 +436,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 				// Don't execute this role's REVOKEs because the role
 				// was dropped first and therefore doesn't exist.
 			case err != nil:
-				return errwrap.Wrapf("Error reading schema: {{err}}", err)
+				return fmt.Errorf("Error reading schema: %w", err)
 			default:
 				queries = append(queries, rolePolicy.Revokes(schemaName)...)
 			}
@@ -471,7 +470,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 
 	for _, query := range queries {
 		if _, err := txn.Exec(query); err != nil {
-			return errwrap.Wrapf("Error updating schema DCL: {{err}}", err)
+			return fmt.Errorf("Error updating schema DCL: %w", err)
 		}
 	}
 

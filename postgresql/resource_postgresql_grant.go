@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 
@@ -147,7 +146,7 @@ func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) err
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	d.SetId(generateGrantID(d))
@@ -185,7 +184,7 @@ func resourcePostgreSQLGrantDelete(d *schema.ResourceData, meta interface{}) err
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	return nil
@@ -203,13 +202,13 @@ JOIN pg_roles ON grantee = pg_roles.oid WHERE rolname = $2
 	privileges := []string{}
 	rows, err := txn.Query(query, d.Get("database"), d.Get("role"))
 	if err != nil {
-		return errwrap.Wrapf("could not read database privileges: {{err}}", err)
+		return fmt.Errorf("could not read database privileges: %w", err)
 	}
 
 	for rows.Next() {
 		var privilegeType string
 		if err := rows.Scan(&privilegeType); err != nil {
-			return errwrap.Wrapf("could not scan database privilege: {{err}}", err)
+			return fmt.Errorf("could not scan database privilege: %w", err)
 		}
 		privileges = append(privileges, privilegeType)
 	}
@@ -342,7 +341,7 @@ func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	query := createRevokeQuery(d)
 	if _, err := txn.Exec(query); err != nil {
-		return errwrap.Wrapf("could not execute revoke query: {{err}}", err)
+		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
 	return nil
 }

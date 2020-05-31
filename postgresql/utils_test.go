@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 )
 
@@ -157,11 +156,7 @@ func testHasGrantForQuery(db *sql.DB, query string, allowed bool) error {
 	_, err := db.Exec(query)
 	if err != nil {
 		if allowed {
-			return errwrap.Wrapf(
-				fmt.Sprintf(
-					"could not execute %s as expected: {{err}}", query,
-				), err,
-			)
+			return fmt.Errorf("could not execute %s as expected: %w", query, err)
 		}
 		return nil
 	}

@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/lib/pq"
 )
@@ -39,7 +38,7 @@ func isRoleMember(db QueryAble, role, member string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, errwrap.Wrapf("could not real role membership: {{err}}", err)
+		return false, fmt.Errorf("could not real role membership: %w", err)
 	}
 
 	return true, nil
@@ -64,9 +63,7 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
-		return false, errwrap.Wrapf(fmt.Sprintf(
-			"Error granting role %s to %s: {{err}}", role, member,
-		), err)
+		return false, fmt.Errorf("Error granting role %s to %s: %w", role, member, err)
 	}
 	return true, nil
 }
@@ -84,9 +81,7 @@ func revokeRoleMembership(db QueryAble, role, member string) error {
 	if isMember {
 		sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 		if _, err := db.Exec(sql); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf(
-				"Error revoking role %s from %s: {{err}}", role, member,
-			), err)
+			return fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
 		}
 	}
 	return nil
@@ -154,7 +149,7 @@ func startTransaction(client *Client, database string) (*sql.Tx, error) {
 	db := client.DB()
 	txn, err := db.Begin()
 	if err != nil {
-		return nil, errwrap.Wrapf("could not start transaction: {{err}}", err)
+		return nil, fmt.Errorf("could not start transaction: %w", err)
 	}
 
 	return txn, nil
@@ -166,7 +161,7 @@ func dbExists(db QueryAble, dbname string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, errwrap.Wrapf("could not check if database exists: {{err}}", err)
+		return false, fmt.Errorf("could not check if database exists: %w", err)
 	}
 
 	return true, nil
@@ -178,7 +173,7 @@ func roleExists(txn *sql.Tx, rolname string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, errwrap.Wrapf("could not check if role exists: {{err}}", err)
+		return false, fmt.Errorf("could not check if role exists: %w", err)
 	}
 
 	return true, nil
@@ -190,7 +185,7 @@ func schemaExists(txn *sql.Tx, schemaname string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, errwrap.Wrapf("could not check if schema exists: {{err}}", err)
+		return false, fmt.Errorf("could not check if schema exists: %w", err)
 	}
 
 	return true, nil
