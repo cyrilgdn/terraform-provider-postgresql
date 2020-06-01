@@ -8,7 +8,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/lib/pq"
@@ -218,7 +217,7 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 
 	sql := b.String()
 	if _, err := c.DB().Exec(sql); err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("Error creating database %q: {{err}}", dbName), err)
+		return fmt.Errorf("Error creating database %q: %w", dbName, err)
 	}
 
 	// Set err outside of the return so that the deferred revoke can override err
@@ -255,7 +254,7 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 			// Template databases must have this attribute cleared before
 			// they can be dropped.
 			if err := doSetDBIsTemplate(c, dbName, false); err != nil {
-				return errwrap.Wrapf("Error updating database IS_TEMPLATE during DROP DATABASE: {{err}}", err)
+				return fmt.Errorf("Error updating database IS_TEMPLATE during DROP DATABASE: %w", err)
 			}
 		}
 	}
@@ -266,7 +265,7 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 
 	sql := fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(dbName))
 	if _, err := c.DB().Exec(sql); err != nil {
-		return errwrap.Wrapf("Error dropping database: {{err}}", err)
+		return fmt.Errorf("Error dropping database: %w", err)
 	}
 
 	d.SetId("")
@@ -309,7 +308,7 @@ func resourcePostgreSQLDatabaseReadImpl(d *schema.ResourceData, meta interface{}
 		d.SetId("")
 		return nil
 	case err != nil:
-		return errwrap.Wrapf("Error reading database: {{err}}", err)
+		return fmt.Errorf("Error reading database: %w", err)
 	}
 
 	var dbEncoding, dbCollation, dbCType, dbTablespaceName string
@@ -341,7 +340,7 @@ func resourcePostgreSQLDatabaseReadImpl(d *schema.ResourceData, meta interface{}
 		d.SetId("")
 		return nil
 	case err != nil:
-		return errwrap.Wrapf("Error reading database: {{err}}", err)
+		return fmt.Errorf("Error reading database: %w", err)
 	}
 
 	d.Set(dbNameAttr, dbName)
@@ -362,7 +361,7 @@ func resourcePostgreSQLDatabaseReadImpl(d *schema.ResourceData, meta interface{}
 		dbSQL := fmt.Sprintf(dbSQLFmt, "d.datallowconn")
 		err = c.DB().QueryRow(dbSQL, dbId).Scan(&dbAllowConns)
 		if err != nil {
-			return errwrap.Wrapf("Error reading ALLOW_CONNECTIONS property for DATABASE: {{err}}", err)
+			return fmt.Errorf("Error reading ALLOW_CONNECTIONS property for DATABASE: %w", err)
 		}
 
 		d.Set(dbAllowConnsAttr, dbAllowConns)
@@ -373,7 +372,7 @@ func resourcePostgreSQLDatabaseReadImpl(d *schema.ResourceData, meta interface{}
 		dbSQL := fmt.Sprintf(dbSQLFmt, "d.datistemplate")
 		err = c.DB().QueryRow(dbSQL, dbId).Scan(&dbIsTemplate)
 		if err != nil {
-			return errwrap.Wrapf("Error reading IS_TEMPLATE property for DATABASE: {{err}}", err)
+			return fmt.Errorf("Error reading IS_TEMPLATE property for DATABASE: %w", err)
 		}
 
 		d.Set(dbIsTemplateAttr, dbIsTemplate)
@@ -430,7 +429,7 @@ func setDBName(db *sql.DB, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER DATABASE %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := db.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating database name: {{err}}", err)
+		return fmt.Errorf("Error updating database name: %w", err)
 	}
 	d.SetId(n)
 
@@ -464,7 +463,7 @@ func setDBOwner(c *Client, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	sql := fmt.Sprintf("ALTER DATABASE %s OWNER TO %s", pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(owner))
 	if _, err := db.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating database OWNER: {{err}}", err)
+		return fmt.Errorf("Error updating database OWNER: %w", err)
 	}
 
 	return err
@@ -485,7 +484,7 @@ func setDBTablespace(db *sql.DB, d *schema.ResourceData) error {
 	}
 
 	if _, err := db.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating database TABLESPACE: {{err}}", err)
+		return fmt.Errorf("Error updating database TABLESPACE: %w", err)
 	}
 
 	return nil
@@ -500,7 +499,7 @@ func setDBConnLimit(db *sql.DB, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
 	if _, err := db.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating database CONNECTION LIMIT: {{err}}", err)
+		return fmt.Errorf("Error updating database CONNECTION LIMIT: %w", err)
 	}
 
 	return nil
@@ -519,7 +518,7 @@ func setDBAllowConns(c *Client, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	sql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS %t", pq.QuoteIdentifier(dbName), allowConns)
 	if _, err := c.DB().Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating database ALLOW_CONNECTIONS: {{err}}", err)
+		return fmt.Errorf("Error updating database ALLOW_CONNECTIONS: %w", err)
 	}
 
 	return nil
@@ -531,7 +530,7 @@ func setDBIsTemplate(c *Client, d *schema.ResourceData) error {
 	}
 
 	if err := doSetDBIsTemplate(c, d.Get(dbNameAttr).(string), d.Get(dbIsTemplateAttr).(bool)); err != nil {
-		return errwrap.Wrapf("Error updating database IS_TEMPLATE: {{err}}", err)
+		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
 	}
 
 	return nil
@@ -544,7 +543,7 @@ func doSetDBIsTemplate(c *Client, dbName string, isTemplate bool) error {
 
 	sql := fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE %t", pq.QuoteIdentifier(dbName), isTemplate)
 	if _, err := c.DB().Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating database IS_TEMPLATE: {{err}}", err)
+		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
 	}
 
 	return nil

@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 
@@ -214,7 +213,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	if err := txn.QueryRow(
 		query, role, pgSchema, objectTypes[objectType], owner,
 	).Scan(&privileges); err != nil {
-		return errwrap.Wrapf("could not read default privileges: {{err}}", err)
+		return fmt.Errorf("could not read default privileges: %w", err)
 	}
 
 	// We consider no privileges as "not exists"
@@ -252,7 +251,7 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		query,
 	)
 	if err != nil {
-		return errwrap.Wrapf("could not alter default privileges: {{err}}", err)
+		return fmt.Errorf("could not alter default privileges: %w", err)
 	}
 
 	return nil
@@ -268,7 +267,7 @@ func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	)
 
 	if _, err := txn.Exec(query); err != nil {
-		return errwrap.Wrapf("could not revoke default privileges: {{err}}", err)
+		return fmt.Errorf("could not revoke default privileges: %w", err)
 	}
 	return nil
 }

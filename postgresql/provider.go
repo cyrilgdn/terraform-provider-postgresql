@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
@@ -141,7 +140,7 @@ func Provider() terraform.ResourceProvider {
 
 func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
 	if _, err := semver.ParseTolerant(v.(string)); err != nil {
-		errors = append(errors, fmt.Errorf("invalid version (%q): %v", v.(string), err))
+		errors = append(errors, fmt.Errorf("invalid version (%q): %w", v.(string), err))
 	}
 	return
 }
@@ -185,7 +184,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 
 	client, err := config.NewClient(d.Get("database").(string))
 	if err != nil {
-		return nil, errwrap.Wrapf("Error initializing PostgreSQL client: {{err}}", err)
+		return nil, fmt.Errorf("Error initializing PostgreSQL client: %w", err)
 	}
 
 	return client, nil

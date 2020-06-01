@@ -8,7 +8,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/lib/pq"
 )
@@ -100,7 +99,7 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error creating extension: {{err}}", err)
+		return fmt.Errorf("Error creating extension: %w", err)
 	}
 
 	d.SetId(generateExtensionID(d, c))
@@ -192,7 +191,7 @@ func resourcePostgreSQLExtensionReadImpl(d *schema.ResourceData, meta interface{
 		d.SetId("")
 		return nil
 	case err != nil:
-		return errwrap.Wrapf("Error reading extension: {{err}}", err)
+		return fmt.Errorf("Error reading extension: %w", err)
 	}
 
 	d.Set(extNameAttr, extName)
@@ -232,7 +231,7 @@ func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{})
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error deleting extension: {{err}}", err)
+		return fmt.Errorf("Error deleting extension: %w", err)
 	}
 
 	d.SetId("")
@@ -271,7 +270,7 @@ func resourcePostgreSQLExtensionUpdate(d *schema.ResourceData, meta interface{})
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("Error updating extension: {{err}}", err)
+		return fmt.Errorf("Error updating extension: %w", err)
 	}
 
 	return resourcePostgreSQLExtensionReadImpl(d, meta)
@@ -292,7 +291,7 @@ func setExtSchema(txn *sql.Tx, d *schema.ResourceData) error {
 	sql := fmt.Sprintf("ALTER EXTENSION %s SET SCHEMA %s",
 		pq.QuoteIdentifier(extName), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating extension SCHEMA: {{err}}", err)
+		return fmt.Errorf("Error updating extension SCHEMA: %w", err)
 	}
 
 	return nil
@@ -316,7 +315,7 @@ func setExtVersion(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating extension version: {{err}}", err)
+		return fmt.Errorf("Error updating extension version: %w", err)
 	}
 
 	return nil

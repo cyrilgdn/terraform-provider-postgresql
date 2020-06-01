@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/lib/pq"
@@ -280,7 +279,7 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 
 	sql := fmt.Sprintf("CREATE ROLE %s%s", pq.QuoteIdentifier(roleName), createStr)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("error creating role %s: {{err}}", roleName), err)
+		return fmt.Errorf("error creating role %s: %w", roleName, err)
 	}
 
 	if err = grantRoles(txn, d); err != nil {
@@ -296,7 +295,7 @@ func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	d.SetId(roleName)
@@ -334,12 +333,12 @@ func resourcePostgreSQLRoleDelete(d *schema.ResourceData, meta interface{}) erro
 	if len(queries) > 0 {
 		for _, query := range queries {
 			if _, err := txn.Exec(query); err != nil {
-				return errwrap.Wrapf("Error deleting role: {{err}}", err)
+				return fmt.Errorf("Error deleting role: %w", err)
 			}
 		}
 
 		if err := txn.Commit(); err != nil {
-			return errwrap.Wrapf("Error committing schema: {{err}}", err)
+			return fmt.Errorf("Error committing schema: %w", err)
 		}
 	}
 
@@ -431,7 +430,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 		d.SetId("")
 		return nil
 	case err != nil:
-		return errwrap.Wrapf("Error reading ROLE: {{err}}", err)
+		return fmt.Errorf("Error reading ROLE: %w", err)
 	}
 
 	d.Set(roleNameAttr, roleName)
@@ -490,7 +489,7 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
-				return -1, errwrap.Wrapf("Error reading statement_timeout: {{err}}", err)
+				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
 			}
 			return res, nil
 		}
@@ -533,7 +532,7 @@ func readRolePassword(c *Client, d *schema.ResourceData, roleCanLogin bool) (str
 		// They don't have a password
 		return "", nil
 	case err != nil:
-		return "", errwrap.Wrapf("Error reading role: {{err}}", err)
+		return "", fmt.Errorf("Error reading role: %w", err)
 	}
 	// If the password isn't already in md5 format, but hashing the input
 	// matches the password in the database for the user, they are the same
@@ -630,7 +629,7 @@ func resourcePostgreSQLRoleUpdate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	return resourcePostgreSQLRoleReadImpl(c, d)
@@ -650,7 +649,7 @@ func setRoleName(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER ROLE %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role NAME: {{err}}", err)
+		return fmt.Errorf("Error updating role NAME: %w", err)
 	}
 
 	d.SetId(n)
@@ -670,7 +669,7 @@ func setRolePassword(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(password))
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role password: {{err}}", err)
+		return fmt.Errorf("Error updating role password: %w", err)
 	}
 	return nil
 }
@@ -692,7 +691,7 @@ func setRoleBypassRLS(c *Client, txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role BYPASSRLS: {{err}}", err)
+		return fmt.Errorf("Error updating role BYPASSRLS: %w", err)
 	}
 
 	return nil
@@ -707,7 +706,7 @@ func setRoleConnLimit(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s CONNECTION LIMIT %d", pq.QuoteIdentifier(roleName), connLimit)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role CONNECTION LIMIT: {{err}}", err)
+		return fmt.Errorf("Error updating role CONNECTION LIMIT: %w", err)
 	}
 
 	return nil
@@ -726,7 +725,7 @@ func setRoleCreateDB(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role CREATEDB: {{err}}", err)
+		return fmt.Errorf("Error updating role CREATEDB: %w", err)
 	}
 
 	return nil
@@ -745,7 +744,7 @@ func setRoleCreateRole(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role CREATEROLE: {{err}}", err)
+		return fmt.Errorf("Error updating role CREATEROLE: %w", err)
 	}
 
 	return nil
@@ -764,7 +763,7 @@ func setRoleInherit(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role INHERIT: {{err}}", err)
+		return fmt.Errorf("Error updating role INHERIT: %w", err)
 	}
 
 	return nil
@@ -783,7 +782,7 @@ func setRoleLogin(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role LOGIN: {{err}}", err)
+		return fmt.Errorf("Error updating role LOGIN: %w", err)
 	}
 
 	return nil
@@ -802,7 +801,7 @@ func setRoleReplication(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role REPLICATION: {{err}}", err)
+		return fmt.Errorf("Error updating role REPLICATION: %w", err)
 	}
 
 	return nil
@@ -821,7 +820,7 @@ func setRoleSuperuser(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role SUPERUSER: {{err}}", err)
+		return fmt.Errorf("Error updating role SUPERUSER: %w", err)
 	}
 
 	return nil
@@ -842,7 +841,7 @@ func setRoleValidUntil(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s VALID UNTIL '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(validUntil))
 	if _, err := txn.Exec(sql); err != nil {
-		return errwrap.Wrapf("Error updating role VALID UNTIL: {{err}}", err)
+		return fmt.Errorf("Error updating role VALID UNTIL: %w", err)
 	}
 
 	return nil
@@ -858,7 +857,7 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 
 	rows, err := txn.Query(query, role)
 	if err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("could not get roles list for role %s: {{err}}", role), err)
+		return fmt.Errorf("could not get roles list for role %s: %w", role, err)
 	}
 	defer rows.Close()
 
@@ -867,7 +866,7 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 		var grantedRole string
 
 		if err = rows.Scan(&grantedRole); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf("could not scan role name for role %s: {{err}}", role), err)
+			return fmt.Errorf("could not scan role name for role %s: %w", role, err)
 		}
 		// We cannot revoke directly here as it shares the same cursor (with Tx)
 		// and rows.Next seems to retrieve result row by row.
@@ -880,7 +879,7 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 
 		log.Printf("[DEBUG] revoking role %s from %s", grantedRole, role)
 		if _, err := txn.Exec(query); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf("could not revoke role %s from %s: {{err}}", string(grantedRole), role), err)
+			return fmt.Errorf("could not revoke role %s from %s: %w", string(grantedRole), role, err)
 		}
 	}
 
@@ -895,7 +894,7 @@ func grantRoles(txn *sql.Tx, d *schema.ResourceData) error {
 			"GRANT %s TO %s", pq.QuoteIdentifier(grantingRole.(string)), pq.QuoteIdentifier(role),
 		)
 		if _, err := txn.Exec(query); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf("could not grant role %s to %s: {{err}}", grantingRole, role), err)
+			return fmt.Errorf("could not grant role %s to %s: %w", grantingRole, role, err)
 		}
 	}
 	return nil
@@ -923,7 +922,7 @@ func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
 		"ALTER ROLE %s SET search_path TO %s", pq.QuoteIdentifier(role), searchPath,
 	)
 	if _, err := txn.Exec(query); err != nil {
-		return errwrap.Wrapf(fmt.Sprintf("could not set search_path %s for %s: {{err}}", searchPath, role), err)
+		return fmt.Errorf("could not set search_path %s for %s: %w", searchPath, role, err)
 	}
 	return nil
 }
@@ -940,14 +939,14 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 			"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
 		)
 		if _, err := txn.Exec(sql); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf("could not set statement_timeout %d for %s: {{err}}", statementTimeout, roleName), err)
+			return fmt.Errorf("could not set statement_timeout %d for %s: %w", statementTimeout, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s RESET statement_timeout", pq.QuoteIdentifier(roleName),
 		)
 		if _, err := txn.Exec(sql); err != nil {
-			return errwrap.Wrapf(fmt.Sprintf("could not reset statement_timeout for %s: {{err}}", roleName), err)
+			return fmt.Errorf("could not reset statement_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil

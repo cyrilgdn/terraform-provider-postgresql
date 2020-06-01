@@ -10,7 +10,6 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
-	"github.com/hashicorp/errwrap"
 	_ "github.com/lib/pq" //PostgreSQL db
 )
 
@@ -129,7 +128,7 @@ func (c *Config) NewClient(database string) (*Client, error) {
 	if !found {
 		db, err := sql.Open("postgres", dsn)
 		if err != nil {
-			return nil, errwrap.Wrapf("Error connecting to PostgreSQL server: {{err}}", err)
+			return nil, fmt.Errorf("Error connecting to PostgreSQL server: %w", err)
 		}
 
 		// We don't want to retain connection
@@ -145,7 +144,7 @@ func (c *Config) NewClient(database string) (*Client, error) {
 			version, err = fingerprintCapabilities(db)
 			if err != nil {
 				db.Close()
-				return nil, errwrap.Wrapf("error detecting capabilities: {{err}}", err)
+				return nil, fmt.Errorf("error detecting capabilities: %w", err)
 			}
 		}
 
@@ -319,7 +318,7 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	var pgVersion string
 	err := db.QueryRow(`SELECT VERSION()`).Scan(&pgVersion)
 	if err != nil {
-		return nil, errwrap.Wrapf("error PostgreSQL version: {{err}}", err)
+		return nil, fmt.Errorf("error PostgreSQL version: %w", err)
 	}
 
 	// PostgreSQL 9.2.21 on x86_64-apple-darwin16.5.0, compiled by Apple LLVM version 8.1.0 (clang-802.0.42), 64-bit
@@ -333,7 +332,7 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 
 	version, err := semver.ParseTolerant(fields[1])
 	if err != nil {
-		return nil, errwrap.Wrapf("error parsing version: {{err}}", err)
+		return nil, fmt.Errorf("error parsing version: %w", err)
 	}
 
 	return &version, nil
@@ -357,7 +356,7 @@ func (c *Client) isSuperuser() (bool, error) {
 	var superuser bool
 
 	if err := c.db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = CURRENT_USER").Scan(&superuser); err != nil {
-		return false, errwrap.Wrapf("could not check if current user is superuser: {{err}}", err)
+		return false, fmt.Errorf("could not check if current user is superuser: %w", err)
 	}
 
 	return superuser, nil

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
@@ -304,7 +303,7 @@ func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, errwrap.Wrapf("error reading info about schema: {{err}}", err)
+		return false, fmt.Errorf("error reading info about schema: %w", err)
 	}
 
 	return true, nil
