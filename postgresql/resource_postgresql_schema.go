@@ -459,6 +459,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	schemaName := d.Get(schemaNameAttr).(string)
+	owner := d.Get(schemaOwnerAttr).(string)
 
 	oraw, nraw := d.GetChange(schemaPolicyAttr)
 	oldList := oraw.(*schema.Set).List()
@@ -512,13 +513,19 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 		}
 	}
 
-	for _, query := range queries {
-		if _, err := txn.Exec(query); err != nil {
-			return fmt.Errorf("Error updating schema DCL: %w", err)
-		}
+	rolesToGrant := []string{}
+	if owner != "" {
+		rolesToGrant = append(rolesToGrant, owner)
 	}
 
-	return nil
+	return withRolesGranted(txn, rolesToGrant, func() error {
+		for _, query := range queries {
+			if _, err := txn.Exec(query); err != nil {
+				return fmt.Errorf("Error updating schema DCL: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // schemaChangedPolicies walks old and new to create a set of queries that can

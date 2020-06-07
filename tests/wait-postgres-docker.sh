@@ -21,3 +21,4 @@ until docker-compose -f "$COMPOSE_FILE" logs postgres | grep "ready to accept co
     printf "."
     sleep 1
 done
+echo

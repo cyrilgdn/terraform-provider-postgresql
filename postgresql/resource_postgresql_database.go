@@ -175,6 +175,8 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		fmt.Fprint(b, ` ENCODING 'UTF8'`)
 	}
 
+	// Don't specify LC_COLLATE if user didn't specify it
+	// This will use the default one (usually the one defined in the template database)
 	switch v, ok := d.GetOk(dbCollationAttr); {
 	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
 		fmt.Fprintf(b, " LC_COLLATE DEFAULT")
@@ -182,6 +184,8 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " LC_COLLATE '%s' ", pqQuoteLiteral(v.(string)))
 	}
 
+	// Don't specify LC_CTYPE if user didn't specify it
+	// This will use the default one (usually the one defined in the template database)
 	switch v, ok := d.GetOk(dbCTypeAttr); {
 	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
 		fmt.Fprintf(b, " LC_CTYPE DEFAULT")

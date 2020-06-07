@@ -54,7 +54,12 @@ func TestAccPostgresqlSchema_Basic(t *testing.T) {
 
 func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			// TODO: Need to check if remooving policy is buggy
+			// because non-superuser fails to drop a role
+			testSuperuserPreCheck(t)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
 		Steps: []resource.TestStep{
@@ -196,12 +201,20 @@ func TestAccPostgresqlSchema_Database(t *testing.T) {
 }
 
 func TestAccPostgresqlSchema_DropCascade(t *testing.T) {
-	var testAccPostgresqlSchemaConfig = `
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	var testAccPostgresqlSchemaConfig = fmt.Sprintf(`
 resource "postgresql_schema" "test_cascade" {
   name = "foo"
+  database = "%s"
   drop_cascade = true
 }
-`
+`, dbName)
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
@@ -214,7 +227,7 @@ resource "postgresql_schema" "test_cascade" {
 					resource.TestCheckResourceAttr("postgresql_schema.test_cascade", "name", "foo"),
 
 					// This will create a table in the schema to check if the drop will work thanks to the cascade
-					testAccCreateSchemaTable("foo"),
+					testAccCreateSchemaTable(dbName, "foo"),
 				),
 			},
 		},
@@ -309,14 +322,16 @@ func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
 	return true, nil
 }
 
-func testAccCreateSchemaTable(schemaName string) resource.TestCheckFunc {
+func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 
-		client := testAccProvider.Meta().(*Client)
+		client, err := testAccProvider.Meta().(*Client).config.NewClient(database)
+		if err != nil {
+			return fmt.Errorf("could not create client on database %s: %w", schemaName, err)
+		}
 		db := client.DB()
 
-		_, err := db.Exec(fmt.Sprintf("CREATE TABLE %s.test_table (id serial)", schemaName))
-		if err != nil {
+		if _, err = db.Exec(fmt.Sprintf("CREATE TABLE %s.test_table (id serial)", schemaName)); err != nil {
 			return fmt.Errorf("could not create test table in schema %s: %s", schemaName, err)
 		}
 
