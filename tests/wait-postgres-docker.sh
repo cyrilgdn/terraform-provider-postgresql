@@ -1,24 +1,17 @@
 #!/bin/bash
 
-COMPOSE_FILE=${1:-"docker-compose.yml"}
-
-TIMEOUT=30
-
-if [ ! -e "$COMPOSE_FILE" ]; then
-    echo "Unable to find docker-compose file: $COMPOSE_FILE"
-    exit 1
-fi
+TIMEOUT=${TIMEOUT:-30}
+export PGCONNECT_TIMEOUT=1
 
 echo "Waiting for database to be up"
-i=0
-until docker-compose -f "$COMPOSE_FILE" logs postgres | grep "ready to accept connections" > /dev/null; do
-    i=$((i + 1))
-    if [ $i -eq $TIMEOUT ]; then
-        echo
-        echo "Timeout while waiting for database to be up"
-        exit 1
+
+until [ $SECONDS -ge  $TIMEOUT ]; do
+    if psql -c "SELECT 1" > /dev/null 2>&1 ; then
+        printf '\nDatabase is ready'
+        exit 0
     fi
     printf "."
     sleep 1
 done
-echo
+printf '\nTimeout while waiting for database to be up'
+exit 1
