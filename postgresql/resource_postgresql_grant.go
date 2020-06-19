@@ -17,11 +17,13 @@ var allowedObjectTypes = []string{
 	"database",
 	"table",
 	"sequence",
+	"function",
 }
 
 var objectTypes = map[string]string{
 	"table":    "r",
 	"sequence": "S",
+	"function": "f",
 }
 
 func resourcePostgreSQLGrant() *schema.Resource {
@@ -218,16 +220,30 @@ JOIN pg_roles ON grantee = pg_roles.oid WHERE rolname = $2
 }
 
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	if d.Get("object_type").(string) == "database" {
+	var query string
+	object_type := strings.ToUpper(d.Get("object_type").(string))
+	switch object_type {
+	case "DATABASE":
 		return readDatabaseRolePriviges(txn, d)
-	}
-
-	// This returns, for the specified role (rolname),
-	// the list of all object of the specified type (relkind) in the specified schema (namespace)
-	// with the list of the currently applied privileges (aggregation of privilege_type)
-	//
-	// Our goal is to check that every object has the same privileges as saved in the state.
-	query := `
+	case "FUNCTION":
+		query = `
+SELECT pg_proc.proname, array_remove(array_agg(privilege_type), NULL)
+FROM pg_proc
+JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
+LEFT JOIN (
+    select acls.*
+    from (
+             SELECT proname, prokind, pronamespace, (aclexplode(proacl)).* FROM pg_proc
+         ) acls
+    JOIN pg_roles on grantee = pg_roles.oid
+    WHERE rolname = $1
+) privs
+USING (proname, pronamespace, prokind)
+      WHERE nspname = $2 AND prokind = $3
+GROUP BY pg_proc.proname
+`
+	default:
+		query = `
 SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)
 FROM pg_class
 JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
@@ -240,8 +256,15 @@ LEFT JOIN (
 ) privs
 USING (relname, relnamespace, relkind)
 WHERE nspname = $2 AND relkind = $3
-GROUP BY pg_class.relname;
+GROUP BY pg_class.relname
 `
+	}
+
+	// This returns, for the specified role (rolname),
+	// the list of all object of the specified type (relkind) in the specified schema (namespace)
+	// with the list of the currently applied privileges (aggregation of privilege_type)
+	//
+	// Our goal is to check that every object has the same privileges as saved in the state.
 
 	objectType := d.Get("object_type").(string)
 	rows, err := txn.Query(
@@ -287,7 +310,7 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 			pq.QuoteIdentifier(d.Get("database").(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
-	case "TABLE", "SEQUENCE":
+	case "TABLE", "SEQUENCE", "FUNCTION":
 		query = fmt.Sprintf(
 			"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
 			strings.Join(privileges, ","),
@@ -314,7 +337,7 @@ func createRevokeQuery(d *schema.ResourceData) string {
 			pq.QuoteIdentifier(d.Get("database").(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
-	case "TABLE", "SEQUENCE":
+	case "TABLE", "SEQUENCE", "FUNCTION":
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
 			strings.ToUpper(d.Get("object_type").(string)),

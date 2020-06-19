@@ -29,5 +29,5 @@ resource "postgresql_grant" "readonly_tables" {
 * `role` - (Required) The name of the role to grant privileges on.
 * `database` - (Required) The database to grant privileges on for this role.
 * `schema` - (Required) The database schema to grant privileges on for this role.
-* `object_type` - (Required) The PostgreSQL object type to grant the privileges on (one of: table, sequence).
+* `object_type` - (Required) The PostgreSQL object type to grant the privileges on (one of: table, sequence,function).
 * `privileges` - (Required) The list of privileges to grant.
