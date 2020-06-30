@@ -132,10 +132,10 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 	}
 	defer deferredRollback(txn)
 
-	// If the admin user is not a superuser (e.g. on AWS RDS)
-	// we'll need to temporary grant him:
-	//  * the owner of the db to have the permissions to create the schema
-	//  * the owner of the schema if specified in order to change its owner.
+	// If the authenticated user is not a superuser (e.g. on AWS RDS)
+	// we'll need to temporarily grant it membership in the following roles:
+	//  * the owner of the db (to have the permissions to create the schema)
+	//  * the owner of the schema, if it has one (in order to change its owner)
 	var rolesToGrant []string
 
 	dbOwner, err := getDatabaseOwner(txn, database)
