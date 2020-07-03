@@ -173,7 +173,8 @@ func createSchema(d *schema.ResourceData, c *Client, txn *sql.Tx) error {
 	err := txn.QueryRow(`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName).Scan(&foundSchema)
 
 	queries := []string{}
-	if err == sql.ErrNoRows {
+	switch {
+	case err == sql.ErrNoRows:
 		b := bytes.NewBufferString("CREATE SCHEMA ")
 		if c.featureSupported(featureSchemaCreateIfNotExist) {
 			if v := d.Get(schemaIfNotExists); v.(bool) {
@@ -187,7 +188,12 @@ func createSchema(d *schema.ResourceData, c *Client, txn *sql.Tx) error {
 			fmt.Fprint(b, " AUTHORIZATION ", pq.QuoteIdentifier(v.(string)))
 		}
 		queries = append(queries, b.String())
-	} else {
+
+	case err != nil:
+		return fmt.Errorf("Error looking for schema: %w", err)
+
+	default:
+		// The schema already exists, we just set the owner.
 		if err := setSchemaOwner(txn, d); err != nil {
 			return err
 		}

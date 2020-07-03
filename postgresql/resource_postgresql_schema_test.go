@@ -234,6 +234,39 @@ resource "postgresql_schema" "test_cascade" {
 	})
 }
 
+func TestAccPostgresqlSchema_AlreadyExists(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Test to create the schema 'public' that already exists
+	// to assert it does not fail.
+	var testAccPostgresqlSchemaConfig = fmt.Sprintf(`
+resource "postgresql_schema" "public" {
+  name = "public"
+  database = "%s"
+  owner = "%s"
+}
+`, dbName, roleName)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlSchemaConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.public", "public"),
+					testAccCheckSchemaOwner(dbName, "public", roleName),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
@@ -333,6 +366,32 @@ func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFun
 
 		if _, err = db.Exec(fmt.Sprintf("CREATE TABLE %s.test_table (id serial)", schemaName)); err != nil {
 			return fmt.Errorf("could not create test table in schema %s: %s", schemaName, err)
+		}
+
+		return nil
+	}
+}
+
+func testAccCheckSchemaOwner(database, schemaName, expectedOwner string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		client, err := testAccProvider.Meta().(*Client).config.NewClient(database)
+		if err != nil {
+			return fmt.Errorf("could not create client on database %s: %w", schemaName, err)
+		}
+		db := client.DB()
+
+		var owner string
+
+		query := "SELECT pg_catalog.pg_get_userbyid(n.nspowner)  FROM pg_catalog.pg_namespace n WHERE n.nspname=$1"
+		switch err := db.QueryRow(query, schemaName).Scan(&owner); {
+		case err == sql.ErrNoRows:
+			return fmt.Errorf("could not find schema %s while checking owner", schemaName)
+		case err != nil:
+			return fmt.Errorf("error reading owner of schema %s: %w", schemaName, err)
+		}
+
+		if owner != expectedOwner {
+			return fmt.Errorf("expected owner of schema %s to be %s; got %s", schemaName, expectedOwner, owner)
 		}
 
 		return nil
