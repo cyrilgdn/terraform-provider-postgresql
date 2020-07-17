@@ -14,6 +14,9 @@ func TestAccPostgresqlExtension_Basic(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureExtension)
+			// TODO: Need to check how RDS manage to allow `rds_supuser` to create extension
+			// even it's not a real superuser
+			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
@@ -116,6 +119,7 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureExtension)
+			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
@@ -182,6 +186,7 @@ func TestAccPostgresqlExtension_Database(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureExtension)
+			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,

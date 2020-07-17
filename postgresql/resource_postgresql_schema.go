@@ -50,6 +50,7 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Computed:    true,
+				ForceNew:    true,
 				Description: "The database name to alter schema",
 			},
 			schemaOwnerAttr: {
@@ -121,26 +122,59 @@ func resourcePostgreSQLSchema() *schema.Resource {
 func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
 
-	queries := []string{}
-
-	database := getDatabase(d, c)
-
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
 
+	database := getDatabase(d, c)
 	txn, err := startTransaction(c, database)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
+	// If the authenticated user is not a superuser (e.g. on AWS RDS)
+	// we'll need to temporarily grant it membership in the following roles:
+	//  * the owner of the db (to have the permissions to create the schema)
+	//  * the owner of the schema, if it has one (in order to change its owner)
+	var rolesToGrant []string
+
+	dbOwner, err := getDatabaseOwner(txn, database)
+	if err != nil {
+		return err
+	}
+	rolesToGrant = append(rolesToGrant, dbOwner)
+
+	schemaOwner := d.Get("owner").(string)
+	if schemaOwner != "" && schemaOwner != dbOwner {
+		rolesToGrant = append(rolesToGrant, schemaOwner)
+
+	}
+
+	if err := withRolesGranted(txn, rolesToGrant, func() error {
+		return createSchema(d, c, txn)
+	}); err != nil {
+		return err
+	}
+
+	if err := txn.Commit(); err != nil {
+		return fmt.Errorf("Error committing schema: %w", err)
+	}
+
+	d.SetId(generateSchemaID(d, c))
+
+	return resourcePostgreSQLSchemaReadImpl(d, c)
+}
+
+func createSchema(d *schema.ResourceData, c *Client, txn *sql.Tx) error {
 	schemaName := d.Get(schemaNameAttr).(string)
 
 	// Check if previous tasks haven't already create schema
 	var foundSchema bool
-	err = txn.QueryRow(`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName).Scan(&foundSchema)
+	err := txn.QueryRow(`SELECT TRUE FROM pg_catalog.pg_namespace WHERE nspname = $1`, schemaName).Scan(&foundSchema)
 
-	if err == sql.ErrNoRows {
+	queries := []string{}
+	switch {
+	case err == sql.ErrNoRows:
 		b := bytes.NewBufferString("CREATE SCHEMA ")
 		if c.featureSupported(featureSchemaCreateIfNotExist) {
 			if v := d.Get(schemaIfNotExists); v.(bool) {
@@ -154,7 +188,12 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 			fmt.Fprint(b, " AUTHORIZATION ", pq.QuoteIdentifier(v.(string)))
 		}
 		queries = append(queries, b.String())
-	} else {
+
+	case err != nil:
+		return fmt.Errorf("Error looking for schema: %w", err)
+
+	default:
+		// The schema already exists, we just set the owner.
 		if err := setSchemaOwner(txn, d); err != nil {
 			return err
 		}
@@ -194,22 +233,16 @@ func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) er
 		}
 	}
 
-	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
-	}
-
-	d.SetId(generateSchemaID(d, c))
-
-	return resourcePostgreSQLSchemaReadImpl(d, c)
+	return nil
 }
 
 func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(*Client)
 
-	database := getDatabase(d, c)
-
 	c.catalogLock.Lock()
 	defer c.catalogLock.Unlock()
+
+	database := getDatabase(d, c)
 
 	txn, err := startTransaction(c, database)
 	if err != nil {
@@ -219,14 +252,31 @@ func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) er
 
 	schemaName := d.Get(schemaNameAttr).(string)
 
-	dropMode := "RESTRICT"
-	if d.Get(schemaDropCascade).(bool) {
-		dropMode = "CASCADE"
+	exists, err := schemaExists(txn, schemaName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		d.SetId("")
+		return nil
 	}
 
-	sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
-	if _, err = txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error deleting schema: %w", err)
+	owner := d.Get("owner").(string)
+
+	if err = withRolesGranted(txn, []string{owner}, func() error {
+		dropMode := "RESTRICT"
+		if d.Get(schemaDropCascade).(bool) {
+			dropMode = "CASCADE"
+		}
+
+		sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
+		if _, err = txn.Exec(sql); err != nil {
+			return fmt.Errorf("Error deleting schema: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if err := txn.Commit(); err != nil {
@@ -415,6 +465,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	schemaName := d.Get(schemaNameAttr).(string)
+	owner := d.Get(schemaOwnerAttr).(string)
 
 	oraw, nraw := d.GetChange(schemaPolicyAttr)
 	oldList := oraw.(*schema.Set).List()
@@ -468,13 +519,19 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 		}
 	}
 
-	for _, query := range queries {
-		if _, err := txn.Exec(query); err != nil {
-			return fmt.Errorf("Error updating schema DCL: %w", err)
-		}
+	rolesToGrant := []string{}
+	if owner != "" {
+		rolesToGrant = append(rolesToGrant, owner)
 	}
 
-	return nil
+	return withRolesGranted(txn, rolesToGrant, func() error {
+		for _, query := range queries {
+			if _, err := txn.Exec(query); err != nil {
+				return fmt.Errorf("Error updating schema DCL: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // schemaChangedPolicies walks old and new to create a set of queries that can

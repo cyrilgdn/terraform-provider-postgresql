@@ -331,10 +331,15 @@ func resourcePostgreSQLRoleDelete(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if len(queries) > 0 {
-		for _, query := range queries {
-			if _, err := txn.Exec(query); err != nil {
-				return fmt.Errorf("Error deleting role: %w", err)
+		if err := withRolesGranted(txn, []string{roleName}, func() error {
+			for _, query := range queries {
+				if _, err := txn.Exec(query); err != nil {
+					return fmt.Errorf("Error deleting role: %w", err)
+				}
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 
 		if err := txn.Commit(); err != nil {

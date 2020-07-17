@@ -3,7 +3,6 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -23,6 +22,14 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 	client := testAccProvider.Meta().(*Client)
 	if !client.featureSupported(feature) {
 		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", client.version))
+	}
+}
+
+// Some tests have to be run as a real superuser (not RDS like)
+func testSuperuserPreCheck(t *testing.T) {
+	client := testAccProvider.Meta().(*Client)
+	if !client.config.Superuser {
+		t.Skip("Skip test: This test can be run only with a real superuser")
 	}
 }
 
@@ -110,6 +117,7 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 func createTestTables(t *testing.T, dbSuffix string, tables []string, owner string) func() {
 	config := getTestConfig(t)
 	dbName, _ := getTestDBNames(dbSuffix)
+	adminUser := config.getDatabaseUsername()
 
 	db, err := sql.Open("postgres", config.connStr(dbName))
 	if err != nil {
@@ -118,6 +126,11 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	defer db.Close()
 
 	if owner != "" {
+		if !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+				t.Fatalf("could not grant role %s to current user: %v", owner, err)
+			}
+		}
 		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
 			t.Fatalf("could not set role to %s: %v", owner, err)
 		}
@@ -133,6 +146,12 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 			}
 		}
 	}
+	if owner != "" && !config.Superuser {
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
+			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+		}
+	}
+
 	// In this case we need to drop table after each test.
 	return func() {
 		db, err := sql.Open("postgres", config.connStr(dbName))
@@ -142,11 +161,23 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 		}
 
-		for _, table := range tables {
-			if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", table)); err != nil {
-				log.Fatalf("could not drop table %s: %v", table, err)
+		if owner != "" && !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+				t.Fatalf("could not grant role %s to current user: %v", owner, err)
 			}
 		}
+
+		for _, table := range tables {
+			if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", table)); err != nil {
+				t.Fatalf("could not drop table %s: %v", table, err)
+			}
+		}
+		if owner != "" && !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
+				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+			}
+		}
+
 	}
 }
 
