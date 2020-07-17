@@ -2,7 +2,26 @@
 
 FEATURES:
 
-* `postgresql_grant`: Implement grant on functions
+* all resources: Grant object owners to connected user when needed.
+  This greatly improves support of non-superuser admin (e.g.: on AWS RDS)
+  ([#146](https://github.com/terraform-providers/terraform-provider-postgresql/pull/146))
+
+* `postgresql_grant`, `postgresql_default_privileges`: Implement grant on functions.
+  ([#144](https://github.com/terraform-providers/terraform-provider-postgresql/pull/144))
+
+* `postgresql_default_privileges`: Implement grant on type.
+  ([#134](https://github.com/terraform-providers/terraform-provider-postgresql/pull/134))
+
+DEV IMPROVEMENTS:
+
+* Upgrade to Go 1.14 and replace errwrap.Wrapf by fmt.Errorf.
+  ([#145](https://github.com/terraform-providers/terraform-provider-postgresql/pull/145))
+
+
+DOCUMENTATION:
+
+* Improve documentation of `postgresql_grant`
+  ([#149](https://github.com/terraform-providers/terraform-provider-postgresql/pull/149) and [#151](https://github.com/terraform-providers/terraform-provider-postgresql/pull/151))
 
 ## 1.6.0 (May 22, 2020)
 
