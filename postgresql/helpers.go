@@ -58,8 +58,11 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 	}
 
 	if isMember {
+		log.Printf("grantRoleMembership: %s is already a member of %s, nothing to do", member, role)
 		return false, nil
 	}
+
+	log.Printf("grantRoleMembership: granting %s to %s", role, member)
 
 	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
@@ -79,6 +82,8 @@ func revokeRoleMembership(db QueryAble, role, member string) error {
 	}
 
 	if isMember {
+		log.Printf("revokeRoleMembership: Revoke %s from %s", role, member)
+
 		sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 		if _, err := db.Exec(sql); err != nil {
 			return fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
@@ -102,7 +107,35 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 	}
 
 	var grantedRoles []string
+	var revokedRoles []string
+
 	for _, role := range roles {
+		// We also need to check if the reverse relationship does not exist.
+		// e.g.: We want to temporary `GRANT foo TO postgres` so `postgres` become a member of role `foo`
+		// in order to manipulate its objects/privileges.
+		// But this grant will fail if `foo` is a member of role `postgres`. In this case we will temporary revoke
+		// this privilege.  So, the following queries will happen (in the same transaction):
+		//  - REVOKE postgres FROM foo
+		//  - GRANT foo TO postgres
+		//
+		//     Here we execute the wrapped function `fn`
+		//
+		//  - REVOKE foo FROM postgres
+		//  - GRANT postgres TO foo
+
+		// Check the opposite relation and revoke currentUser from role if needed
+		isMember, err := isRoleMember(txn, currentUser, role)
+		if err != nil {
+			return err
+		}
+		if isMember {
+			if err = revokeRoleMembership(txn, currentUser, role); err != nil {
+				return err
+			}
+			revokedRoles = append(revokedRoles, role)
+		}
+
+		// Grant the role to currentUser if needed
 		roleGranted, err := grantRoleMembership(txn, role, currentUser)
 		if err != nil {
 			return err
@@ -112,12 +145,29 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		}
 	}
 
+	// Execute the wrapped function
 	if err := fn(); err != nil {
 		return err
 	}
 
+	// Revoke the temporary granted roles.
 	for _, role := range grantedRoles {
 		if err := revokeRoleMembership(txn, role, currentUser); err != nil {
+			return err
+		}
+	}
+
+	// Grant back the temporary revoked role.
+	for _, role := range revokedRoles {
+		// check if the role has not been deleted by the wrapped function
+		exists, err := roleExists(txn, role)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		if _, err := grantRoleMembership(txn, currentUser, role); err != nil {
 			return err
 		}
 	}
