@@ -106,10 +106,30 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		return err
 	}
 
+	superuser, err := isSuperuser(txn, currentUser)
+	if err != nil {
+		return err
+	}
+	if superuser {
+		log.Printf("withRolesGranted: current user %s is superuser, no need to grant roles", currentUser)
+		return fn()
+	}
+
 	var grantedRoles []string
 	var revokedRoles []string
 
 	for _, role := range roles {
+		// We need to check if the role we want to grant is a superuser
+		// in this case we're not allowed to grant it to a current user which is not superuser.
+		superuser, err := isSuperuser(txn, role)
+		if err != nil {
+			return err
+		}
+		if superuser {
+			log.Printf("withRolesGranted: WARN role %s could not be granted to current user (%s) as it's a superuser", role, currentUser)
+			continue
+		}
+
 		// We also need to check if the reverse relationship does not exist.
 		// e.g.: We want to temporary `GRANT foo TO postgres` so `postgres` become a member of role `foo`
 		// in order to manipulate its objects/privileges.
@@ -374,4 +394,14 @@ func getTablesOwner(db QueryAble, schemaName string) ([]string, error) {
 	}
 
 	return owners, nil
+}
+
+func isSuperuser(db QueryAble, role string) (bool, error) {
+	var superuser bool
+
+	if err := db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = $1", role).Scan(&superuser); err != nil {
+		return false, fmt.Errorf("could not check if role %s is superuser: %w", role, err)
+	}
+
+	return superuser, nil
 }

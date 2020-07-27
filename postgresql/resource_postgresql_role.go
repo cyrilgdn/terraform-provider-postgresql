@@ -316,35 +316,29 @@ func resourcePostgreSQLRoleDelete(d *schema.ResourceData, meta interface{}) erro
 
 	roleName := d.Get(roleNameAttr).(string)
 
-	queries := make([]string, 0, 3)
 	if !d.Get(roleSkipReassignOwnedAttr).(bool) {
-		if c.featureSupported(featureReassignOwnedCurrentUser) {
-			queries = append(queries, fmt.Sprintf("REASSIGN OWNED BY %s TO CURRENT_USER", pq.QuoteIdentifier(roleName)))
-		} else {
-			queries = append(queries, fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(c.config.getDatabaseUsername())))
-		}
-		queries = append(queries, fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName)))
-	}
-
-	if !d.Get(roleSkipDropRoleAttr).(bool) {
-		queries = append(queries, fmt.Sprintf("DROP ROLE %s", pq.QuoteIdentifier(roleName)))
-	}
-
-	if len(queries) > 0 {
 		if err := withRolesGranted(txn, []string{roleName}, func() error {
-			for _, query := range queries {
-				if _, err := txn.Exec(query); err != nil {
-					return fmt.Errorf("Error deleting role: %w", err)
-				}
+			currentUser := c.config.getDatabaseUsername()
+			if _, err := txn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
+				return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)
+			}
+
+			if _, err := txn.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
+				return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
 			}
 			return nil
 		}); err != nil {
 			return err
 		}
-
-		if err := txn.Commit(); err != nil {
-			return fmt.Errorf("Error committing schema: %w", err)
+	}
+	if !d.Get(roleSkipDropRoleAttr).(bool) {
+		if _, err := txn.Exec(fmt.Sprintf("DROP ROLE %s", pq.QuoteIdentifier(roleName))); err != nil {
+			return fmt.Errorf("could not delete role %s: %w", roleName, err)
 		}
+	}
+
+	if err := txn.Commit(); err != nil {
+		return fmt.Errorf("Error committing schema: %w", err)
 	}
 
 	d.SetId("")
