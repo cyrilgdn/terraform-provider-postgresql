@@ -137,7 +137,7 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		}
 		if ownerGranted {
 			defer func() {
-				err = revokeRoleMembership(db, owner, currentUser)
+				_, err = revokeRoleMembership(db, owner, currentUser)
 			}()
 		}
 	}
@@ -243,7 +243,7 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 		}
 		if ownerGranted {
 			defer func() {
-				err = revokeRoleMembership(c.DB(), owner, currentUser)
+				_, err = revokeRoleMembership(c.DB(), owner, currentUser)
 			}()
 		}
 	}
@@ -456,7 +456,7 @@ func setDBOwner(c *Client, d *schema.ResourceData) error {
 	}
 	if ownerGranted {
 		defer func() {
-			err = revokeRoleMembership(db, owner, currentUser)
+			_, err = revokeRoleMembership(db, owner, currentUser)
 		}()
 	}
 
