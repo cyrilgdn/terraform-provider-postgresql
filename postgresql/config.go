@@ -21,7 +21,6 @@ const (
 	featureDBIsTemplate
 	featureFallbackApplicationName
 	featureRLS
-	featureReassignOwnedCurrentUser
 	featureSchemaCreateIfNotExist
 	featureReplication
 	featureExtension
@@ -53,9 +52,6 @@ var (
 
 		// CREATE SCHEMA IF NOT EXISTS
 		featureSchemaCreateIfNotExist: semver.MustParseRange(">=9.3.0"),
-
-		// REASSIGN OWNED BY { old_role | CURRENT_USER
-		featureReassignOwnedCurrentUser: semver.MustParseRange(">=9.5.0"),
 
 		// row-level security
 		featureRLS: semver.MustParseRange(">=9.5.0"),

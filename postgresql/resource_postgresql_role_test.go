@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -180,6 +181,42 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
+				),
+			},
+		},
+	})
+}
+
+// Test to create a role with admin user (usually postgres) granted to it
+// There were a bug on RDS like setup (with a non-superuser postgres role)
+// where it couldn't delete the role in this case.
+func TestAccPostgresqlRole_AdminGranted(t *testing.T) {
+	admin := os.Getenv("PGUSER")
+	if admin == "" {
+		admin = "postgres"
+	}
+
+	roleConfig := fmt.Sprintf(`
+resource "postgresql_role" "test_role" {
+  name  = "test_role"
+  roles = [
+	  "%s"
+  ] 
+}`, admin)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: roleConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("test_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.test_role", "name", "test_role"),
 				),
 			},
 		},

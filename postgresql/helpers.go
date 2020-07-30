@@ -27,7 +27,7 @@ func pqQuoteLiteral(in string) string {
 	return in
 }
 
-func isRoleMember(db QueryAble, role, member string) (bool, error) {
+func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
 	err := db.QueryRow(
 		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
@@ -52,14 +52,17 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 		return false, nil
 	}
 
-	isMember, err := isRoleMember(db, role, member)
+	isMember, err := isMemberOfRole(db, role, member)
 	if err != nil {
 		return false, err
 	}
 
 	if isMember {
+		log.Printf("grantRoleMembership: %s is already a member of %s, nothing to do", member, role)
 		return false, nil
 	}
+
+	log.Printf("grantRoleMembership: granting %s to %s", role, member)
 
 	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
@@ -68,23 +71,28 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 	return true, nil
 }
 
-func revokeRoleMembership(db QueryAble, role, member string) error {
+// revokeRoleMembership revokes the role *role* from the user *member*.
+// It returns false if the revoke is not needed because the user is not a member of this role.
+func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 	if member == role {
-		return nil
+		return false, nil
 	}
 
-	isMember, err := isRoleMember(db, role, member)
+	isMember, err := isMemberOfRole(db, role, member)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if !isMember {
+		return false, nil
 	}
 
-	if isMember {
-		sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
-		if _, err := db.Exec(sql); err != nil {
-			return fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
-		}
+	log.Printf("revokeRoleMembership: Revoke %s from %s", role, member)
+
+	sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
+	if _, err := db.Exec(sql); err != nil {
+		return false, fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
 	}
-	return nil
+	return true, nil
 }
 
 // withRolesGranted temporarily grants, if needed, the roles specified to connected user
@@ -101,8 +109,55 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		return err
 	}
 
+	superuser, err := isSuperuser(txn, currentUser)
+	if err != nil {
+		return err
+	}
+	if superuser {
+		log.Printf("withRolesGranted: current user %s is superuser, no need to grant roles", currentUser)
+		return fn()
+	}
+
 	var grantedRoles []string
+	var revokedRoles []string
+
 	for _, role := range roles {
+		// We need to check if the role we want to grant is a superuser
+		// in this case Postgres disallows to grant it to a current user which is not superuser.
+		superuser, err := isSuperuser(txn, role)
+		if err != nil {
+			return err
+		}
+		if superuser {
+			log.Printf("withRolesGranted: WARN role %s could not be granted to current user (%s) as it's a superuser", role, currentUser)
+			continue
+		}
+
+		// We also need to check if the reverse relationship does not exist.
+		// e.g.: We want to temporary `GRANT foo TO postgres` so `postgres` become a member of role `foo`
+		// in order to manipulate its objects/privileges.
+		// But PostgreSQL prevents `foo` to be a member of the role `postgres`,
+		// and for `postgres` to be a member of the role `foo`, at the same time.
+		// In this case we will temporary revoke this privilege.
+		// So, the following queries will happen (in the same transaction):
+		//  - REVOKE postgres FROM foo
+		//  - GRANT foo TO postgres
+		//
+		//     Here we execute the wrapped function `fn`
+		//
+		//  - REVOKE foo FROM postgres
+		//  - GRANT postgres TO foo
+
+		// Check the opposite relation and revoke currentUser from role if needed
+		revoked, err := revokeRoleMembership(txn, currentUser, role)
+		if err != nil {
+			return err
+		}
+		if revoked {
+			revokedRoles = append(revokedRoles, role)
+		}
+
+		// Grant the role to currentUser if needed
 		roleGranted, err := grantRoleMembership(txn, role, currentUser)
 		if err != nil {
 			return err
@@ -112,12 +167,29 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		}
 	}
 
+	// Execute the wrapped function
 	if err := fn(); err != nil {
 		return err
 	}
 
+	// Revoke the temporary granted roles.
 	for _, role := range grantedRoles {
-		if err := revokeRoleMembership(txn, role, currentUser); err != nil {
+		if _, err := revokeRoleMembership(txn, role, currentUser); err != nil {
+			return err
+		}
+	}
+
+	// Grant back the temporary revoked role.
+	for _, role := range revokedRoles {
+		// check if the role has not been deleted by the wrapped function
+		exists, err := roleExists(txn, role)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		if _, err := grantRoleMembership(txn, currentUser, role); err != nil {
 			return err
 		}
 	}
@@ -324,4 +396,14 @@ func getTablesOwner(db QueryAble, schemaName string) ([]string, error) {
 	}
 
 	return owners, nil
+}
+
+func isSuperuser(db QueryAble, role string) (bool, error) {
+	var superuser bool
+
+	if err := db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = $1", role).Scan(&superuser); err != nil {
+		return false, fmt.Errorf("could not check if role %s is superuser: %w", role, err)
+	}
+
+	return superuser, nil
 }
