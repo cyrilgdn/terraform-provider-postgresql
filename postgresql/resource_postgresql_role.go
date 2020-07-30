@@ -444,7 +444,7 @@ func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	d.Set(roleSuperuserAttr, roleSuperuser)
 	d.Set(roleValidUntilAttr, roleValidUntil)
 	d.Set(roleReplicationAttr, roleReplication)
-	d.Set(roleReplicationAttr, roleBypassRLS)
+	d.Set(roleBypassRLSAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 
