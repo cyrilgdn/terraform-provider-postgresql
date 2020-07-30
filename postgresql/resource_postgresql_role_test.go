@@ -201,7 +201,7 @@ resource "postgresql_role" "test_role" {
   name  = "test_role"
   roles = [
 	  "%s"
-  ] 
+  ]
 }`, admin)
 
 	resource.Test(t, resource.TestCase{
@@ -215,7 +215,7 @@ resource "postgresql_role" "test_role" {
 			{
 				Config: roleConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("test_role", nil, nil),
+					testAccCheckPostgresqlRoleExists("test_role", []string{admin}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.test_role", "name", "test_role"),
 				),
 			},
