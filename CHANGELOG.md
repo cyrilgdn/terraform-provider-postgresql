@@ -1,4 +1,13 @@
-## 1.8.0 (Unreleased)
+## 1.7.1 (Unreleased)
+
+BUG FIXES:
+
+* all resources: Fix some specific use case on `withRolesGranted` helper.
+  ([#162](https://github.com/terraform-providers/terraform-provider-postgresql/pull/162))
+
+* `postgresql_role`: Fix `bypass_row_level_security` attribute.
+  ([#158](https://github.com/terraform-providers/terraform-provider-postgresql/pull/158))
+
 ## 1.7.0 (July 17, 2020)
 
 FEATURES:
