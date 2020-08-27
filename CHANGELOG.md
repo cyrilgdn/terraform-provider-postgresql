@@ -1,4 +1,12 @@
 ## 1.8.0 (Unreleased)
+## 1.7.2 (unreleased)
+
+BUG FIXES:
+
+* `postgresql_grant` : fix grant on function by removing prokind column selection, 
+    as is it not available on postgresql version < 11 and its not to 
+    expect to have a window(w) or aggregate function(a) with the same name as a normal function(f)
+       
 ## 1.7.1 (July 30, 2020)
 
 BUG FIXES:
