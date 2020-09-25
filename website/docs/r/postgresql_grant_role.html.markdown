@@ -6,7 +6,7 @@ description: |-
   Creates and manages membership in a role to one or more other roles.
 ---
 
-# postgresql\_grant
+# postgresql\_grant\_role
 
 The ``postgresql_grant_role`` resource creates and manages membership in a role to one or more other roles.
 
