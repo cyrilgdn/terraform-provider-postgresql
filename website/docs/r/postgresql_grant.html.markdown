@@ -10,6 +10,8 @@ description: |-
 
 The ``postgresql_grant`` resource creates and manages privileges given to a user for a database schema.
 
+See [PostgreSQL documentation](https://www.postgresql.org/docs/current/sql-grant.html)
+
 ~> **Note:** This resource needs Postgresql version 9 or above.
 
 ## Usage
@@ -30,4 +32,4 @@ resource "postgresql_grant" "readonly_tables" {
 * `database` - (Required) The database to grant privileges on for this role.
 * `schema` - (Required) The database schema to grant privileges on for this role.
 * `object_type` - (Required) The PostgreSQL object type to grant the privileges on (one of: database, table, sequence,function).
-* `privileges` - (Required) The list of privileges to grant.
+* `privileges` - (Required) The list of privileges to grant. There are different kinds of privileges: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, CONNECT, TEMPORARY, EXECUTE, and USAGE.

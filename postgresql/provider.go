@@ -58,9 +58,9 @@ func Provider() terraform.ResourceProvider {
 			},
 
 			"superuser": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  true,
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PGSUPERUSER", true),
 				Description: "Specify if the user to connect as is a Postgres superuser or not." +
 					"If not, some feature might be disabled (e.g.: Refreshing state password from Postgres)",
 			},

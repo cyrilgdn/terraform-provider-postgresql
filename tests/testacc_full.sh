@@ -12,12 +12,7 @@ setup() {
 }
 
 run() {
-  go clean -testcache
-  source "$(pwd)"/tests/env.sh
-  TF_ACC=1 go test ./postgresql -v -timeout 120m
-  
-  # for a single test comment the previous line and uncomment the next line
-  #TF_LOG=INFO TF_ACC=1 go test -v ./postgresql -run ^TestAccPostgresqlRole_Basic$ -timeout 360s
+  go test -count=1 ./postgresql -v -timeout 120m
   
   # keep the return value for the scripts to fail and clean properly
   return $?
@@ -27,7 +22,13 @@ cleanup() {
     "$(pwd)"/tests/testacc_cleanup.sh
 }
 
-## main
-log "setup" && setup 
-log "run" && run || (log "cleanup" && cleanup && exit 1)
-log "cleanup" && cleanup
+run_suite() {
+    suite=${1?}
+    log "setup ($1)" && setup
+    source "./tests/switch_$suite.sh"
+    log "run ($1)" && run || (log "cleanup" && cleanup && exit 1)
+    log "cleanup ($1)" && cleanup
+}
+
+run_suite "superuser"
+run_suite "rds"

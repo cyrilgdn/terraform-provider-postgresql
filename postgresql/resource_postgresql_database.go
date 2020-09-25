@@ -137,7 +137,7 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		}
 		if ownerGranted {
 			defer func() {
-				err = revokeRoleMembership(db, owner, currentUser)
+				_, err = revokeRoleMembership(db, owner, currentUser)
 			}()
 		}
 	}
@@ -175,22 +175,22 @@ func createDatabase(c *Client, d *schema.ResourceData) error {
 		fmt.Fprint(b, ` ENCODING 'UTF8'`)
 	}
 
+	// Don't specify LC_COLLATE if user didn't specify it
+	// This will use the default one (usually the one defined in the template database)
 	switch v, ok := d.GetOk(dbCollationAttr); {
 	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
 		fmt.Fprintf(b, " LC_COLLATE DEFAULT")
 	case ok:
 		fmt.Fprintf(b, " LC_COLLATE '%s' ", pqQuoteLiteral(v.(string)))
-	case v.(string) == "":
-		fmt.Fprint(b, ` LC_COLLATE 'C'`)
 	}
 
+	// Don't specify LC_CTYPE if user didn't specify it
+	// This will use the default one (usually the one defined in the template database)
 	switch v, ok := d.GetOk(dbCTypeAttr); {
 	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
 		fmt.Fprintf(b, " LC_CTYPE DEFAULT")
 	case ok:
 		fmt.Fprintf(b, " LC_CTYPE '%s' ", pqQuoteLiteral(v.(string)))
-	case v.(string) == "":
-		fmt.Fprint(b, ` LC_CTYPE 'C'`)
 	}
 
 	switch v, ok := d.GetOk(dbTablespaceAttr); {
@@ -243,7 +243,7 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 		}
 		if ownerGranted {
 			defer func() {
-				err = revokeRoleMembership(c.DB(), owner, currentUser)
+				_, err = revokeRoleMembership(c.DB(), owner, currentUser)
 			}()
 		}
 	}
@@ -456,7 +456,7 @@ func setDBOwner(c *Client, d *schema.ResourceData) error {
 	}
 	if ownerGranted {
 		defer func() {
-			err = revokeRoleMembership(db, owner, currentUser)
+			_, err = revokeRoleMembership(db, owner, currentUser)
 		}()
 	}
 
