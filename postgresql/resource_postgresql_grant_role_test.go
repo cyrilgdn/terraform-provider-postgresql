@@ -120,7 +120,10 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 	`, roleName, grantedRoleName)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
