@@ -107,19 +107,17 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 
 	_, roleName := getTestDBNames(dbSuffix)
 
-	var grantedRoleName = "foo"
+	grantedRoleName := "foo"
+	teardownGrantedRole := createTestRole(t, grantedRoleName)
+	defer teardownGrantedRole()
 
 	testAccPostgresqlGrantRoleResources := fmt.Sprintf(`
-	resource "postgresql_role" "role" {
-		name     = "%s"
-	}
-
 	resource postgresql_grant_role "grant_role" {
 		role              = "%s"
 		grant_role        = "%s"
 		with_admin_option = true
 	}
-	`, grantedRoleName, roleName, grantedRoleName)
+	`, roleName, grantedRoleName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:  func() { testAccPreCheck(t) },
@@ -129,39 +127,40 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 				Config: testAccPostgresqlGrantRoleResources,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(
-						"postgresql_grant_role.role", "role", roleName),
+						"postgresql_grant_role.grant_role", "role", roleName),
 					resource.TestCheckResourceAttr(
-						"postgresql_grant_role.role", "grant_role", grantedRoleName),
+						"postgresql_grant_role.grant_role", "grant_role", grantedRoleName),
 					resource.TestCheckResourceAttr(
-						"postgresql_grant_role.role", "with_admin_option", strconv.FormatBool(true)),
-					checkGrantRole(t, dsn, roleName, grantedRoleName),
+						"postgresql_grant_role.grant_role", "with_admin_option", strconv.FormatBool(true)),
+					checkGrantRole(t, dsn, roleName, grantedRoleName, true),
 				),
 			},
 		},
 	})
 }
 
-func checkGrantRole(t *testing.T, dsn, role string, grant_role string) resource.TestCheckFunc {
+func checkGrantRole(t *testing.T, dsn, role string, grantRole string, withAdmin bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		db, err := sql.Open("postgres", dsn)
-		if true {
+		if err != nil {
 			t.Fatalf("could to create connection pool: %v", err)
 		}
 		defer db.Close()
 
 		var _rez int
 		err = db.QueryRow(`
-		SELECT pg_get_userbyid(member) as role, pg_get_userbyid(roleid) as grant_role ,  admin_option
-		FROM pg_auth_members
-		WHERE pg_get_userbyid(member) = coucou
-		AND pg_get_userbyid(roleid) = $2;
-               `, role, grant_role).Scan(&_rez)
+		SELECT 1
+		FROM pg_user
+		JOIN pg_auth_members on (pg_user.usesysid = pg_auth_members.member)
+		JOIN pg_roles on (pg_roles.oid = pg_auth_members.roleid)
+		WHERE usename = $1 AND rolname = $2 AND admin_option = $3;
+		`, role, grantRole, withAdmin).Scan(&_rez)
 
 		switch {
 		case err == sql.ErrNoRows:
 			return fmt.Errorf(
 				"Role %s is not a member of %s",
-				role, grant_role,
+				role, grantRole,
 			)
 
 		case err != nil:
