@@ -16,7 +16,7 @@ import (
 const (
 	// This returns the role membership for role, grant_role
 	getGrantRoleQuery = `
-SELECT pg_get_userbyid(member) as role, pg_get_userbyid(roleid) as grant_role ,  admin_option
+SELECT pg_get_userbyid(member) as role, pg_get_userbyid(roleid) as grant_role, admin_option
 FROM pg_auth_members
 WHERE pg_get_userbyid(member) = $1
 AND pg_get_userbyid(roleid) = $2;

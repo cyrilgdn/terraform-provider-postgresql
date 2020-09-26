@@ -150,10 +150,10 @@ func checkGrantRole(t *testing.T, dsn, role string, grantRole string, withAdmin 
 		var _rez int
 		err = db.QueryRow(`
 		SELECT 1
-		FROM pg_user
-		JOIN pg_auth_members on (pg_user.usesysid = pg_auth_members.member)
-		JOIN pg_roles on (pg_roles.oid = pg_auth_members.roleid)
-		WHERE usename = $1 AND rolname = $2 AND admin_option = $3;
+		FROM pg_auth_members
+		WHERE pg_get_userbyid(member) = $1
+		AND pg_get_userbyid(roleid) = $2
+		AND admin_option = $3;
 		`, role, grantRole, withAdmin).Scan(&_rez)
 
 		switch {
