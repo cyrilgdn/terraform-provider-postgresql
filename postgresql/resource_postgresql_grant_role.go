@@ -40,7 +40,7 @@ func resourcePostgreSQLGrantRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "The name of the role to is granted to role",
+				Description: "The name of the role that is granted to role",
 			},
 			"with_admin_option": {
 				Type:        schema.TypeBool,
