@@ -191,7 +191,7 @@ func createGrantRoleQuery(d *schema.ResourceData) string {
 		pq.QuoteIdentifier(d.Get("grant_role").(string)),
 		pq.QuoteIdentifier(d.Get("role").(string)),
 	)
-	if d.Get("with_admin_option").(bool) == true {
+	if wao, _ := d.Get("with_admin_option").(bool); wao {
 		query = query + " WITH ADMIN OPTION"
 	}
 
