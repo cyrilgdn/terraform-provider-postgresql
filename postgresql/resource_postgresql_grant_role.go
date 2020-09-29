@@ -9,7 +9,6 @@ import (
 
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-
 	"github.com/lib/pq"
 )
 
@@ -185,11 +184,13 @@ func readGrantRole(txn *sql.Tx, d *schema.ResourceData) error {
 }
 
 func createGrantRoleQuery(d *schema.ResourceData) string {
-	var query string
-	query = fmt.Sprintf(
+	grantRole, _ := d.Get("grant_role").(string)
+	role, _ := d.Get("role").(string)
+
+	query := fmt.Sprintf(
 		"GRANT %s TO %s",
-		pq.QuoteIdentifier(d.Get("grant_role").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
+		pq.QuoteIdentifier(grantRole),
+		pq.QuoteIdentifier(role),
 	)
 	if wao, _ := d.Get("with_admin_option").(bool); wao {
 		query = query + " WITH ADMIN OPTION"
@@ -199,10 +200,13 @@ func createGrantRoleQuery(d *schema.ResourceData) string {
 }
 
 func createRevokeRoleQuery(d *schema.ResourceData) string {
+	grantRole, _ := d.Get("grant_role").(string)
+	role, _ := d.Get("role").(string)
+
 	return fmt.Sprintf(
 		"REVOKE %s FROM %s",
-		pq.QuoteIdentifier(d.Get("grant_role").(string)),
-		pq.QuoteIdentifier(d.Get("role").(string)),
+		pq.QuoteIdentifier(grantRole),
+		pq.QuoteIdentifier(role),
 	)
 }
 
