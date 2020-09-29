@@ -10,7 +10,7 @@ description: |-
 
 The ``postgresql_grant_role`` resource creates and manages membership in a role to one or more other roles.
 
-~> **Note:** This resource needs Postgresql version 9 or above.
+~> **Note:** This resource needs PostgreSQL version 9 or above.
 
 ## Usage
 
