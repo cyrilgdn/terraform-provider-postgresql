@@ -8,9 +8,13 @@ description: |-
 
 # postgresql\_grant\_role
 
-The ``postgresql_grant_role`` resource creates and manages membership in a role to one or more other roles.
+The ``postgresql_grant_role`` resource creates and manages membership in a role to one or more other roles in a non-authoritative way.
+
+When using ``postgresql_grant_role`` resource it is likely because the PostgreSQL role you are modifying was created outside of this provider.
 
 ~> **Note:** This resource needs PostgreSQL version 9 or above.
+
+~> **Note:** `postgresql_grant_role` **cannot** be used in conjunction with `postgresql_role` or they will fight over what your role grants should be.
 
 ## Usage
 
