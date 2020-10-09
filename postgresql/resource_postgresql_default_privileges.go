@@ -65,6 +65,13 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 				MinItems:    1,
 				Description: "The list of privileges to apply as default privileges",
 			},
+			"with_grant_option": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Default:     false,
+				Description: "Permit the grant recipient to grant it to others",
+			},
 		},
 	}
 }
@@ -227,6 +234,10 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		strings.ToUpper(d.Get("object_type").(string)),
 		pq.QuoteIdentifier(role),
 	)
+
+	if d.Get("with_grant_option").(bool) == true {
+		query = query + " WITH GRANT OPTION"
+	}
 
 	_, err := txn.Exec(
 		query,
