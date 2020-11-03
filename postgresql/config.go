@@ -119,43 +119,9 @@ func (c *Config) NewClient(database string) (*Client, error) {
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
 
-	dsn := c.connStr(database)
-	dbEntry, found := dbRegistry[dsn]
-	if !found {
-		db, err := sql.Open("postgres", dsn)
-		if err != nil {
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server: %w", err)
-		}
-
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dopped in the plan.
-		db.SetMaxIdleConns(0)
-		db.SetMaxOpenConns(c.MaxConns)
-
-		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
-		version := &c.ExpectedVersion
-		if defaultVersion.Equals(c.ExpectedVersion) {
-			// Version hint not set by user, need to fingerprint
-			version, err = fingerprintCapabilities(db)
-			if err != nil {
-				db.Close()
-				return nil, fmt.Errorf("error detecting capabilities: %w", err)
-			}
-		}
-
-		dbEntry = dbRegistryEntry{
-			db:      db,
-			version: *version,
-		}
-		dbRegistry[dsn] = dbEntry
-	}
-
 	client := Client{
 		config:       *c,
 		databaseName: database,
-		db:           dbEntry.db,
-		version:      dbEntry.version,
 	}
 
 	return &client, nil
@@ -305,7 +271,50 @@ func (c *Config) getDatabaseUsername() string {
 // return their database resources.  Use of QueryRow() or Exec() is encouraged.
 // Query() must have their rows.Close()'ed.
 func (c *Client) DB() *sql.DB {
+	c.connectDB()
 	return c.db
+}
+
+func (c *Client) connectDB() (*Client, error) {
+	dbRegistryLock.Lock()
+	defer dbRegistryLock.Unlock()
+
+	dsn := c.config.connStr(c.databaseName)
+	dbEntry, found := dbRegistry[dsn]
+	if !found {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			return nil, fmt.Errorf("Error connecting to PostgreSQL server: %w", err)
+		}
+
+		// We don't want to retain connection
+		// So when we connect on a specific database which might be managed by terraform,
+		// we don't keep opened connection in case of the db has to be dopped in the plan.
+		db.SetMaxIdleConns(0)
+		db.SetMaxOpenConns(c.config.MaxConns)
+
+		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
+		version := &c.config.ExpectedVersion
+		if defaultVersion.Equals(c.config.ExpectedVersion) {
+			// Version hint not set by user, need to fingerprint
+			version, err = fingerprintCapabilities(db)
+			if err != nil {
+				db.Close()
+				return nil, fmt.Errorf("error detecting capabilities: %w", err)
+			}
+		}
+
+		dbEntry = dbRegistryEntry{
+			db:      db,
+			version: *version,
+		}
+		dbRegistry[dsn] = dbEntry
+	}
+
+	c.db = dbEntry.db
+	c.version = dbEntry.version
+
+	return nil, nil
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
