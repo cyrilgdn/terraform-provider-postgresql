@@ -258,7 +258,6 @@ func startTransaction(client *Client, database string) (*sql.Tx, error) {
 			return nil, err
 		}
 	}
-	// spew.Dump(client)
 	db := client.DB()
 	txn, err := db.Begin()
 	if err != nil {
