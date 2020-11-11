@@ -91,7 +91,7 @@ The following arguments are supported:
   Additional information on the options and their implications can be seen
   [in the `libpq(3)` SSL guide](http://www.postgresql.org/docs/current/static/libpq-ssl.html#LIBPQ-SSL-PROTECTION).
 * `clientcert` - (Optional) - Configure the SSL client certificate.
-  * `cert` - (Requrired) - The SSL client certificate file path. The file must contain PEM encoded data.
+  * `cert` - (Required) - The SSL client certificate file path. The file must contain PEM encoded data.
   * `key` - (Required) - The SSL client certificate private key file path. The file must contain PEM encoded data.
 * `sslrootcert` - (Optional) - The SSL server root certificate file path. The file must contain PEM encoded data.
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
