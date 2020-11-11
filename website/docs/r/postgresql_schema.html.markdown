@@ -98,9 +98,10 @@ It is possible to import a `postgresql_schema` resource with the following
 command:
 
 ```
-$ terraform import postgresql_schema.schema_foo my_schema
+$ terraform import postgresql_schema.schema_foo my_database.my_schema
 ```
 
-Where `my_schema` is the name of the schema in the PostgreSQL database and
+Where `my_database` is the name of the database containing the schema,
+`my_schema` is the name of the schema in the PostgreSQL database and
 `postgresql_schema.schema_foo` is the name of the resource whose state will be
 populated as a result of the command.

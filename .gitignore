@@ -31,3 +31,5 @@ website/vendor
 !command/test-fixtures/**/.terraform/
 data/
 postgresql/pwfile
+tests/docker-compose.*.yml
+terraform-provider-postgresql

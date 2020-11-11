@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	extNameAttr     = "name"
-	extSchemaAttr   = "schema"
-	extVersionAttr  = "version"
-	extDatabaseAttr = "database"
+	extNameAttr        = "name"
+	extSchemaAttr      = "schema"
+	extVersionAttr     = "version"
+	extDatabaseAttr    = "database"
+	extDropCascadeAttr = "drop_cascade"
 )
 
 func resourcePostgreSQLExtension() *schema.Resource {
@@ -54,6 +55,12 @@ func resourcePostgreSQLExtension() *schema.Resource {
 				Computed:    true,
 				ForceNew:    true,
 				Description: "Sets the database to add the extension to",
+			},
+			extDropCascadeAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects",
 			},
 		},
 	}
@@ -225,7 +232,12 @@ func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{})
 	}
 	defer deferredRollback(txn)
 
-	sql := fmt.Sprintf("DROP EXTENSION %s", pq.QuoteIdentifier(extName))
+	dropMode := "RESTRICT"
+	if d.Get(extDropCascadeAttr).(bool) {
+		dropMode = "CASCADE"
+	}
+
+	sql := fmt.Sprintf("DROP EXTENSION %s %s ", pq.QuoteIdentifier(extName), dropMode)
 	if _, err := txn.Exec(sql); err != nil {
 		return err
 	}
