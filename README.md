@@ -77,5 +77,5 @@ source tests/env.sh
 TF_LOG=INFO go test -v ./postgresql -run ^TestAccPostgresqlRole_Basic$
 
 # cleans the env and tears down the postgres container
-make testacc_cleanup 
+make testacc_cleanup
 ```
