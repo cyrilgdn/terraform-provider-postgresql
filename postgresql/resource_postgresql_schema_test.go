@@ -358,11 +358,11 @@ func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
 func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 
-		client, err := testAccProvider.Meta().(*Client).config.NewClient(database)
+		client := testAccProvider.Meta().(*Client).config.NewClient(database)
+		db, err := client.Connect()
 		if err != nil {
-			return fmt.Errorf("could not create client on database %s: %w", schemaName, err)
+			return err
 		}
-		db := client.DB()
 
 		if _, err = db.Exec(fmt.Sprintf("CREATE TABLE %s.test_table (id serial)", schemaName)); err != nil {
 			return fmt.Errorf("could not create test table in schema %s: %s", schemaName, err)
@@ -374,11 +374,11 @@ func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFun
 
 func testAccCheckSchemaOwner(database, schemaName, expectedOwner string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		client, err := testAccProvider.Meta().(*Client).config.NewClient(database)
+		client := testAccProvider.Meta().(*Client).config.NewClient(database)
+		db, err := client.Connect()
 		if err != nil {
-			return fmt.Errorf("could not create client on database %s: %w", schemaName, err)
+			return err
 		}
-		db := client.DB()
 
 		var owner string
 

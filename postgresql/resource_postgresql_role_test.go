@@ -274,8 +274,12 @@ func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string, se
 }
 
 func checkRoleExists(client *Client, roleName string) (bool, error) {
+	db, err := client.Connect()
+	if err != nil {
+		return false, err
+	}
 	var _rez int
-	err := client.DB().QueryRow("SELECT 1 from pg_roles d WHERE rolname=$1", roleName).Scan(&_rez)
+	err = db.QueryRow("SELECT 1 from pg_roles d WHERE rolname=$1", roleName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -303,7 +307,12 @@ func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.Test
 }
 
 func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) error {
-	rows, err := client.DB().Query(
+	db, err := client.Connect()
+	if err != nil {
+		return err
+	}
+
+	rows, err := db.Query(
 		"SELECT pg_get_userbyid(roleid) as rolname from pg_auth_members WHERE pg_get_userbyid(member) = $1 ORDER BY rolname",
 		roleName,
 	)
@@ -332,8 +341,13 @@ func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) 
 }
 
 func checkSearchPath(client *Client, roleName string, expectedSearchPath []string) error {
+	db, err := client.Connect()
+	if err != nil {
+		return err
+	}
+
 	var searchPathStr string
-	err := client.DB().QueryRow(
+	err = db.QueryRow(
 		"SELECT (pg_options_to_table(rolconfig)).option_value FROM pg_roles WHERE rolname=$1;",
 		roleName,
 	).Scan(&searchPathStr)
