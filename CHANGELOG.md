@@ -1,3 +1,10 @@
+## 1.8.1 (November 26, 2020)
+
+BUG FIXES:
+
+* Revert "Use lazy connections" [#199](https://github.com/terraform-providers/terraform-provider-postgresql/pull/199)
+  Plugin panics if not able to connect to the database.
+
 ## 1.8.0 (November 26, 2020)
 
 FEATURES:
@@ -5,8 +12,8 @@ FEATURES:
 * `postgresql_extension`: Support drop cascade.
   ([#162](https://github.com/terraform-providers/terraform-provider-postgresql/pull/162) - @multani)
 
-* Use lazy connections.
-  ([#199](https://github.com/terraform-providers/terraform-provider-postgresql/pull/199) - @estahn)
+* ~~Use lazy connections.
+  ([#199](https://github.com/terraform-providers/terraform-provider-postgresql/pull/199) - @estahn)~~ (Reverted in 1.8.1)
 
 BUG FIXES:
 
