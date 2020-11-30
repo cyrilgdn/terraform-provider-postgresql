@@ -23,7 +23,6 @@ install:
 script:
 - make test
 - make vet
-- make website-test
 - make testacc
 
 branches:
