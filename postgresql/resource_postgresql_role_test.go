@@ -53,7 +53,7 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "name", "sub_role"),
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.#", "2"),
 
-					testAccCheckPostgresqlRoleExists("role_with_search_path", nil, []string{"bar", "foo"}),
+					testAccCheckPostgresqlRoleExists("role_with_search_path", nil, []string{"bar", "foo-with-hyphen"}),
 
 					// The int part in the attr name is the schema.HashString of the value.
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.719783566", "myrole2"),
@@ -346,6 +346,9 @@ func checkSearchPath(client *Client, roleName string, expectedSearchPath []strin
 	}
 
 	searchPath := strings.Split(searchPathStr, ", ")
+	for i := range searchPath {
+		searchPath[i] = strings.Trim(searchPath[i], `"`)
+	}
 	sort.Strings(expectedSearchPath)
 	if !reflect.DeepEqual(searchPath, expectedSearchPath) {
 		return fmt.Errorf(
@@ -411,6 +414,6 @@ resource "postgresql_role" "sub_role" {
 
 resource "postgresql_role" "role_with_search_path" {
   name = "role_with_search_path"
-  search_path = ["bar", "foo"]
+  search_path = ["bar", "foo-with-hyphen"]
 }
 `
