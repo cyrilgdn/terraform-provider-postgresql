@@ -257,13 +257,13 @@ JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
 LEFT JOIN (
     select acls.*
     from (
-             SELECT proname, pronamespace, (aclexplode(proacl)).* FROM pg_proc
+             SELECT proname, prokind, pronamespace, (aclexplode(proacl)).* FROM pg_proc
          ) acls
     JOIN pg_roles on grantee = pg_roles.oid
     WHERE rolname = $1
 ) privs
-USING (proname, pronamespace)
-      WHERE nspname = $2 
+USING (proname, pronamespace, relkind)
+      WHERE nspname = $2 AND relkind = $3
 GROUP BY pg_proc.proname
 `
 	default:

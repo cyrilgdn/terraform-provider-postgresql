@@ -263,6 +263,18 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
+	//block new connections to database
+	if c.featureSupported(featureDBAllowConnections) {
+		if err := setDBAllowConns(c, d); err != nil {
+			return fmt.Errorf("Error updating database AllowConnections during DROP DATABASE: %w", err)
+		}
+	}
+
+	//terminate all connections to database
+	if err := terminateBConnections(c, dbName); err != nil {
+		return err
+	}
+
 	sql := fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(dbName))
 	if _, err := c.DB().Exec(sql); err != nil {
 		return fmt.Errorf("Error dropping database: %w", err)
@@ -542,6 +554,15 @@ func doSetDBIsTemplate(c *Client, dbName string, isTemplate bool) error {
 	}
 
 	sql := fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE %t", pq.QuoteIdentifier(dbName), isTemplate)
+	if _, err := c.DB().Exec(sql); err != nil {
+		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
+	}
+
+	return nil
+}
+
+func terminateBConnections(c *Client, dbName string) error {
+	sql := fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname '%s' AND pid <> pg_backend_pid();", pq.QuoteIdentifier(dbName))
 	if _, err := c.DB().Exec(sql); err != nil {
 		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
 	}
