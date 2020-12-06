@@ -263,7 +263,7 @@ LEFT JOIN (
     WHERE rolname = $1
 ) privs
 USING (proname, pronamespace)
-      WHERE nspname = $2
+      WHERE nspname = $2 
 GROUP BY pg_proc.proname
 `
 	default:
