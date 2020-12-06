@@ -233,6 +233,7 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 	currentUser := c.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
+	var dropWithForce string
 	var err error
 	if owner != "" {
 		// Needed in order to set the owner of the db if the connection user is not a
@@ -268,7 +269,13 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	sql := fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(dbName))
+	// Drop with force only for psql 13+
+	if c.featureSupported(featureForceDrop) {
+		dropWithForce =  "WITH FORCE"
+	}
+
+	sql := fmt.Sprintf("DROP DATABASE %s %s", pq.QuoteIdentifier(dbName), dropWithForce)
+
 	if _, err := c.DB().Exec(sql); err != nil {
 		return fmt.Errorf("Error dropping database: %w", err)
 	}
@@ -555,6 +562,8 @@ func doSetDBIsTemplate(c *Client, dbName string, isTemplate bool) error {
 }
 
 func terminateBConnections(c *Client, dbName string) error {
+	var terminateSql string
+
 	if c.featureSupported(featureDBAllowConnections) {
 		alterSql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS false", pq.QuoteIdentifier(dbName))
 
@@ -562,8 +571,11 @@ func terminateBConnections(c *Client, dbName string) error {
 			return fmt.Errorf("Error blocking connections to database: %w", err)
 		}
 	}
-
-	terminateSql := fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '%s' AND pid <> pg_backend_pid()", dbName)
+	if c.featureSupported(featurePid) {
+		terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '%s' AND pid <> pg_backend_pid()", dbName)
+	} else {
+		terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.procpid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '%s' AND procpid <> pg_backend_pid()", dbName)
+	}
 
 	if _, err := c.DB().Exec(terminateSql); err != nil {
 		return fmt.Errorf("Error terminating database connections: %w", err)
