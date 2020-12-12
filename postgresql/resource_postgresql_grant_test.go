@@ -225,6 +225,8 @@ func TestAccPostgresqlGrant(t *testing.T) {
 }
 
 func TestAccPostgresqlGrantFunction(t *testing.T) {
+	skipIfNotAcc(t)
+
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
 
