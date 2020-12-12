@@ -224,6 +224,57 @@ func TestAccPostgresqlGrant(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlGrantFunction(t *testing.T) {
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	// Create a test role and a schema as public has too wide open privileges
+	dbExecute(t, dsn, fmt.Sprintf("CREATE ROLE test_role LOGIN PASSWORD '%s'", testRolePassword))
+	dbExecute(t, dsn, "CREATE SCHEMA test_schema")
+	dbExecute(t, dsn, "GRANT USAGE ON SCHEMA test_schema TO test_role")
+
+	// Create test function in this schema
+	dbExecute(t, dsn, `
+CREATE FUNCTION test_schema.test() RETURNS text
+    AS $$ select 'foo' $$
+    LANGUAGE SQL;
+`)
+	defer func() {
+		dbExecute(t, dsn, "DROP SCHEMA test_schema CASCADE")
+		dbExecute(t, dsn, "DROP ROLE test_role")
+	}()
+
+	tfConfig := `
+resource postgresql_grant "test" {
+  database    = "postgres"
+  role        = "test_role"
+  schema      = "test_schema"
+  object_type = "function"
+  privileges  = ["EXECUTE"]
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_test_schema_function"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3223776964", "EXECUTE"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
+					testCheckFunctionExecutable(t, "test_role", "test_schema.test"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccPostgresqlGrantDatabase(t *testing.T) {
 	// create a TF config with placeholder for privileges
 	// it will be filled in each step.
@@ -282,6 +333,18 @@ func testCheckDatabasesPrivileges(t *testing.T, canCreate bool) func(*terraform.
 		defer db.Close()
 
 		if err := testHasGrantForQuery(db, "CREATE SCHEMA plop", canCreate); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func testCheckFunctionExecutable(t *testing.T, role, function string) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		db := connectAsTestRole(t, role, "postgres")
+		defer db.Close()
+
+		if err := testHasGrantForQuery(db, fmt.Sprintf("SELECT %s()", function), true); err != nil {
 			return err
 		}
 		return nil
