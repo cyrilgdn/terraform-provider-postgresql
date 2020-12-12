@@ -245,11 +245,16 @@ JOIN pg_roles ON grantee = pg_roles.oid WHERE rolname = $2
 
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	var query string
-	object_type := strings.ToUpper(d.Get("object_type").(string))
-	switch object_type {
-	case "DATABASE":
+	var err error
+	var rows *sql.Rows
+
+	objectType := d.Get("object_type").(string)
+
+	switch objectType {
+	case "database":
 		return readDatabaseRolePriviges(txn, d)
-	case "FUNCTION":
+
+	case "function":
 		query = `
 SELECT pg_proc.proname, array_remove(array_agg(privilege_type), NULL)
 FROM pg_proc
@@ -266,6 +271,10 @@ USING (proname, pronamespace)
       WHERE nspname = $2 
 GROUP BY pg_proc.proname
 `
+		rows, err = txn.Query(
+			query, d.Get("role"), d.Get("schema"),
+		)
+
 	default:
 		query = `
 SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)
@@ -282,6 +291,9 @@ USING (relname, relnamespace, relkind)
 WHERE nspname = $2 AND relkind = $3
 GROUP BY pg_class.relname
 `
+		rows, err = txn.Query(
+			query, d.Get("role"), d.Get("schema"), objectTypes[objectType],
+		)
 	}
 
 	// This returns, for the specified role (rolname),
@@ -289,11 +301,6 @@ GROUP BY pg_class.relname
 	// with the list of the currently applied privileges (aggregation of privilege_type)
 	//
 	// Our goal is to check that every object has the same privileges as saved in the state.
-
-	objectType := d.Get("object_type").(string)
-	rows, err := txn.Query(
-		query, d.Get("role"), d.Get("schema"), objectTypes[objectType],
-	)
 	if err != nil {
 		return err
 	}
