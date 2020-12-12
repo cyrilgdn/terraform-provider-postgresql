@@ -248,13 +248,13 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	var err error
 	var rows *sql.Rows
 
-	object_type := strings.ToUpper(d.Get("object_type").(string))
 	objectType := d.Get("object_type").(string)
 
-	switch object_type {
-	case "DATABASE":
+	switch objectType {
+	case "database":
 		return readDatabaseRolePriviges(txn, d)
-	case "FUNCTION":
+
+	case "function":
 		query = `
 SELECT pg_proc.proname, array_remove(array_agg(privilege_type), NULL)
 FROM pg_proc
