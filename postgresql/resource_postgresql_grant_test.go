@@ -238,7 +238,7 @@ func TestAccPostgresqlGrantFunction(t *testing.T) {
 	// Create test function in this schema
 	dbExecute(t, dsn, `
 CREATE FUNCTION test_schema.test() RETURNS text
-    AS $$ select 'foo' $$
+	AS $$ select 'foo'::text $$
     LANGUAGE SQL;
 `)
 	defer func() {
