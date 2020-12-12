@@ -571,12 +571,12 @@ func terminateBConnections(c *Client, dbName string) error {
 			return fmt.Errorf("Error blocking connections to database: %w", err)
 		}
 	}
+	pid := "procpid"
 	if c.featureSupported(featurePid) {
-		terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '%s' AND pid <> pg_backend_pid()", dbName)
-	} else {
-		terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.procpid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '%s' AND procpid <> pg_backend_pid()", dbName)
+		pid = "pid"
 	}
-
+	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, pid, dbName)
+	}
 	if _, err := c.DB().Exec(terminateSql); err != nil {
 		return fmt.Errorf("Error terminating database connections: %w", err)
 	}
