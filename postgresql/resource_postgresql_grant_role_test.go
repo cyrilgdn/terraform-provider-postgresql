@@ -17,37 +17,37 @@ func TestCreateGrantRoleQuery(t *testing.T) {
 	var grantRoleName = "bar"
 
 	cases := []struct {
-		resource   *schema.ResourceData
+		resource   map[string]interface{}
 		privileges []string
 		expected   string
 	}{
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, map[string]interface{}{
+			resource: map[string]interface{}{
 				"role":       roleName,
 				"grant_role": grantRoleName,
-			}),
+			},
 			expected: fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, map[string]interface{}{
+			resource: map[string]interface{}{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": false,
-			}),
+			},
 			expected: fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, map[string]interface{}{
+			resource: map[string]interface{}{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": true,
-			}),
+			},
 			expected: fmt.Sprintf("GRANT %s TO %s WITH ADMIN OPTION", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
 		},
 	}
 
 	for _, c := range cases {
-		out := createGrantRoleQuery(c.resource)
+		out := createGrantRoleQuery(schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, c.resource))
 		if out != c.expected {
 			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
 		}
