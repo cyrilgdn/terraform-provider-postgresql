@@ -63,7 +63,6 @@ func TestRevokeRoleQuery(t *testing.T) {
 	cases := []struct {
 		resource   map[string]interface{}
 		privileges []string
-		expected   string
 	}{
 		{
 			resource: map[string]interface{}{
