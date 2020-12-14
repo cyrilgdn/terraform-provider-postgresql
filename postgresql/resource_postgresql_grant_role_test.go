@@ -79,7 +79,7 @@ func TestRevokeRoleQuery(t *testing.T) {
 			resource: map[string]interface{}{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
-				"with_admin_option": false,
+				"with_admin_option": true,
 			},
 		},
 	}
