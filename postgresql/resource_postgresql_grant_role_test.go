@@ -58,40 +58,39 @@ func TestRevokeRoleQuery(t *testing.T) {
 	var roleName = "foo"
 	var grantRoleName = "bar"
 
+	expected := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName))
+
 	cases := []struct {
-		resource   *schema.ResourceData
+		resource   map[string]interface{}
 		privileges []string
 		expected   string
 	}{
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, map[string]interface{}{
+			resource: map[string]interface{}{
 				"role":       roleName,
 				"grant_role": grantRoleName,
-			}),
-			expected: fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
+			},
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, map[string]interface{}{
+			resource: map[string]interface{}{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": false,
-			}),
-			expected: fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
+			},
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, map[string]interface{}{
+			resource: map[string]interface{}{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": false,
-			}),
-			expected: fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
+			},
 		},
 	}
 
 	for _, c := range cases {
-		out := createRevokeRoleQuery(c.resource)
-		if out != c.expected {
-			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
+		out := createRevokeRoleQuery(schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, c.resource))
+		if out != expected {
+			t.Fatalf("Error matching output and expected: %#v vs %#v", out, expected)
 		}
 	}
 }
@@ -108,16 +107,17 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 	_, roleName := getTestDBNames(dbSuffix)
 
 	grantedRoleName := "foo"
-	teardownGrantedRole := createTestRole(t, grantedRoleName)
-	defer teardownGrantedRole()
 
 	testAccPostgresqlGrantRoleResources := fmt.Sprintf(`
+	resource postgresql_role "grant" {
+		name = "%s"
+	}
 	resource postgresql_grant_role "grant_role" {
 		role              = "%s"
-		grant_role        = "%s"
+		grant_role        = postgresql_role.grant.name
 		with_admin_option = true
 	}
-	`, roleName, grantedRoleName)
+	`, grantedRoleName, roleName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {

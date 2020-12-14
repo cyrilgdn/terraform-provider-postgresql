@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/lib/pq"
 )
@@ -70,13 +69,7 @@ func resourcePostgreSQLGrantRoleRead(d *schema.ResourceData, meta interface{}) e
 	client.catalogLock.RLock()
 	defer client.catalogLock.RUnlock()
 
-	txn, err := startTransaction(client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	return readGrantRole(txn, d)
+	return readGrantRole(client.DB(), d)
 }
 
 func resourcePostgreSQLGrantRoleCreate(d *schema.ResourceData, meta interface{}) error {
@@ -108,18 +101,12 @@ func resourcePostgreSQLGrantRoleCreate(d *schema.ResourceData, meta interface{})
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	d.SetId(generateGrantRoleID(d))
 
-	txn, err = startTransaction(client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	return readGrantRole(txn, d)
+	return readGrantRole(client.DB(), d)
 }
 
 func resourcePostgreSQLGrantRoleDelete(d *schema.ResourceData, meta interface{}) error {
@@ -146,17 +133,17 @@ func resourcePostgreSQLGrantRoleDelete(d *schema.ResourceData, meta interface{})
 	}
 
 	if err = txn.Commit(); err != nil {
-		return errwrap.Wrapf("could not commit transaction: {{err}}", err)
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	return nil
 }
 
-func readGrantRole(txn *sql.Tx, d *schema.ResourceData) error {
+func readGrantRole(db QueryAble, d *schema.ResourceData) error {
 	var roleName, grantRoleName string
 	var withAdminOption bool
 
-	grantRoleId := d.Id()
+	grantRoleID := d.Id()
 
 	values := []interface{}{
 		&roleName,
@@ -164,14 +151,14 @@ func readGrantRole(txn *sql.Tx, d *schema.ResourceData) error {
 		&withAdminOption,
 	}
 
-	err := txn.QueryRow(getGrantRoleQuery, d.Get("role"), d.Get("grant_role")).Scan(values...)
+	err := db.QueryRow(getGrantRoleQuery, d.Get("role"), d.Get("grant_role")).Scan(values...)
 	switch {
 	case err == sql.ErrNoRows:
-		log.Printf("[WARN] PostgreSQL grant role (%q) not found", grantRoleId)
+		log.Printf("[WARN] PostgreSQL grant role (%q) not found", grantRoleID)
 		d.SetId("")
 		return nil
 	case err != nil:
-		return errwrap.Wrapf("Error reading grant role: {{err}}", err)
+		return fmt.Errorf("Error reading grant role: %w", err)
 	}
 
 	d.Set("role", roleName)
@@ -213,7 +200,7 @@ func createRevokeRoleQuery(d *schema.ResourceData) string {
 func grantRole(txn *sql.Tx, d *schema.ResourceData) error {
 	query := createGrantRoleQuery(d)
 	if _, err := txn.Exec(query); err != nil {
-		return errwrap.Wrapf("could not execute grant query: {{err}}", err)
+		return fmt.Errorf("could not execute grant query: %w", err)
 	}
 	return nil
 }
@@ -221,7 +208,7 @@ func grantRole(txn *sql.Tx, d *schema.ResourceData) error {
 func revokeRole(txn *sql.Tx, d *schema.ResourceData) error {
 	query := createRevokeRoleQuery(d)
 	if _, err := txn.Exec(query); err != nil {
-		return errwrap.Wrapf("could not execute revoke query: {{err}}", err)
+		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
 	return nil
 }
