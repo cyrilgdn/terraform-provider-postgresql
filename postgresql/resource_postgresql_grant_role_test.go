@@ -17,9 +17,8 @@ func TestCreateGrantRoleQuery(t *testing.T) {
 	var grantRoleName = "bar"
 
 	cases := []struct {
-		resource   map[string]interface{}
-		privileges []string
-		expected   string
+		resource map[string]interface{}
+		expected string
 	}{
 		{
 			resource: map[string]interface{}{
@@ -61,8 +60,7 @@ func TestRevokeRoleQuery(t *testing.T) {
 	expected := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName))
 
 	cases := []struct {
-		resource   map[string]interface{}
-		privileges []string
+		resource map[string]interface{}
 	}{
 		{
 			resource: map[string]interface{}{
