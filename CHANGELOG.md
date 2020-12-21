@@ -1,3 +1,9 @@
+
+## 1.9.0 (Unreleased)
+
+FEATURES:
+* `postgresql_grant_role`: Non-authoritative. Grant role to another role.
+
 ## 1.8.1 (November 26, 2020)
 
 BUG FIXES:

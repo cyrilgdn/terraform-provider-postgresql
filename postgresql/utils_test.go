@@ -114,6 +114,21 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 	}
 }
 
+// createTestRole creates a role before executing a terraform test
+// and provides the teardown function to delete all these resources.
+func createTestRole(t *testing.T, roleName string) func() {
+	config := getTestConfig(t)
+
+	dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
+		"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
+		roleName, testRolePassword,
+	))
+
+	return func() {
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
+	}
+}
+
 func createTestTables(t *testing.T, dbSuffix string, tables []string, owner string) func() {
 	config := getTestConfig(t)
 	dbName, _ := getTestDBNames(dbSuffix)
