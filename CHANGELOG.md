@@ -1,8 +1,16 @@
-
-## 1.9.0 (Unreleased)
+## 1.9.0 (December 21, 2020)
 
 FEATURES:
-* `postgresql_grant_role`: Non-authoritative. Grant role to another role.
+* `postgresql_grant_role` (New resource): Grant role to another role - @dvdliao
+  [#4](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/4)
+
+FIXES:
+
+* `postgresql_role`: Fix quoted search_path - @lovromazgon
+  [#1](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/1)
+
+* `postgresql_grant`: Fix SQL error on function - @p4cket
+  [#15](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/15)
 
 ## 1.8.1 (November 26, 2020)
 
