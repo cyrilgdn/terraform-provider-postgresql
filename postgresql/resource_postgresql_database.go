@@ -270,8 +270,8 @@ func resourcePostgreSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) 
 	}
 
 	// Drop with force only for psql 13+
-	if c.featureSupported(featureForceDrop) {
-		dropWithForce = "WITH FORCE"
+	if c.featureSupported(featureForceDropDatabase) {
+		dropWithForce = "WITH ( FORCE )"
 	}
 
 	sql := fmt.Sprintf("DROP DATABASE %s %s", pq.QuoteIdentifier(dbName), dropWithForce)
@@ -575,7 +575,7 @@ func terminateBConnections(c *Client, dbName string) error {
 	if c.featureSupported(featurePid) {
 		pid = "pid"
 	}
-	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, pid, dbName)
+	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
 	if _, err := c.DB().Exec(terminateSql); err != nil {
 		return fmt.Errorf("Error terminating database connections: %w", err)
 	}

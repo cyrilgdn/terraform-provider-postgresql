@@ -25,7 +25,7 @@ const (
 	featureReplication
 	featureExtension
 	featurePrivileges
-	featureForceDrop
+	featureForceDropDatabase
 	featurePid
 )
 
@@ -70,7 +70,7 @@ var (
 
 		// DROP DATABASE WITH FORCE
 		// for Postgresql >= 13
-		featureForceDrop: semver.MustParseRange(">=13.0.0"),
+		featureForceDropDatabase: semver.MustParseRange(">=13.0.0"),
 
 		// Column procpid was replaced by pid in pg_stat_activity
 		// for Postgresql >= 9.2 and above
