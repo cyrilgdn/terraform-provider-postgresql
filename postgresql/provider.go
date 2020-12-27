@@ -49,6 +49,17 @@ func Provider() terraform.ResourceProvider {
 				Description: "Password to be used if the PostgreSQL server demands password authentication",
 				Sensitive:   true,
 			},
+			"gcp_connection_string": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Connection string to connect to a GCP postgres instance",
+			},
+
+			"aws_connection_string": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Connection string to connect to a AWS postgres instance",
+			},
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -160,18 +171,20 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	version, _ := semver.ParseTolerant(versionStr)
 
 	config := Config{
-		Host:              d.Get("host").(string),
-		Port:              d.Get("port").(int),
-		Username:          d.Get("username").(string),
-		Password:          d.Get("password").(string),
-		DatabaseUsername:  d.Get("database_username").(string),
-		Superuser:         d.Get("superuser").(bool),
-		SSLMode:           sslMode,
-		ApplicationName:   "Terraform provider",
-		ConnectTimeoutSec: d.Get("connect_timeout").(int),
-		MaxConns:          d.Get("max_connections").(int),
-		ExpectedVersion:   version,
-		SSLRootCertPath:   d.Get("sslrootcert").(string),
+		Host:                d.Get("host").(string),
+		Port:                d.Get("port").(int),
+		Username:            d.Get("username").(string),
+		Password:            d.Get("password").(string),
+		DatabaseUsername:    d.Get("database_username").(string),
+		Superuser:           d.Get("superuser").(bool),
+		SSLMode:             sslMode,
+		ApplicationName:     "Terraform provider",
+		ConnectTimeoutSec:   d.Get("connect_timeout").(int),
+		MaxConns:            d.Get("max_connections").(int),
+		ExpectedVersion:     version,
+		SSLRootCertPath:     d.Get("sslrootcert").(string),
+		GCPConnectionString: d.Get("gcp_connection_string").(string),
+		AWSConnectionString: d.Get("aws_connection_string").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
