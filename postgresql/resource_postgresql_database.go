@@ -539,16 +539,16 @@ func terminateBConnections(db *DBConnection, dbName string) error {
 	if db.featureSupported(featureDBAllowConnections) {
 		alterSql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS false", pq.QuoteIdentifier(dbName))
 
-		if _, err := c.DB().Exec(alterSql); err != nil {
+		if _, err := db.Exec(alterSql); err != nil {
 			return fmt.Errorf("Error blocking connections to database: %w", err)
 		}
 	}
 	pid := "procpid"
-	if c.featureSupported(featurePid) {
+	if db.featureSupported(featurePid) {
 		pid = "pid"
 	}
 	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
-	if _, err := c.DB().Exec(terminateSql); err != nil {
+	if _, err := db.Exec(terminateSql); err != nil {
 		return fmt.Errorf("Error terminating database connections: %w", err)
 	}
 

@@ -28,9 +28,9 @@ WHERE
 
 func resourcePostgreSQLGrantRole() *schema.Resource {
 	return &schema.Resource{
-		Create: resourcePostgreSQLGrantRoleCreate,
-		Read:   resourcePostgreSQLGrantRoleRead,
-		Delete: resourcePostgreSQLGrantRoleDelete,
+		Create: PGResourceFunc(resourcePostgreSQLGrantRoleCreate),
+		Read:   PGResourceFunc(resourcePostgreSQLGrantRoleRead),
+		Delete: PGResourceFunc(resourcePostgreSQLGrantRoleDelete),
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -56,36 +56,26 @@ func resourcePostgreSQLGrantRole() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLGrantRoleRead(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client)
-
-	if !client.featureSupported(featurePrivileges) {
+func resourcePostgreSQLGrantRoleRead(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
 			"postgresql_grant_role resource is not supported for this Postgres version (%s)",
-			client.version,
+			db.version,
 		)
 	}
 
-	client.catalogLock.RLock()
-	defer client.catalogLock.RUnlock()
-
-	return readGrantRole(client.DB(), d)
+	return readGrantRole(db, d)
 }
 
-func resourcePostgreSQLGrantRoleCreate(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client)
-
-	if !client.featureSupported(featurePrivileges) {
+func resourcePostgreSQLGrantRoleCreate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
 			"postgresql_grant_role resource is not supported for this Postgres version (%s)",
-			client.version,
+			db.version,
 		)
 	}
 
-	client.catalogLock.Lock()
-	defer client.catalogLock.Unlock()
-
-	txn, err := startTransaction(client, "")
+	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
 	}
@@ -106,23 +96,18 @@ func resourcePostgreSQLGrantRoleCreate(d *schema.ResourceData, meta interface{})
 
 	d.SetId(generateGrantRoleID(d))
 
-	return readGrantRole(client.DB(), d)
+	return readGrantRole(db, d)
 }
 
-func resourcePostgreSQLGrantRoleDelete(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client)
-
-	if !client.featureSupported(featurePrivileges) {
+func resourcePostgreSQLGrantRoleDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
 			"postgresql_grant_role resource is not supported for this Postgres version (%s)",
-			client.version,
+			db.version,
 		)
 	}
 
-	client.catalogLock.Lock()
-	defer client.catalogLock.Unlock()
-
-	txn, err := startTransaction(client, "")
+	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
 	}
