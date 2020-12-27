@@ -457,6 +457,9 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 		config := string(v)
 		if strings.HasPrefix(config, roleSearchPathAttr) {
 			var result = strings.Split(strings.TrimPrefix(config, roleSearchPathAttr+"="), ", ")
+			for i := range result {
+				result[i] = strings.Trim(result[i], `"`)
+			}
 			return result
 		}
 	}

@@ -222,6 +222,7 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
+	var dropWithForce string
 	var err error
 	if owner != "" {
 		// Needed in order to set the owner of the db if the connection user is not a
@@ -252,7 +253,17 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 		return err
 	}
 
-	sql := fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(dbName))
+	// Terminate all active connections and block new one
+	if err := terminateBConnections(db, dbName); err != nil {
+		return err
+	}
+
+	// Drop with force only for psql 13+
+	if db.featureSupported(featureForceDropDatabase) {
+		dropWithForce = "WITH ( FORCE )"
+	}
+
+	sql := fmt.Sprintf("DROP DATABASE %s %s", pq.QuoteIdentifier(dbName), dropWithForce)
 	if _, err := db.Exec(sql); err != nil {
 		return fmt.Errorf("Error dropping database: %w", err)
 	}
@@ -517,6 +528,28 @@ func doSetDBIsTemplate(db *DBConnection, dbName string, isTemplate bool) error {
 	sql := fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE %t", pq.QuoteIdentifier(dbName), isTemplate)
 	if _, err := db.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
+	}
+
+	return nil
+}
+
+func terminateBConnections(db *DBConnection, dbName string) error {
+	var terminateSql string
+
+	if db.featureSupported(featureDBAllowConnections) {
+		alterSql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS false", pq.QuoteIdentifier(dbName))
+
+		if _, err := c.DB().Exec(alterSql); err != nil {
+			return fmt.Errorf("Error blocking connections to database: %w", err)
+		}
+	}
+	pid := "procpid"
+	if c.featureSupported(featurePid) {
+		pid = "pid"
+	}
+	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
+	if _, err := c.DB().Exec(terminateSql); err != nil {
+		return fmt.Errorf("Error terminating database connections: %w", err)
 	}
 
 	return nil
