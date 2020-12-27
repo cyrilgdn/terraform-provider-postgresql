@@ -25,6 +25,8 @@ const (
 	featureReplication
 	featureExtension
 	featurePrivileges
+	featureForceDropDatabase
+	featurePid
 )
 
 type dbRegistryEntry struct {
@@ -65,6 +67,14 @@ var (
 		// We do not support postgresql_grant and postgresql_default_privileges
 		// for Postgresql < 9.
 		featurePrivileges: semver.MustParseRange(">=9.0.0"),
+
+		// DROP DATABASE WITH FORCE
+		// for Postgresql >= 13
+		featureForceDropDatabase: semver.MustParseRange(">=13.0.0"),
+
+		// Column procpid was replaced by pid in pg_stat_activity
+		// for Postgresql >= 9.2 and above
+		featurePid: semver.MustParseRange(">=9.2.0"),
 	}
 )
 
