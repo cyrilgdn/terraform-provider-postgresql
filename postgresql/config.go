@@ -296,8 +296,10 @@ func (c *Config) connStr(database string) string {
 	if c.AWSConnectionString != "" {
 		connStr = fmt.Sprintf("awspostgres://%s:%s@%s/%s", c.Username, c.Password, c.AWSConnectionString, database)
 	} else if c.GCPConnectionString != "" {
-		connStr = fmt.Sprintf("gcppostgres://%s:%s@%s/%s", c.Username, c.Password, c.GCPConnectionString, database)
+		connstring := strings.ReplaceAll(c.GCPConnectionString, ":", "/")
+		connStr = fmt.Sprintf("gcppostgres://%s:%s@%s/%s", c.Username, c.Password, connstring, database)
 	}
+	log.Printf("[INFO] connection string in connstring function: %s", connStr)
 
 	return connStr
 }
