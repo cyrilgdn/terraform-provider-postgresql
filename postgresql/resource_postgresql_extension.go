@@ -22,11 +22,11 @@ const (
 
 func resourcePostgreSQLExtension() *schema.Resource {
 	return &schema.Resource{
-		Create: resourcePostgreSQLExtensionCreate,
-		Read:   resourcePostgreSQLExtensionRead,
-		Update: resourcePostgreSQLExtensionUpdate,
-		Delete: resourcePostgreSQLExtensionDelete,
-		Exists: resourcePostgreSQLExtensionExists,
+		Create: PGResourceFunc(resourcePostgreSQLExtensionCreate),
+		Read:   PGResourceFunc(resourcePostgreSQLExtensionRead),
+		Update: PGResourceFunc(resourcePostgreSQLExtensionUpdate),
+		Delete: PGResourceFunc(resourcePostgreSQLExtensionDelete),
+		Exists: PGResourceExistsFunc(resourcePostgreSQLExtensionExists),
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -66,20 +66,16 @@ func resourcePostgreSQLExtension() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
-
-	if !c.featureSupported(featureExtension) {
+func resourcePostgreSQLExtensionCreate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureExtension) {
 		return fmt.Errorf(
 			"postgresql_extension resource is not supported for this Postgres version (%s)",
-			c.version,
+			db.version,
 		)
 	}
 
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
-
 	extName := d.Get(extNameAttr).(string)
+	databaseName := getDatabaseForExtension(d, db.client.databaseName)
 
 	b := bytes.NewBufferString("CREATE EXTENSION IF NOT EXISTS ")
 	fmt.Fprint(b, pq.QuoteIdentifier(extName))
@@ -92,9 +88,7 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 		fmt.Fprint(b, " VERSION ", pq.QuoteIdentifier(v.(string)))
 	}
 
-	database := getDatabaseForExtension(d, c)
-
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
@@ -109,38 +103,33 @@ func resourcePostgreSQLExtensionCreate(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error creating extension: %w", err)
 	}
 
-	d.SetId(generateExtensionID(d, c))
+	d.SetId(generateExtensionID(d, databaseName))
 
-	return resourcePostgreSQLExtensionReadImpl(d, meta)
+	return resourcePostgreSQLExtensionReadImpl(db, d)
 }
 
-func resourcePostgreSQLExtensionExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	c := meta.(*Client)
-
-	if !c.featureSupported(featureExtension) {
+func resourcePostgreSQLExtensionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	if !db.featureSupported(featureExtension) {
 		return false, fmt.Errorf(
 			"postgresql_extension resource is not supported for this Postgres version (%s)",
-			c.version,
+			db.version,
 		)
 	}
 
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
-
 	var extensionName string
 
-	database, extName, err := getDBExtName(d, c)
+	database, extName, err := getDBExtName(d, db.client)
 	if err != nil {
 		return false, err
 	}
 
 	// Check if the database exists
-	exists, err := dbExists(c.DB(), database)
+	exists, err := dbExists(db, database)
 	if err != nil || !exists {
 		return false, err
 	}
 
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return false, err
 	}
@@ -158,30 +147,24 @@ func resourcePostgreSQLExtensionExists(d *schema.ResourceData, meta interface{})
 	return true, nil
 }
 
-func resourcePostgreSQLExtensionRead(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
-
-	if !c.featureSupported(featureExtension) {
+func resourcePostgreSQLExtensionRead(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureExtension) {
 		return fmt.Errorf(
 			"postgresql_extension resource is not supported for this Postgres version (%s)",
-			c.version,
+			db.version,
 		)
 	}
 
-	c.catalogLock.RLock()
-	defer c.catalogLock.RUnlock()
-
-	return resourcePostgreSQLExtensionReadImpl(d, meta)
+	return resourcePostgreSQLExtensionReadImpl(db, d)
 }
 
-func resourcePostgreSQLExtensionReadImpl(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
-	database, extName, err := getDBExtName(d, c)
+func resourcePostgreSQLExtensionReadImpl(db *DBConnection, d *schema.ResourceData) error {
+	database, extName, err := getDBExtName(d, db.client)
 	if err != nil {
 		return err
 	}
 
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
@@ -205,28 +188,23 @@ func resourcePostgreSQLExtensionReadImpl(d *schema.ResourceData, meta interface{
 	d.Set(extSchemaAttr, extSchema)
 	d.Set(extVersionAttr, extVersion)
 	d.Set(extDatabaseAttr, database)
-	d.SetId(generateExtensionID(d, c))
+	d.SetId(generateExtensionID(d, database))
 
 	return nil
 }
 
-func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
-
-	if !c.featureSupported(featureExtension) {
+func resourcePostgreSQLExtensionDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureExtension) {
 		return fmt.Errorf(
 			"postgresql_extension resource is not supported for this Postgres version (%s)",
-			c.version,
+			db.version,
 		)
 	}
 
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
-
 	extName := d.Get(extNameAttr).(string)
+	database := getDatabaseForExtension(d, db.client.databaseName)
 
-	database := getDatabaseForExtension(d, c)
-	txn, err := startTransaction(c, database)
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
@@ -251,21 +229,16 @@ func resourcePostgreSQLExtensionDelete(d *schema.ResourceData, meta interface{})
 	return nil
 }
 
-func resourcePostgreSQLExtensionUpdate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client)
-
-	if !c.featureSupported(featureExtension) {
+func resourcePostgreSQLExtensionUpdate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureExtension) {
 		return fmt.Errorf(
 			"postgresql_extension resource is not supported for this Postgres version (%s)",
-			c.version,
+			db.version,
 		)
 	}
 
-	c.catalogLock.Lock()
-	defer c.catalogLock.Unlock()
-
-	database := getDatabaseForExtension(d, c)
-	txn, err := startTransaction(c, database)
+	database := getDatabaseForExtension(d, db.client.databaseName)
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
@@ -285,7 +258,7 @@ func resourcePostgreSQLExtensionUpdate(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error updating extension: %w", err)
 	}
 
-	return resourcePostgreSQLExtensionReadImpl(d, meta)
+	return resourcePostgreSQLExtensionReadImpl(db, d)
 }
 
 func setExtSchema(txn *sql.Tx, d *schema.ResourceData) error {
@@ -333,18 +306,18 @@ func setExtVersion(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func getDatabaseForExtension(d *schema.ResourceData, client *Client) string {
-	database := client.databaseName
+func getDatabaseForExtension(d *schema.ResourceData, databaseName string) string {
 	if v, ok := d.GetOk(extDatabaseAttr); ok {
-		database = v.(string)
+		databaseName = v.(string)
 	}
 
-	return database
+	return databaseName
 }
 
-func generateExtensionID(d *schema.ResourceData, client *Client) string {
+func generateExtensionID(d *schema.ResourceData, databaseName string) string {
 	return strings.Join([]string{
-		getDatabaseForExtension(d, client), d.Get(extNameAttr).(string),
+		databaseName,
+		d.Get(extNameAttr).(string),
 	}, ".")
 }
 
@@ -357,7 +330,7 @@ func getExtensionNameFromID(ID string) string {
 // from the resource ID (it will return an error if parsing failed) otherwise they will be simply
 // get from the state.
 func getDBExtName(d *schema.ResourceData, client *Client) (string, string, error) {
-	database := getDatabaseForExtension(d, client)
+	database := getDatabaseForExtension(d, client.databaseName)
 	extName := d.Get(extNameAttr).(string)
 
 	// When importing, we have to parse the ID to find extension and database names.

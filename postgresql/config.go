@@ -29,14 +29,9 @@ const (
 	featurePid
 )
 
-type dbRegistryEntry struct {
-	db      *sql.DB
-	version semver.Version
-}
-
 var (
 	dbRegistryLock sync.Mutex
-	dbRegistry     map[string]dbRegistryEntry = make(map[string]dbRegistryEntry, 1)
+	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
 
 	// Mapping of feature flags to versions
 	featureSupported = map[featureName]semver.Range{
@@ -78,6 +73,40 @@ var (
 	}
 )
 
+type DBConnection struct {
+	*sql.DB
+
+	client *Client
+
+	// version is the version number of the database as determined by parsing the
+	// output of `SELECT VERSION()`.x
+	version semver.Version
+}
+
+// featureSupported returns true if a given feature is supported or not. This is
+// slightly different from Config's featureSupported in that here we're
+// evaluating against the fingerprinted version, not the expected version.
+func (db *DBConnection) featureSupported(name featureName) bool {
+	fn, found := featureSupported[name]
+	if !found {
+		// panic'ing because this is a provider-only bug
+		panic(fmt.Sprintf("unknown feature flag %v", name))
+	}
+
+	return fn(db.version)
+}
+
+// isSuperuser returns true if connected user is a Postgres SUPERUSER
+func (db *DBConnection) isSuperuser() (bool, error) {
+	var superuser bool
+
+	if err := db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = CURRENT_USER").Scan(&superuser); err != nil {
+		return false, fmt.Errorf("could not check if current user is superuser: %w", err)
+	}
+
+	return superuser, nil
+}
+
 type ClientCertificateConfig struct {
 	CertificatePath string
 	KeyPath         string
@@ -108,14 +137,6 @@ type Client struct {
 
 	databaseName string
 
-	// db is a pointer to the DB connection.  Callers are responsible for
-	// releasing their connections.
-	db *sql.DB
-
-	// version is the version number of the database as determined by parsing the
-	// output of `SELECT VERSION()`.x
-	version semver.Version
-
 	// PostgreSQL lock on pg_catalog.  Many of the operations that Terraform
 	// performs are not permitted to be concurrent.  Unlike traditional
 	// PostgreSQL tables that use MVCC, many of the PostgreSQL system
@@ -125,50 +146,11 @@ type Client struct {
 }
 
 // NewClient returns client config for the specified database.
-func (c *Config) NewClient(database string) (*Client, error) {
-	dbRegistryLock.Lock()
-	defer dbRegistryLock.Unlock()
-
-	dsn := c.connStr(database)
-	dbEntry, found := dbRegistry[dsn]
-	if !found {
-		db, err := sql.Open("postgres", dsn)
-		if err != nil {
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server: %w", err)
-		}
-
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dopped in the plan.
-		db.SetMaxIdleConns(0)
-		db.SetMaxOpenConns(c.MaxConns)
-
-		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
-		version := &c.ExpectedVersion
-		if defaultVersion.Equals(c.ExpectedVersion) {
-			// Version hint not set by user, need to fingerprint
-			version, err = fingerprintCapabilities(db)
-			if err != nil {
-				db.Close()
-				return nil, fmt.Errorf("error detecting capabilities: %w", err)
-			}
-		}
-
-		dbEntry = dbRegistryEntry{
-			db:      db,
-			version: *version,
-		}
-		dbRegistry[dsn] = dbEntry
-	}
-
-	client := Client{
+func (c *Config) NewClient(database string) *Client {
+	return &Client{
 		config:       *c,
 		databaseName: database,
-		db:           dbEntry.db,
-		version:      dbEntry.version,
 	}
-
-	return &client, nil
 }
 
 // featureSupported returns true if a given feature is supported or not.  This
@@ -311,11 +293,47 @@ func (c *Config) getDatabaseUsername() string {
 	return c.Username
 }
 
-// DB returns a copy to an sql.Open()'ed database connection.  Callers must
-// return their database resources.  Use of QueryRow() or Exec() is encouraged.
+// Connect returns a copy to an sql.Open()'ed database connection wrapped in a DBConnection struct.
+// Callers must return their database resources. Use of QueryRow() or Exec() is encouraged.
 // Query() must have their rows.Close()'ed.
-func (c *Client) DB() *sql.DB {
-	return c.db
+func (c *Client) Connect() (*DBConnection, error) {
+	dbRegistryLock.Lock()
+	defer dbRegistryLock.Unlock()
+
+	dsn := c.config.connStr(c.databaseName)
+	conn, found := dbRegistry[dsn]
+	if !found {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			return nil, fmt.Errorf("Error connecting to PostgreSQL server: %w", err)
+		}
+
+		// We don't want to retain connection
+		// So when we connect on a specific database which might be managed by terraform,
+		// we don't keep opened connection in case of the db has to be dopped in the plan.
+		db.SetMaxIdleConns(0)
+		db.SetMaxOpenConns(c.config.MaxConns)
+
+		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
+		version := &c.config.ExpectedVersion
+		if defaultVersion.Equals(c.config.ExpectedVersion) {
+			// Version hint not set by user, need to fingerprint
+			version, err = fingerprintCapabilities(db)
+			if err != nil {
+				db.Close()
+				return nil, fmt.Errorf("error detecting capabilities: %w", err)
+			}
+		}
+
+		conn = &DBConnection{
+			db,
+			c,
+			*version,
+		}
+		dbRegistry[dsn] = conn
+	}
+
+	return conn, nil
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
@@ -342,28 +360,4 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	}
 
 	return &version, nil
-}
-
-// featureSupported returns true if a given feature is supported or not. This is
-// slightly different from Config's featureSupported in that here we're
-// evaluating against the fingerprinted version, not the expected version.
-func (c *Client) featureSupported(name featureName) bool {
-	fn, found := featureSupported[name]
-	if !found {
-		// panic'ing because this is a provider-only bug
-		panic(fmt.Sprintf("unknown feature flag %v", name))
-	}
-
-	return fn(c.version)
-}
-
-// isSuperuser returns true if connected user is a Postgres SUPERUSER
-func (c *Client) isSuperuser() (bool, error) {
-	var superuser bool
-
-	if err := c.db.QueryRow("SELECT rolsuper FROM pg_roles WHERE rolname = CURRENT_USER").Scan(&superuser); err != nil {
-		return false, fmt.Errorf("could not check if current user is superuser: %w", err)
-	}
-
-	return superuser, nil
 }

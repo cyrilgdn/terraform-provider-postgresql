@@ -10,6 +10,38 @@ import (
 	"github.com/lib/pq"
 )
 
+func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, interface{}) error {
+	return func(d *schema.ResourceData, meta interface{}) error {
+		client := meta.(*Client)
+
+		client.catalogLock.Lock()
+		defer client.catalogLock.Unlock()
+
+		db, err := client.Connect()
+		if err != nil {
+			return err
+		}
+
+		return fn(db, d)
+	}
+}
+
+func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, interface{}) (bool, error) {
+	return func(d *schema.ResourceData, meta interface{}) (bool, error) {
+		client := meta.(*Client)
+
+		client.catalogLock.Lock()
+		defer client.catalogLock.Unlock()
+
+		db, err := client.Connect()
+		if err != nil {
+			return false, err
+		}
+
+		return fn(db, d)
+	}
+}
+
 // QueryAble is a DB connection (sql.DB/Tx)
 type QueryAble interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
@@ -252,13 +284,13 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 // it will create a new connection pool if needed.
 func startTransaction(client *Client, database string) (*sql.Tx, error) {
 	if database != "" && database != client.databaseName {
-		var err error
-		client, err = client.config.NewClient(database)
-		if err != nil {
-			return nil, err
-		}
+		client = client.config.NewClient(database)
 	}
-	db := client.DB()
+	db, err := client.Connect()
+	if err != nil {
+		return nil, err
+	}
+
 	txn, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("could not start transaction: %w", err)
@@ -328,14 +360,12 @@ func deferredRollback(txn *sql.Tx) {
 	}
 }
 
-func getDatabase(d *schema.ResourceData, client *Client) string {
-	database := client.databaseName
-
+func getDatabase(d *schema.ResourceData, databaseName string) string {
 	if v, ok := d.GetOk(extDatabaseAttr); ok {
-		database = v.(string)
+		databaseName = v.(string)
 	}
 
-	return database
+	return databaseName
 }
 
 func getDatabaseOwner(db QueryAble, database string) (string, error) {
