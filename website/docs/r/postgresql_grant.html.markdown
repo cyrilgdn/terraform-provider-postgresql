@@ -32,4 +32,4 @@ resource "postgresql_grant" "readonly_tables" {
 * `database` - (Required) The database to grant privileges on for this role.
 * `schema` - (Required) The database schema to grant privileges on for this role.
 * `object_type` - (Required) The PostgreSQL object type to grant the privileges on (one of: database, table, sequence,function).
-* `privileges` - (Required) The list of privileges to grant. There are different kinds of privileges: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, CONNECT, TEMPORARY, EXECUTE, and USAGE.
+* `privileges` - (Required) The list of privileges to grant. There are different kinds of privileges: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, CONNECT, TEMPORARY, EXECUTE, and USAGE. An empty list could be provided to revoke all privileges for this role.

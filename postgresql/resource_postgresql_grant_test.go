@@ -157,23 +157,16 @@ func TestAccPostgresqlGrant(t *testing.T) {
 	createTestTables(t, dbSuffix, testTables, "")
 
 	dbName, roleName := getTestDBNames(dbSuffix)
-	var testGrantSelect = fmt.Sprintf(`
-	resource "postgresql_grant" "test" {
-		database    = "%s"
-		role        = "%s"
-		schema      = "test_schema"
-		object_type = "table"
-		privileges   = ["SELECT"]
-	}
-	`, dbName, roleName)
 
-	var testGrantSelectInsertUpdate = fmt.Sprintf(`
+	// create a TF config with placeholder for privileges
+	// it will be filled in each step.
+	var testGrant = fmt.Sprintf(`
 	resource "postgresql_grant" "test" {
 		database    = "%s"
 		role        = "%s"
 		schema      = "test_schema"
 		object_type = "table"
-		privileges   = ["SELECT", "INSERT", "UPDATE"]
+		privileges   = %%s
 	}
 	`, dbName, roleName)
 
@@ -185,7 +178,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
-				Config: testGrantSelect,
+				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(
 						"postgresql_grant.test", "id", fmt.Sprintf("%s_%s_test_schema_table", roleName, dbName),
@@ -198,7 +191,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 				),
 			},
 			{
-				Config: testGrantSelectInsertUpdate,
+				Config: fmt.Sprintf(testGrant, `["SELECT", "INSERT", "UPDATE"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "3"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3138006342", "SELECT"),
@@ -209,14 +202,73 @@ func TestAccPostgresqlGrant(t *testing.T) {
 					},
 				),
 			},
-			// Finally reapply the first step to be sure that extra privileges are correctly granted.
+			// We reapply the first step to be sure that extra privileges are correctly granted.
 			{
-				Config: testGrantSelect,
+				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3138006342", "SELECT"),
 					func(*terraform.State) error {
 						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{"SELECT"})
+					},
+				),
+			},
+			// We test to revoke everything
+			{
+				Config: fmt.Sprintf(testGrant, `[]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{})
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrantEmptyPrivileges(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table", "test_schema.test_table2"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Grant some privileges on this table to our role to assert that they will be revoked
+	dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA test_schema TO %s", roleName))
+
+	var tfConfig = fmt.Sprintf(`
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		privileges   = []
+	}
+	`, dbName, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"postgresql_grant.test", "id", fmt.Sprintf("%s_%s_test_schema_table", roleName, dbName),
+					),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{})
 					},
 				),
 			},
@@ -309,7 +361,7 @@ resource "postgresql_grant" "test" {
 		Steps: []resource.TestStep{
 			// Not allowed to create
 			{
-				Config: fmt.Sprintf(config, "[\"CONNECT\"]"),
+				Config: fmt.Sprintf(config, `["CONNECT"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_grant_role_test_grant_db_database"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
@@ -319,10 +371,18 @@ resource "postgresql_grant" "test" {
 			},
 			// Can create but not grant
 			{
-				Config: fmt.Sprintf(config, "[\"CONNECT\", \"CREATE\"]"),
+				Config: fmt.Sprintf(config, `["CONNECT", "CREATE"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "2"),
 					testCheckDatabasesPrivileges(t, true),
+				),
+			},
+			// Revoke
+			{
+				Config: fmt.Sprintf(config, "[]"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
+					testCheckDatabasesPrivileges(t, false),
 				),
 			},
 		},

@@ -66,7 +66,6 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Required:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
-				MinItems:    1,
 				Description: "The list of privileges to grant",
 			},
 			"with_grant_option": {
@@ -135,7 +134,6 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 			return err
 		}
 	}
-
 	if err := withRolesGranted(txn, owners, func() error {
 		// Revoke all privileges before granting otherwise reducing privileges will not work.
 		// We just have to revoke them in the same transaction so the role will not lost its
@@ -301,15 +299,14 @@ GROUP BY pg_class.relname
 
 		if !privilegesSet.Equal(d.Get("privileges").(*schema.Set)) {
 			// If any object doesn't have the same privileges as saved in the state,
-			// we return an empty privileges to force an update.
+			// we return its privileges to force an update.
 			log.Printf(
 				"[DEBUG] %s %s has not the expected privileges %v for role %s",
 				strings.ToTitle(objectType), objName, privileges, d.Get("role"),
 			)
-			d.Set("privileges", schema.NewSet(schema.HashString, []interface{}{}))
+			d.Set("privileges", privilegesSet)
 			break
 		}
-
 	}
 
 	return nil
@@ -369,6 +366,11 @@ func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	privileges := []string{}
 	for _, priv := range d.Get("privileges").(*schema.Set).List() {
 		privileges = append(privileges, priv.(string))
+	}
+
+	if len(privileges) == 0 {
+		log.Printf("[DEBUG] no privileges to grant for role %s in database: %s,", d.Get("role").(string), d.Get("database"))
+		return nil
 	}
 
 	query := createGrantQuery(d, privileges)
