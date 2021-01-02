@@ -11,7 +11,6 @@ env:
   - PGVERSION=latest
   - PGVERSION=10
   - PGVERSION=9
-  - PGVERSION=8.4
 
 install:
 # This script is used by the Travis build to install a cookie for
