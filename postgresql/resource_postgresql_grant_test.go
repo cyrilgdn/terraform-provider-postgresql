@@ -266,7 +266,7 @@ func TestAccPostgresqlGrantEmptyPrivileges(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"postgresql_grant.test", "id", fmt.Sprintf("%s_%s_test_schema_table", roleName, dbName),
 					),
-					//resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
 					func(*terraform.State) error {
 						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{})
 					},
