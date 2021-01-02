@@ -1,10 +1,10 @@
 package postgresql
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
-	"log"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -169,119 +169,37 @@ func (c *Config) featureSupported(name featureName) bool {
 func (c *Config) connStr(database string) string {
 	// NOTE: dbname must come before user otherwise dbname will be set to
 	// user.
-	var dsnFmt string
-	{
-		dsnFmtParts := []string{
-			"host=%s",
-			"port=%d",
-			"dbname=%s",
-			"user=%s",
-			"password=%s",
-			"sslmode=%s",
-			"connect_timeout=%d",
-		}
-
-		if c.featureSupported(featureFallbackApplicationName) {
-			dsnFmtParts = append(dsnFmtParts, "fallback_application_name=%s")
-		}
-		if c.SSLClientCert != nil {
-			dsnFmtParts = append(
-				dsnFmtParts,
-				"sslcert=%s",
-				"sslkey=%s",
-			)
-		}
-		if c.SSLRootCertPath != "" {
-			dsnFmtParts = append(dsnFmtParts, "sslrootcert=%s")
-		}
-
-		dsnFmt = strings.Join(dsnFmtParts, " ")
+	params := map[string]string{
+		"sslmode":         c.SSLMode,
+		"connect_timeout": strconv.Itoa(c.ConnectTimeoutSec),
 	}
 
-	// Quote empty strings or strings that contain whitespace
-	quote := func(s string) string {
-		b := bytes.NewBufferString(`'`)
-		b.Grow(len(s) + 2)
-		var haveWhitespace bool
-		for _, r := range s {
-			if unicode.IsSpace(r) {
-				haveWhitespace = true
-			}
-
-			switch r {
-			case '\'':
-				b.WriteString(`\'`)
-			case '\\':
-				b.WriteString(`\\`)
-			default:
-				b.WriteRune(r)
-			}
-		}
-
-		b.WriteString(`'`)
-
-		str := b.String()
-		if haveWhitespace || len(str) == 2 {
-			return str
-		}
-		return str[1 : len(str)-1]
+	if c.featureSupported(featureFallbackApplicationName) {
+		params["fallback_application_name"] = c.ApplicationName
+	}
+	if c.SSLClientCert != nil {
+		params["sslcert"] = c.SSLClientCert.CertificatePath
+		params["sslkey"] = c.SSLClientCert.KeyPath
 	}
 
-	{
-		logValues := []interface{}{
-			quote(c.Host),
-			c.Port,
-			quote(database),
-			quote(c.Username),
-			quote("<redacted>"),
-			quote(c.SSLMode),
-			c.ConnectTimeoutSec,
-		}
-		if c.featureSupported(featureFallbackApplicationName) {
-			logValues = append(logValues, quote(c.ApplicationName))
-		}
-		if c.SSLClientCert != nil {
-			logValues = append(
-				logValues,
-				quote(c.SSLClientCert.CertificatePath),
-				quote(c.SSLClientCert.KeyPath),
-			)
-		}
-		if c.SSLRootCertPath != "" {
-			logValues = append(logValues, quote(c.SSLRootCertPath))
-		}
-
-		logDSN := fmt.Sprintf(dsnFmt, logValues...)
-		log.Printf("[INFO] PostgreSQL DSN: `%s`", logDSN)
+	if c.SSLRootCertPath != "" {
+		params["sslrootcert"] = c.SSLRootCertPath
 	}
 
-	var connStr string
-	{
-		connValues := []interface{}{
-			quote(c.Host),
-			c.Port,
-			quote(database),
-			quote(c.Username),
-			quote(c.Password),
-			quote(c.SSLMode),
-			c.ConnectTimeoutSec,
-		}
-		if c.featureSupported(featureFallbackApplicationName) {
-			connValues = append(connValues, quote(c.ApplicationName))
-		}
-		if c.SSLClientCert != nil {
-			connValues = append(
-				connValues,
-				quote(c.SSLClientCert.CertificatePath),
-				quote(c.SSLClientCert.KeyPath),
-			)
-		}
-		if c.SSLRootCertPath != "" {
-			connValues = append(connValues, quote(c.SSLRootCertPath))
-		}
-
-		connStr = fmt.Sprintf(dsnFmt, connValues...)
+	paramsArray := []string{}
+	for key, value := range params {
+		paramsArray = append(paramsArray, "%s=%s", key, url.QueryEscape(value))
 	}
+
+	connStr := fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?%s",
+		url.QueryEscape(c.Username),
+		url.QueryEscape(c.Password),
+		url.QueryEscape(c.Host),
+		c.Port,
+		database,
+		strings.Join(paramsArray, "&"),
+	)
 
 	return connStr
 }
