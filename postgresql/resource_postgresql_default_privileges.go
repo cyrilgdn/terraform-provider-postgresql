@@ -164,6 +164,11 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	pgSchema := d.Get("schema").(string)
 	objectType := d.Get("object_type").(string)
 
+	roleOID, err := getRoleOID(txn, role)
+	if err != nil {
+		return err
+	}
+
 	// This query aggregates the list of default privileges type (prtype)
 	// for the role (grantee), owner (grantor), schema (namespace name)
 	// and the specified object type (defaclobjtype).
@@ -173,12 +178,12 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
 
 	JOIN pg_namespace ON pg_namespace.oid = namespace
-	WHERE pg_get_userbyid(grantee_oid) = $1 AND nspname = $2 AND pg_get_userbyid(grantor_oid) = $4;
+	WHERE grantee_oid = $1 AND nspname = $2 AND pg_get_userbyid(grantor_oid) = $4;
 `
 	var privileges pq.ByteaArray
 
 	if err := txn.QueryRow(
-		query, role, pgSchema, objectTypes[objectType], owner,
+		query, roleOID, pgSchema, objectTypes[objectType], owner,
 	).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read default privileges: %w", err)
 	}
