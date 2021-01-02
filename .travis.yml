@@ -9,6 +9,8 @@ go:
 env:
   - GOFLAGS=-mod=vendor GO111MODULE=on
   - PGVERSION=latest
+  - PGVERSION=12
+  - PGVERSION=11
   - PGVERSION=10
   - PGVERSION=9
 
