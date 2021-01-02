@@ -49,7 +49,7 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 						dropFunc := createTestTables(t, dbSuffix, tables, "")
 						defer dropFunc()
 
-						return testCheckTablesPrivileges(t, dbSuffix, tables, []string{"SELECT"})
+						return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT"})
 					},
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
@@ -109,7 +109,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						dropFunc := createTestTables(t, dbSuffix, tables, "test_owner")
 						defer dropFunc()
 
-						return testCheckTablesPrivileges(t, dbSuffix, tables, []string{"SELECT"})
+						return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT"})
 					},
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
