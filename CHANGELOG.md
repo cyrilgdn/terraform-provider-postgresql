@@ -1,3 +1,17 @@
+## 1.10.0 (January 2, 2021)
+
+FEATURES:
+
+* `postgresql_database`: Drop connections before drop database (Postgresql >=13) - @p4cket
+  [#14](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/14)
+
+  :warning: In previous versions, Terraform failed to drop databases if they are still in used.
+            Now databases will be dropped in any case.
+
+* Use lazy connections - @cyrilgdn
+  [#5](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/5)
+
+
 ## 1.9.0 (December 21, 2020)
 
 FEATURES:
