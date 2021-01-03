@@ -15,9 +15,10 @@ import (
 
 var allowedObjectTypes = []string{
 	"database",
-	"table",
-	"sequence",
 	"function",
+	"schema",
+	"sequence",
+	"table",
 }
 
 var objectTypes = map[string]string{
@@ -119,7 +120,6 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	}
 
 	database := d.Get("database").(string)
-	schemaName := d.Get("schema").(string)
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
@@ -127,12 +127,9 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	}
 	defer deferredRollback(txn)
 
-	owners := []string{}
-	if d.Get("object_type").(string) != "database" {
-		owners, err = getRolesToGrantForSchema(txn, schemaName)
-		if err != nil {
-			return err
-		}
+	owners, err := getRolesToGrant(txn, d)
+	if err != nil {
+		return err
 	}
 	if err := withRolesGranted(txn, owners, func() error {
 		// Revoke all privileges before granting otherwise reducing privileges will not work.
@@ -178,12 +175,9 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	}
 	defer deferredRollback(txn)
 
-	owners := []string{}
-	if d.Get("object_type").(string) != "database" {
-		owners, err = getRolesToGrantForSchema(txn, d.Get("schema").(string))
-		if err != nil {
-			return err
-		}
+	owners, err := getRolesToGrant(txn, d)
+	if err != nil {
+		return err
 	}
 
 	if err := withRolesGranted(txn, owners, func() error {
@@ -218,6 +212,25 @@ WHERE grantee = $2
 	return nil
 }
 
+func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+	dbName := d.Get("schema").(string)
+	query := `
+SELECT array_agg(privilege_type)
+FROM (
+	SELECT (aclexplode(nspacl)).* FROM pg_namespace WHERE nspname=$1
+) as privileges
+WHERE grantee = $2
+`
+
+	var privileges pq.ByteaArray
+	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
+		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
+	}
+
+	d.Set("privileges", pgArrayToSet(privileges))
+	return nil
+}
+
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
@@ -233,6 +246,9 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	switch objectType {
 	case "database":
 		return readDatabaseRolePriviges(txn, d, roleOID)
+
+	case "schema":
+		return readSchemaRolePriviges(txn, d, roleOID)
 
 	case "function":
 		query = `
@@ -318,6 +334,13 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 			pq.QuoteIdentifier(d.Get("database").(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
+	case "SCHEMA":
+		query = fmt.Sprintf(
+			"GRANT %s ON SCHEMA %s TO %s",
+			strings.Join(privileges, ","),
+			pq.QuoteIdentifier(d.Get("schema").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
 	case "TABLE", "SEQUENCE", "FUNCTION":
 		query = fmt.Sprintf(
 			"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
@@ -343,6 +366,12 @@ func createRevokeQuery(d *schema.ResourceData) string {
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s",
 			pq.QuoteIdentifier(d.Get("database").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "SCHEMA":
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON SCHEMA %s FROM %s",
+			pq.QuoteIdentifier(d.Get("schema").(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
 	case "TABLE", "SEQUENCE", "FUNCTION":
@@ -448,13 +477,25 @@ func generateGrantID(d *schema.ResourceData) string {
 	return strings.Join(parts, "_")
 }
 
-func getRolesToGrantForSchema(txn *sql.Tx, schemaName string) ([]string, error) {
+func getRolesToGrant(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 	// If user we use for Terraform is not a superuser (e.g.: in RDS)
 	// we need to grant owner of the schema and owners of tables in the schema
 	// in order to change theirs permissions.
-	owners, err := getTablesOwner(txn, schemaName)
-	if err != nil {
-		return nil, err
+	owners := []string{}
+	objectType := d.Get("object_type")
+
+	if objectType == "database" {
+		return owners, nil
+	}
+
+	schemaName := d.Get("schema").(string)
+
+	if objectType != "schema" {
+		var err error
+		owners, err = getTablesOwner(txn, schemaName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	schemaOwner, err := getSchemaOwner(txn, schemaName)

@@ -72,9 +72,10 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Description: "When true, will also drop all the objects that are contained in the schema",
 			},
 			schemaPolicyAttr: {
-				Type:     schema.TypeSet,
-				Optional: true,
-				Computed: true,
+				Type:       schema.TypeSet,
+				Optional:   true,
+				Computed:   true,
+				Deprecated: "Use postgresql_grant resource instead (with object_type=\"schema\")",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						schemaPolicyCreateAttr: {
