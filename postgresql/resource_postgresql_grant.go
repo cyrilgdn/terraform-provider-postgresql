@@ -199,43 +199,40 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData) error {
+func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+	dbName := d.Get("database").(string)
 	query := `
-SELECT privilege_type
+SELECT array_agg(privilege_type)
 FROM (
 	SELECT (aclexplode(datacl)).* FROM pg_database WHERE datname=$1
 ) as privileges
-JOIN pg_roles ON grantee = pg_roles.oid WHERE rolname = $2
+WHERE grantee = $2
 `
 
-	privileges := []string{}
-	rows, err := txn.Query(query, d.Get("database"), d.Get("role"))
-	if err != nil {
-		return fmt.Errorf("could not read database privileges: %w", err)
+	var privileges pq.ByteaArray
+	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
+		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 
-	for rows.Next() {
-		var privilegeType string
-		if err := rows.Scan(&privilegeType); err != nil {
-			return fmt.Errorf("could not scan database privilege: %w", err)
-		}
-		privileges = append(privileges, privilegeType)
-	}
-
-	d.Set("privileges", privileges)
+	d.Set("privileges", pgArrayToSet(privileges))
 	return nil
 }
 
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	var query string
-	var err error
-	var rows *sql.Rows
-
+	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
+
+	roleOID, err := getRoleOID(txn, role)
+	if err != nil {
+		return err
+	}
+
+	var query string
+	var rows *sql.Rows
 
 	switch objectType {
 	case "database":
-		return readDatabaseRolePriviges(txn, d)
+		return readDatabaseRolePriviges(txn, d, roleOID)
 
 	case "function":
 		query = `
@@ -247,15 +244,14 @@ LEFT JOIN (
     from (
              SELECT proname, pronamespace, (aclexplode(proacl)).* FROM pg_proc
          ) acls
-    JOIN pg_roles on grantee = pg_roles.oid
-    WHERE rolname = $1
+    WHERE grantee = $1
 ) privs
 USING (proname, pronamespace)
-      WHERE nspname = $2 
+      WHERE nspname = $2
 GROUP BY pg_proc.proname
 `
 		rows, err = txn.Query(
-			query, d.Get("role"), d.Get("schema"),
+			query, roleOID, d.Get("schema"),
 		)
 
 	default:
@@ -267,15 +263,14 @@ LEFT JOIN (
     SELECT acls.* FROM (
         SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c
     ) as acls
-    JOIN pg_roles on grantee = pg_roles.oid
-    WHERE rolname=$1
+    WHERE grantee=$1
 ) privs
 USING (relname, relnamespace, relkind)
 WHERE nspname = $2 AND relkind = $3
 GROUP BY pg_class.relname
 `
 		rows, err = txn.Query(
-			query, d.Get("role"), d.Get("schema"), objectTypes[objectType],
+			query, roleOID, d.Get("schema"), objectTypes[objectType],
 		)
 	}
 
@@ -396,18 +391,20 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 
 	// Check the role exists
 	role := d.Get("role").(string)
-	exists, err := roleExists(txn, role)
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		log.Printf("[DEBUG] role %s does not exists", role)
-		return false, nil
+	if role != publicRole {
+		exists, err := roleExists(txn, role)
+		if err != nil {
+			return false, err
+		}
+		if !exists {
+			log.Printf("[DEBUG] role %s does not exists", role)
+			return false, nil
+		}
 	}
 
 	// Check the database exists
 	database := d.Get("database").(string)
-	exists, err = dbExists(txn, database)
+	exists, err := dbExists(txn, database)
 	if err != nil {
 		return false, err
 	}

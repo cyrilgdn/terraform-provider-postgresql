@@ -231,9 +231,7 @@ func connectAsTestRole(t *testing.T, role, dbName string) *sql.DB {
 	return db
 }
 
-func testCheckTablesPrivileges(t *testing.T, dbSuffix string, tables []string, allowedPrivileges []string) error {
-	dbName, roleName := getTestDBNames(dbSuffix)
-
+func testCheckTablesPrivileges(t *testing.T, dbName, roleName string, tables []string, allowedPrivileges []string) error {
 	db := connectAsTestRole(t, roleName, dbName)
 	defer db.Close()
 

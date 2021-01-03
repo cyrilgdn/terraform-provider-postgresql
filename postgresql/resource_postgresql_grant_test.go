@@ -186,7 +186,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3138006342", "SELECT"),
 					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{"SELECT"})
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{"SELECT"})
 					},
 				),
 			},
@@ -198,7 +198,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.892623219", "INSERT"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.1759376126", "UPDATE"),
 					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{"SELECT", "INSERT", "UPDATE"})
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{"SELECT", "INSERT", "UPDATE"})
 					},
 				),
 			},
@@ -209,7 +209,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3138006342", "SELECT"),
 					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{"SELECT"})
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{"SELECT"})
 					},
 				),
 			},
@@ -219,7 +219,101 @@ func TestAccPostgresqlGrant(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
 					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{})
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{})
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrantPublic(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+
+	// We have to create the database outside of resource.Test
+	// because we need to create tables to assert that grant are correctly applied
+	// and we don't have this resource yet
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// create another role (first one is created in setupTestDatabase)
+	// to assert that PUBLIC is applied to everyone
+	role2 := fmt.Sprintf("tf_tests_role2_%s", dbSuffix)
+	createTestRole(t, role2)
+	dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", role2))
+
+	// create a TF config with placeholder for privileges
+	// it will be filled in each step.
+	var testGrant = fmt.Sprintf(`
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "public"
+		schema      = "test_schema"
+		object_type = "table"
+		privileges   = %%s
+	}
+	`, dbName)
+
+	// Wrapper to testCheckTablesPrivileges to test for both roles
+	checkTablePrivileges := func(expectedPrivileges []string) error {
+		if err := testCheckTablesPrivileges(t, dbName, roleName, testTables, expectedPrivileges); err != nil {
+			return err
+		}
+		return testCheckTablesPrivileges(t, dbName, role2, testTables, expectedPrivileges)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"postgresql_grant.test", "id", fmt.Sprintf("public_%s_test_schema_table", dbName),
+					),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					func(*terraform.State) error {
+						return checkTablePrivileges([]string{"SELECT"})
+					},
+				),
+			},
+			{
+				Config: fmt.Sprintf(testGrant, `["SELECT", "INSERT", "UPDATE"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "3"),
+					func(*terraform.State) error {
+						return checkTablePrivileges([]string{"SELECT", "INSERT", "UPDATE"})
+					},
+				),
+			},
+			// We reapply the first step to be sure that extra privileges are correctly granted.
+			{
+				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					func(*terraform.State) error {
+						return checkTablePrivileges([]string{"SELECT"})
+					},
+				),
+			},
+			// We test to revoke everything
+			{
+				Config: fmt.Sprintf(testGrant, `[]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
+					func(*terraform.State) error {
+						return checkTablePrivileges([]string{})
 					},
 				),
 			},
@@ -268,7 +362,7 @@ func TestAccPostgresqlGrantEmptyPrivileges(t *testing.T) {
 					),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
 					func(*terraform.State) error {
-						return testCheckTablesPrivileges(t, dbSuffix, testTables, []string{})
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{})
 					},
 				),
 			},
@@ -298,35 +392,42 @@ CREATE FUNCTION test_schema.test() RETURNS text
 		dbExecute(t, dsn, "DROP ROLE test_role")
 	}()
 
-	tfConfig := `
+	// Test to grant directly to test_role and to public
+	// in both case test_case should have the right
+	for _, role := range []string{"test_role", "public"} {
+		t.Run(role, func(t *testing.T) {
+
+			tfConfig := fmt.Sprintf(`
 resource postgresql_grant "test" {
   database    = "postgres"
-  role        = "test_role"
+  role        = "%s"
   schema      = "test_schema"
   object_type = "function"
   privileges  = ["EXECUTE"]
 }
-`
+	`, role)
 
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: tfConfig,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_test_schema_function"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3223776964", "EXECUTE"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
-					testCheckFunctionExecutable(t, "test_role", "test_schema.test"),
-				),
-			},
-		},
-	})
+			resource.Test(t, resource.TestCase{
+				PreCheck: func() {
+					testAccPreCheck(t)
+					testCheckCompatibleVersion(t, featurePrivileges)
+				},
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: tfConfig,
+						Check: resource.ComposeTestCheckFunc(
+							resource.TestCheckResourceAttr("postgresql_grant.test", "id", fmt.Sprintf("%s_postgres_test_schema_function", role)),
+							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3223776964", "EXECUTE"),
+							resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
+							testCheckFunctionExecutable(t, "test_role", "test_schema.test"),
+						),
+					},
+				},
+			})
+		})
+	}
 }
 
 func TestAccPostgresqlGrantDatabase(t *testing.T) {

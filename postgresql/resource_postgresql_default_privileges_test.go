@@ -20,44 +20,67 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 	config := getTestConfig(t)
 	dbName, roleName := getTestDBNames(dbSuffix)
 
-	// We set PGUSER as owner as he will create the test table
-	var testDPSelect = fmt.Sprintf(`
-	resource "postgresql_default_privileges" "test_ro" {
-		database    = "%s"
-		owner       = "%s"
-		role        = "%s"
-		schema      = "test_schema"
-		object_type = "table"
-		privileges   = ["SELECT"]
-	}
-	`, dbName, config.Username, roleName)
+	// Set default privileges to the test role then to public (i.e.: everyone)
+	for _, role := range []string{roleName, "public"} {
+		t.Run(role, func(t *testing.T) {
 
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: testDPSelect,
-				Check: resource.ComposeTestCheckFunc(
-					func(*terraform.State) error {
-						tables := []string{"test_schema.test_table"}
-						// To test default privileges, we need to create a table
-						// after having apply the state.
-						dropFunc := createTestTables(t, dbSuffix, tables, "")
-						defer dropFunc()
+			// We set PGUSER as owner as he will create the test table
+			var tfConfig = fmt.Sprintf(`
+resource "postgresql_default_privileges" "test_ro" {
+	database    = "%s"
+	owner       = "%s"
+	role        = "%s"
+	schema      = "test_schema"
+	object_type = "table"
+	privileges   = %%s
+}
+	`, dbName, config.Username, role)
 
-						return testCheckTablesPrivileges(t, dbSuffix, tables, []string{"SELECT"})
+			resource.Test(t, resource.TestCase{
+				PreCheck: func() {
+					testAccPreCheck(t)
+					testCheckCompatibleVersion(t, featurePrivileges)
+				},
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: fmt.Sprintf(tfConfig, `["SELECT"]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								tables := []string{"test_schema.test_table"}
+								// To test default privileges, we need to create a table
+								// after having apply the state.
+								dropFunc := createTestTables(t, dbSuffix, tables, "")
+								defer dropFunc()
+
+								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT"})
+							},
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+						),
 					},
-					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
-					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
-				),
-			},
-		},
-	})
+					{
+						Config: fmt.Sprintf(tfConfig, `["SELECT", "UPDATE"]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								tables := []string{"test_schema.test_table"}
+								// To test default privileges, we need to create a table
+								// after having apply the state.
+								dropFunc := createTestTables(t, dbSuffix, tables, "")
+								defer dropFunc()
+
+								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT", "UPDATE"})
+							},
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1759376126", "UPDATE"),
+						),
+					},
+				},
+			})
+		})
+	}
 }
 
 // Test the case where we need to grant the owner to the connected user.
@@ -109,7 +132,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						dropFunc := createTestTables(t, dbSuffix, tables, "test_owner")
 						defer dropFunc()
 
-						return testCheckTablesPrivileges(t, dbSuffix, tables, []string{"SELECT"})
+						return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT"})
 					},
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
