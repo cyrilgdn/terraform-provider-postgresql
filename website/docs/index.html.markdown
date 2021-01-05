@@ -113,12 +113,11 @@ The following arguments are supported:
 
 ## GoCloud
 
-By default, the provider uses [lib/pq][libpq] library to connect to PostgreSQL servers, but you can switch to [GoCloud](https://gocloud.dev/howto/sql/).
-GoCloud simplifies the connection to AWS/GCP hosted databases. For example GCP requires a custom proxy with authentication credentials, GoCloud manages it automatically.
+By default, the provider uses the [lib/pq][libpq] library to directly connect to PostgreSQL host instance. For connections to AWS/GCP hosted instances, the provider can connect through the [GoCloud](https://gocloud.dev/howto/sql/) library. GoCloud simplifies connecting to AWS/GCP hosted databases, managing any proxy or custom authentication details.
 
 ### AWS
 
-To enable GoCloud for AWS RDS, set `scheme` to `awspostgres`, `host` is the database endpoint in RDS.
+To enable GoCloud based connections to AWS RDS instances, set `scheme` to `awspostgres` and `host` to the RDS database's endpoint value.
 (e.g.: `instance.xxxxxx.region.rds.amazonaws.com`)
 
 ```hcl
@@ -135,7 +134,7 @@ provider "postgresql" {
 
 ### GCP
 
-To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres`, host is the connection name in following format: `project/region/instance`
+To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres` and `host` to the connection name of the instance in following format: `project/region/instance`.
 
 For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file.
 These credentials can be created here: https://console.cloud.google.com/iam-admin/serviceaccounts
