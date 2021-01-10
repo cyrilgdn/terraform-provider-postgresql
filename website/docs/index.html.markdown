@@ -74,16 +74,21 @@ resource "postgresql_database" "my_db2" {
 
 The following arguments are supported:
 
-* `host` - (Required) The address for the postgresql server connection.
+* `scheme` - (Optional) The driver to use. Valid values are:
+  * `postgres`: Default value, use [`lib/pq`][libpq]
+  * `awspostgres`: Use [GoCloud](#gocloud) for AWS
+  * `gcppostgres`: Use [GoCloud](#gocloud) for GCP
+* `host` - (Required) The address for the postgresql server connection, see [GoCloud](#gocloud) for specific format.
 * `port` - (Optional) The port for the postgresql server connection. The default is `5432`.
 * `database` - (Optional) Database to connect to. The default is `postgres`.
 * `username` - (Required) Username for the server connection.
 * `password` - (Optional) Password for the server connection.
 * `database_username` - (Optional) Username of the user in the database if different than connection username (See [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)).
-* `superuser` - (Optional) Should be set to `false` if the user to connect is not a PostgreSQL superuser (as is the case in RDS). In this case, some features might be disabled (e.g.: Refreshing state password from database).
+* `superuser` - (Optional) Should be set to `false` if the user to connect is not a PostgreSQL superuser (as is the case in AWS RDS or GCP SQL).
+*                          In this case, some features might be disabled (e.g.: Refreshing state password from database).
 * `sslmode` - (Optional) Set the priority for an SSL connection to the server.
   Valid values for `sslmode` are (note: `prefer` is not supported by Go's
-  [`lib/pq`](https://godoc.org/github.com/lib/pq)):
+  [`lib/pq`][libpq])):
     * disable - No SSL
     * require - Always SSL (the default, also skip verification)
     * verify-ca - Always SSL (verify that the certificate presented by the server was signed by a trusted CA)
@@ -105,3 +110,88 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+
+## GoCloud
+
+By default, the provider uses the [lib/pq][libpq] library to directly connect to PostgreSQL host instance. For connections to AWS/GCP hosted instances, the provider can connect through the [GoCloud](https://gocloud.dev/howto/sql/) library. GoCloud simplifies connecting to AWS/GCP hosted databases, managing any proxy or custom authentication details.
+
+### AWS
+
+To enable GoCloud based connections to AWS RDS instances, set `scheme` to `awspostgres` and `host` to the RDS database's endpoint value.
+(e.g.: `instance.xxxxxx.region.rds.amazonaws.com`)
+
+```hcl
+provider "postgresql" {
+  scheme   = "awspostgres"
+  host     = "test-instance.cvvrsv6scpgd.eu-central-1.rds.amazonaws.com"
+  username = "postgres"
+  port     = 5432
+  password = "test1234"
+
+  superuser = false
+}
+```
+
+### GCP
+
+To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres` and `host` to the connection name of the instance in following format: `project/region/instance` (or `project:region:instance`).
+
+For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file.
+These credentials can be created here: https://console.cloud.google.com/iam-admin/serviceaccounts
+
+See also: https://cloud.google.com/docs/authentication/production
+
+---
+**Note**
+
+[Cloud SQL API](https://console.developers.google.com/apis/api/sqladmin.googleapis.com/overview) needs to be enabled for GoCloud to connect to your instance.
+
+---
+
+```hcl
+provider "postgresql" {
+  scheme   = "gcppostgres"
+  host     = "test-project/europe-west3/test-instance"
+  username = "postgres"
+  port     = 5432
+  password = "test1234"
+
+  superuser = false
+}
+```
+
+Example with GCP resources:
+
+```hcl
+resource "google_sql_database_instance" "test" {
+  project          = "test-project"
+  name             = "test-instance"
+  database_version = "POSTGRES_13"
+  region           = "europe-west3"
+
+  settings {
+    tier            = "db-f1-micro"
+  }
+}
+
+resource "google_sql_user" "postgres" {
+  project  = "test-project"
+  name     = "postgres"
+  instance = google_sql_database_instance.test.name
+  password = "xxxxxxxx"
+}
+
+
+provider "postgresql" {
+  scheme   = "gcppostgres"
+  host     = google_sql_database_instance.test.connection_name
+  username = google_sql_user.postgres.name
+  password = google_sql_user.postgres.password
+}
+
+resource postgresql_database "test_db" {
+  name = "test_db"
+}
+```
+
+[libpq]: https://pkg.go.dev/github.com/lib/pq

@@ -18,6 +18,16 @@ const (
 func Provider() terraform.ResourceProvider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
+			"scheme": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "postgres",
+				ValidateFunc: validation.StringInSlice([]string{
+					"postgres",
+					"awspostgres",
+					"gcppostgres",
+				}, false),
+			},
 			"host": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -160,6 +170,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	version, _ := semver.ParseTolerant(versionStr)
 
 	config := Config{
+		Scheme:            d.Get("scheme").(string),
 		Host:              d.Get("host").(string),
 		Port:              d.Get("port").(int),
 		Username:          d.Get("username").(string),

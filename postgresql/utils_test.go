@@ -52,6 +52,7 @@ func getTestConfig(t *testing.T) Config {
 	}
 
 	return Config{
+		Scheme:   "postgres",
 		Host:     getEnv("PGHOST", "localhost"),
 		Port:     dbPort,
 		Username: getEnv("PGUSER", ""),

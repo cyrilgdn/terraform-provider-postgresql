@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/blang/semver"
 	_ "github.com/lib/pq" //PostgreSQL db
+	"gocloud.dev/postgres"
+	_ "gocloud.dev/postgres/awspostgres"
+	_ "gocloud.dev/postgres/gcppostgres"
 )
 
 type featureName uint
@@ -114,6 +118,7 @@ type ClientCertificateConfig struct {
 
 // Config - provider config
 type Config struct {
+	Scheme            string
 	Host              string
 	Port              int
 	Username          string
@@ -168,8 +173,13 @@ func (c *Config) featureSupported(name featureName) bool {
 
 func (c *Config) connParams() []string {
 	params := map[string]string{
-		"sslmode":         c.SSLMode,
 		"connect_timeout": strconv.Itoa(c.ConnectTimeoutSec),
+	}
+
+	// sslmode is not allowed with gocloud
+	// (TLS is provided by gocloud directly)
+	if c.Scheme == "postgres" {
+		params["sslmode"] = c.SSLMode
 	}
 
 	if c.featureSupported(featureFallbackApplicationName) {
@@ -193,11 +203,20 @@ func (c *Config) connParams() []string {
 }
 
 func (c *Config) connStr(database string) string {
+	host := c.Host
+
+	// For GCP, support both project/region/instance and project:region:instance
+	// (The second one allows to use the output of google_sql_database_instance as host
+	if c.Scheme == "gcppostgres" {
+		host = strings.ReplaceAll(host, ":", "/")
+	}
+
 	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?%s",
+		"%s://%s:%s@%s:%d/%s?%s",
+		c.Scheme,
 		url.QueryEscape(c.Username),
 		url.QueryEscape(c.Password),
-		c.Host,
+		host,
 		c.Port,
 		database,
 		strings.Join(c.connParams(), "&"),
@@ -223,9 +242,16 @@ func (c *Client) Connect() (*DBConnection, error) {
 	dsn := c.config.connStr(c.databaseName)
 	conn, found := dbRegistry[dsn]
 	if !found {
-		db, err := sql.Open("postgres", dsn)
+
+		var db *sql.DB
+		var err error
+		if c.config.Scheme == "postgres" {
+			db, err = sql.Open("postgres", dsn)
+		} else {
+			db, err = postgres.Open(context.Background(), dsn)
+		}
 		if err != nil {
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server: %w", err)
+			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %w", c.config.Host, c.config.Scheme, err)
 		}
 
 		// We don't want to retain connection
