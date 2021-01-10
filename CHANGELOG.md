@@ -1,3 +1,21 @@
+## 1.11.0 (January 10, 2021)
+
+FEATURES:
+
+* gocloud: Allow to connect with [GoCloud](https://gocloud.dev/howto/sql/) to AWS/GCP instances - @cyrilgdn
+  [#29](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/29)
+
+* `postgresql_grant`: Manage grant on schema - @cyrilgdn
+  [#30](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/30)
+
+  :warning: This depreciates the `policy` attribute in `postgresql_schema`
+
+* `postgresql_grant`: Allow an empty privileges list (revoke) - @cyrilgdn
+  [#26](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/26)
+
+* `postgresql_grant` / `postgresql_default_privileges`: Manage `PUBLIC` role - @cyrilgdn
+  [#27](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/27)
+
 ## 1.10.0 (January 2, 2021)
 
 FEATURES:
