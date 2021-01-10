@@ -28,8 +28,23 @@ resource "postgresql_grant" "readonly_tables" {
 
 ## Argument Reference
 
-* `role` - (Required) The name of the role to grant privileges on.
+* `role` - (Required) The name of the role to grant privileges on, Set it to "public" for all roles.
 * `database` - (Required) The database to grant privileges on for this role.
-* `schema` - (Required) The database schema to grant privileges on for this role.
-* `object_type` - (Required) The PostgreSQL object type to grant the privileges on (one of: database, table, sequence,function).
+* `schema` - The database schema to grant privileges on for this role (Required except if object_type is "database")
+* `object_type` - (Required) The PostgreSQL object type to grant the privileges on (one of: database, schema, table, sequence,function).
 * `privileges` - (Required) The list of privileges to grant. There are different kinds of privileges: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, CONNECT, TEMPORARY, EXECUTE, and USAGE. An empty list could be provided to revoke all privileges for this role.
+
+
+## Examples
+
+Revoke default accesses for public schema:
+
+```hcl
+resource "postgresql_grant" "revoke_public" {
+  database    = "test_db"
+  role        = "public"
+  schema      = "public"
+  object_type = "schema"
+  privileges  = []
+}
+```

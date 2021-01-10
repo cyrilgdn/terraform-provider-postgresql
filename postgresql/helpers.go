@@ -244,6 +244,7 @@ var allowedPrivileges = map[string][]string{
 	"database": []string{"ALL", "CREATE", "CONNECT", "TEMPORARY", "TEMP"},
 	"table":    []string{"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
 	"sequence": []string{"ALL", "USAGE", "SELECT", "UPDATE"},
+	"schema":   []string{"ALL", "CREATE", "USAGE"},
 	"function": []string{"ALL", "EXECUTE"},
 	"type":     []string{"ALL", "USAGE"},
 }
