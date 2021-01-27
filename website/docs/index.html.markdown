@@ -42,6 +42,24 @@ provider "postgresql" {
   }
 ```
 
+Using Azure Active Directory authentication can be done as bellow.
+
+``` hcl
+provider "postgresql" {
+  host            = "postgresql_host"
+  port            = 5432
+  database        = "postgres"
+  username        = "postgres_username"
+  database_username = "postgres_database_username"
+  password        = ""
+  sslmode         = "require"
+  aad_auth_enabled = true
+  aad_sp_client_id = "service_principal_client_id"
+  aad_sp_client_secret = "service_prinicipal_client_secret"
+  aad_sp_tenant_id = "service_prinicipal_tenant_id"
+}
+```
+
 Configuring multiple servers can be done by specifying the alias option.
 
 ```hcl
@@ -86,6 +104,15 @@ The following arguments are supported:
 * `database_username` - (Optional) Username of the user in the database if different than connection username (See [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)).
 * `superuser` - (Optional) Should be set to `false` if the user to connect is not a PostgreSQL superuser (as is the case in AWS RDS or GCP SQL).
 *                          In this case, some features might be disabled (e.g.: Refreshing state password from database).
+* `aad_auth_enabled` - (Optional) Should be set to `true` when using Azure AD autnetication to connect
+to postgresql database. Default value is `false`. You can also provide this value by setting 
+`PG_AAD_AUTH_ENABLED` environement variable.
+* `aad_sp_client_id` - (Optional) Client id of the service principal used when connecting with Azure AD.
+It is required when `aad_auth_enabled` is set to `true`. You can also provide this value by setting 
+`PG_AAD_SP_CLIENT_ID` environement variable.
+* `aad_sp_client_secret` - (Optional) Client secret of the service principal used when connecting with Azure AD. It is required when `aad_auth_enabled` is set to `true`. You can also provide this value by setting `PG_AAD_SP_CLIENT_SECRET` environement variable.
+* `aad_sp_tenant_id` - (Optional) Tenant of the service principal used when connecting with Azure AD. It is required when `aad_auth_enabled` is set to `true`. You can also provide this value by setting 
+`PG_AAD_SP_TENANT_ID` environement variable.
 * `sslmode` - (Optional) Set the priority for an SSL connection to the server.
   Valid values for `sslmode` are (note: `prefer` is not supported by Go's
   [`lib/pq`][libpq])):

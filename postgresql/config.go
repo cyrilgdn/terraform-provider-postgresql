@@ -10,6 +10,8 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/blang/semver"
 	_ "github.com/lib/pq" //PostgreSQL db
 	"gocloud.dev/postgres"
@@ -125,6 +127,10 @@ type Config struct {
 	Password          string
 	DatabaseUsername  string
 	Superuser         bool
+	AadAuthEnabled    bool
+	AadSpClientId     string
+	AadSpClientSecret string
+	AadSpTenantId     string
 	SSLMode           string
 	ApplicationName   string
 	Timeout           int
@@ -133,6 +139,34 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+}
+
+// Interface to Azure identity provider
+type AzureIdentiferInterface interface {
+	GetAccessToken() (string, error)
+}
+
+type AzureIdentifier struct {
+	tenantID     string
+	clientID     string
+	clientSecret string
+}
+
+func (a *AzureIdentifier) GetAccessToken() (string, error) {
+	clientSecretCredentialOptions := azidentity.DefaultClientSecretCredentialOptions()
+	clientCredential, err := azidentity.NewClientSecretCredential(a.tenantID, a.clientID, a.clientSecret, &clientSecretCredentialOptions)
+	if err != nil {
+		return "", fmt.Errorf("Error getting access token from Azure AD with client id (%s) in tenant (%s) (NewClientSecretCredential) : %w", a.clientID, a.tenantID, err)
+	}
+	ctx := context.Background()
+	tokenOptions := azcore.TokenRequestOptions{
+		Scopes: []string{"https://ossrdbms-aad.database.windows.net/.default"},
+	}
+	token, err := clientCredential.GetToken(ctx, tokenOptions)
+	if err != nil {
+		return "", fmt.Errorf("Error getting access token from Azure AD with client id (%s) in tenant (%s) (GetToken) : %w", a.clientID, a.tenantID, err)
+	}
+	return token.Token, nil
 }
 
 // Client struct holding connection string
@@ -148,6 +182,8 @@ type Client struct {
 	// catalogs look like tables, but are not in-fact able to be
 	// concurrently updated.
 	catalogLock sync.RWMutex
+
+	azIdentifer AzureIdentiferInterface
 }
 
 // NewClient returns client config for the specified database.
@@ -155,6 +191,7 @@ func (c *Config) NewClient(database string) *Client {
 	return &Client{
 		config:       *c,
 		databaseName: database,
+		azIdentifer:  &AzureIdentifier{c.AadSpTenantId, c.AadSpClientId, c.AadSpClientSecret},
 	}
 }
 
@@ -236,6 +273,15 @@ func (c *Config) getDatabaseUsername() string {
 // Callers must return their database resources. Use of QueryRow() or Exec() is encouraged.
 // Query() must have their rows.Close()'ed.
 func (c *Client) Connect() (*DBConnection, error) {
+	// Fetch AAD access token and use it as a password if AAD authentication is enabled
+	if c.config.AadAuthEnabled {
+		pass, err := c.azIdentifer.GetAccessToken()
+		if err != nil {
+			return nil, err
+		}
+		c.config.Password = pass
+	}
+
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
 

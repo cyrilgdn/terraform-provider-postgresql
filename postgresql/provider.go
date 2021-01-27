@@ -75,6 +75,32 @@ func Provider() terraform.ResourceProvider {
 					"If not, some feature might be disabled (e.g.: Refreshing state password from Postgres)",
 			},
 
+			"aad_auth_enabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PG_AAD_AUTH_ENABLED", false),
+				Description: "Specify if AAD authentication is used or not",
+			},
+			"aad_sp_client_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PG_AAD_SP_CLIENT_ID", nil),
+				Description: "Client id of the service principal used when connecting with Azure AD",
+			},
+			"aad_sp_client_secret": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PG_AAD_SP_CLIENT_SECRET", nil),
+				Description: "Client secret of the service principal used when connecting with Azure AD",
+				Sensitive:   true,
+			},
+			"aad_sp_tenant_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PG_AAD_SP_TENANT_ID", nil),
+				Description: "Tenant of the service principal used when connecting with Azure AD",
+			},
+
 			"sslmode": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -177,6 +203,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		Password:          d.Get("password").(string),
 		DatabaseUsername:  d.Get("database_username").(string),
 		Superuser:         d.Get("superuser").(bool),
+		AadAuthEnabled:    d.Get("aad_auth_enabled").(bool),
+		AadSpClientId:     d.Get("aad_sp_client_id").(string),
+		AadSpClientSecret: d.Get("aad_sp_client_secret").(string),
+		AadSpTenantId:     d.Get("aad_sp_tenant_id").(string),
 		SSLMode:           sslMode,
 		ApplicationName:   "Terraform provider",
 		ConnectTimeoutSec: d.Get("connect_timeout").(int),
