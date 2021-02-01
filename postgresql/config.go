@@ -196,7 +196,7 @@ func (c *Config) connParams() []string {
 
 	paramsArray := []string{}
 	for key, value := range params {
-		paramsArray = append(paramsArray, "%s=%s", key, url.QueryEscape(value))
+		paramsArray = append(paramsArray, fmt.Sprintf("%s=%s", key, url.QueryEscape(value)))
 	}
 
 	return paramsArray
