@@ -1,3 +1,13 @@
+## Unreleased
+
+## 1.11.1 (February 2 , 2021)
+
+FIXES:
+
+* Fix building of connection string parameters - @mcwarman
+  [#47](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/47)
+
+
 ## 1.11.0 (January 10, 2021)
 
 FEATURES:
