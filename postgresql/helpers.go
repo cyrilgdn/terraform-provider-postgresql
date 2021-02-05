@@ -285,7 +285,11 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 // it will create a new connection pool if needed.
 func startTransaction(client *Client, database string) (*sql.Tx, error) {
 	if database != "" && database != client.databaseName {
-		client = client.config.NewClient(database)
+		var err error
+		client, err = client.config.NewClient(database)
+		if err != nil {
+			return nil, fmt.Errorf("could not create new client: %w", err)
+		}
 	}
 	db, err := client.Connect()
 	if err != nil {

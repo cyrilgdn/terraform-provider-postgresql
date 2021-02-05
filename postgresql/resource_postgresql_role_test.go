@@ -295,7 +295,7 @@ func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.Test
 		config := getTestConfig(t)
 		config.Username = role
 		config.Password = password
-		db, err := sql.Open("postgres", config.connStr("postgres"))
+		db, err := sql.Open("postgres", connStr(&config, "postgres"))
 		if err != nil {
 			return fmt.Errorf("could not open SQL connection: %v", err)
 		}

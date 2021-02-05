@@ -110,6 +110,31 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+* `azure_ad_authentication` - (Optional) An `azure_ad_authentication` block as defined below which can be used to connect using Azure Active Directory authentication on Azure Database for PostgreSQL.
+
+---
+
+An `azure_ad_authentication` block supports the arguments below, for details please refer to the [`azurerm`](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs#authenticating-to-azure) provider:
+
+* `client_id` - (Optional) The Client ID which should be used. This can also be sourced from the `ARM_CLIENT_ID` Environment Variable.
+
+* `environment` - (Optional) The Cloud Environment which should be used. Possible values are `public`, `usgovernment`, `german`, and `china`. Defaults to `public`. This can also be sourced from the `ARM_ENVIRONMENT` environment variable.
+
+* `subscription_id` - (Optional) The Subscription ID which should be used. This can also be sourced from the `ARM_SUBSCRIPTION_ID` Environment Variable.
+
+* `tenant_id` - (Optional) The Tenant ID should be used. This can also be sourced from the `ARM_TENANT_ID` Environment Variable.
+
+* `client_certificate_password` - (Optional) The password associated with the Client Certificate. This can also be sourced from the `ARM_CLIENT_CERTIFICATE_PASSWORD` Environment Variable.
+
+* `client_certificate_path` - (Optional) The path to the Client Certificate associated with the Service Principal which should be used. This can also be sourced from the `ARM_CLIENT_CERTIFICATE_PATH` Environment Variable.
+
+* `client_secret` - (Optional) The Client Secret which should be used. This can also be sourced from the `ARM_CLIENT_SECRET` Environment Variable.
+
+* `use_msi` - (Optional) Should Managed Service Identity be used for Authentication? This can also be sourced from the `ARM_USE_MSI` Environment Variable. Defaults to `false`.
+
+* `msi_endpoint` - (Optional) The path to a custom endpoint for Managed Service Identity - in most circumstances, this should be detected automatically. This can also, be sourced from the `ARM_MSI_ENDPOINT` Environment Variable.
+
+* `metadata_host` - (Optional) The Hostname of the Azure Metadata Service (for example `management.azure.com`), used to obtain the Cloud Environment when using a Custom Azure Environment. This can also be sourced from the `ARM_METADATA_HOST` Environment Variable.
 
 ## GoCloud
 

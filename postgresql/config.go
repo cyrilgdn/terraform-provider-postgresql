@@ -4,13 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 
+	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/blang/semver"
+	"github.com/hashicorp/go-azure-helpers/authentication"
+	"github.com/hashicorp/go-azure-helpers/sender"
 	_ "github.com/lib/pq" //PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
@@ -118,21 +123,22 @@ type ClientCertificateConfig struct {
 
 // Config - provider config
 type Config struct {
-	Scheme            string
-	Host              string
-	Port              int
-	Username          string
-	Password          string
-	DatabaseUsername  string
-	Superuser         bool
-	SSLMode           string
-	ApplicationName   string
-	Timeout           int
-	ConnectTimeoutSec int
-	MaxConns          int
-	ExpectedVersion   semver.Version
-	SSLClientCert     *ClientCertificateConfig
-	SSLRootCertPath   string
+	Scheme                      string
+	Host                        string
+	Port                        int
+	Username                    string
+	Password                    string
+	DatabaseUsername            string
+	Superuser                   bool
+	SSLMode                     string
+	ApplicationName             string
+	Timeout                     int
+	ConnectTimeoutSec           int
+	MaxConns                    int
+	ExpectedVersion             semver.Version
+	SSLClientCert               *ClientCertificateConfig
+	SSLRootCertPath             string
+	AzureADAuthenticationConfig *authentication.Config
 }
 
 // Client struct holding connection string
@@ -141,6 +147,8 @@ type Client struct {
 	config Config
 
 	databaseName string
+
+	aadOAuthToken func() (string, error)
 
 	// PostgreSQL lock on pg_catalog.  Many of the operations that Terraform
 	// performs are not permitted to be concurrent.  Unlike traditional
@@ -151,11 +159,93 @@ type Client struct {
 }
 
 // NewClient returns client config for the specified database.
-func (c *Config) NewClient(database string) *Client {
-	return &Client{
-		config:       *c,
-		databaseName: database,
+func (c *Config) NewClient(database string) (*Client, error) {
+	aadOAuthToken, err := c.buildAzureADAuthenticationClient()
+	if err != nil {
+		return nil, fmt.Errorf("error while setting up Azure AD connection: %w", err)
 	}
+
+	return &Client{
+		config:        *c,
+		databaseName:  database,
+		aadOAuthToken: aadOAuthToken,
+	}, nil
+}
+
+func (c *Config) buildAzureADAuthenticationClient() (func() (string, error), error) {
+	config := c.AzureADAuthenticationConfig
+	if config == nil {
+		return nil, nil
+	}
+
+	ctx := context.TODO()
+	env, err := authentication.AzureEnvironmentByNameFromEndpoint(ctx, config.MetadataHost, config.Environment)
+	if err != nil {
+		return nil, err
+	}
+
+	var endpoint string
+	switch strings.ToLower(c.AzureADAuthenticationConfig.Environment) {
+	case "public":
+		endpoint = "https://ossrdbms-aad.database.windows.net"
+	case "usgovernment":
+		endpoint = "https://ossrdbms-aad.database.usgovcloudapi.net"
+	case "german":
+		endpoint = "https://ossrdbms-aad.database.cloudapi.de"
+	case "china":
+		endpoint = "https://ossrdbms-aad.database.chinacloudapi.cn"
+	default:
+		return nil, fmt.Errorf("unsupported Azure environment for AzureAD authentication: %s", config.Environment)
+	}
+
+	s := sender.BuildSender("AzureAD")
+
+	oauth, err := config.BuildOAuthConfig(env.ActiveDirectoryEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	authorizer, err := config.GetAuthorizationToken(s, oauth, endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	ensureFresh := func(tokenProvider interface{}) error {
+		// the ordering is important here, prefer RefresherWithContext if available
+		if refresher, ok := tokenProvider.(adal.RefresherWithContext); ok {
+			err = refresher.EnsureFreshWithContext(ctx)
+		} else if refresher, ok := tokenProvider.(adal.Refresher); ok {
+			err = refresher.EnsureFresh()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to refresh token: %w", err)
+		}
+		return nil
+	}
+
+	switch v := authorizer.(type) {
+	case *autorest.BearerAuthorizer:
+		return func() (string, error) {
+			tokenProvider := v.TokenProvider()
+			err := ensureFresh(tokenProvider)
+			if err != nil {
+				return "", err
+			}
+			return tokenProvider.OAuthToken(), nil
+		}, nil
+	case *autorest.MultiTenantBearerAuthorizer:
+		return func() (string, error) {
+			tokenProvider := v.TokenProvider()
+			err := ensureFresh(tokenProvider)
+			if err != nil {
+				return "", err
+			}
+			return tokenProvider.PrimaryOAuthToken(), nil
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported AzureAD authentication method: %T", v)
+	}
+
 }
 
 // featureSupported returns true if a given feature is supported or not.  This
@@ -202,34 +292,43 @@ func (c *Config) connParams() []string {
 	return paramsArray
 }
 
-func (c *Config) connStr(database string) string {
-	host := c.Host
-
-	// For GCP, support both project/region/instance and project:region:instance
-	// (The second one allows to use the output of google_sql_database_instance as host
-	if c.Scheme == "gcppostgres" {
-		host = strings.ReplaceAll(host, ":", "/")
-	}
-
-	connStr := fmt.Sprintf(
-		"%s://%s:%s@%s:%d/%s?%s",
-		c.Scheme,
-		url.QueryEscape(c.Username),
-		url.QueryEscape(c.Password),
-		host,
-		c.Port,
-		database,
-		strings.Join(c.connParams(), "&"),
-	)
-
-	return connStr
-}
-
 func (c *Config) getDatabaseUsername() string {
 	if c.DatabaseUsername != "" {
 		return c.DatabaseUsername
 	}
 	return c.Username
+}
+
+func (c *Client) connStr(database string) (string, error) {
+	host := c.config.Host
+
+	// For GCP, support both project/region/instance and project:region:instance
+	// (The second one allows to use the output of google_sql_database_instance as host
+	if c.config.Scheme == "gcppostgres" {
+		host = strings.ReplaceAll(host, ":", "/")
+	}
+
+	password := c.config.Password
+	if c.aadOAuthToken != nil {
+		var err error
+		password, err = c.aadOAuthToken()
+		if err != nil {
+			return "", fmt.Errorf("failed to get Azure AD access token: %w", err)
+		}
+	}
+
+	connStr := fmt.Sprintf(
+		"%s://%s:%s@%s:%d/%s?%s",
+		c.config.Scheme,
+		url.QueryEscape(c.config.Username),
+		url.QueryEscape(password),
+		host,
+		c.config.Port,
+		database,
+		strings.Join(c.config.connParams(), "&"),
+	)
+
+	return connStr, nil
 }
 
 // Connect returns a copy to an sql.Open()'ed database connection wrapped in a DBConnection struct.
@@ -239,7 +338,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
 
-	dsn := c.config.connStr(c.databaseName)
+	dsn, err := c.connStr(c.databaseName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format DSN: %w", err)
+	}
 	conn, found := dbRegistry[dsn]
 	if !found {
 
@@ -276,6 +378,15 @@ func (c *Client) Connect() (*DBConnection, error) {
 			c,
 			*version,
 		}
+
+		if c.aadOAuthToken != nil {
+			// TODO(Sem Mulder): Allow the user to toggle this in the provider settings? Or in the resources that set roles?
+			_, err = conn.Exec("SET aad_validate_oids_in_tenant = off;")
+			if err != nil {
+				return nil, fmt.Errorf("error disabling 'aad_validate_oids_in_tenant': %w", err)
+			}
+		}
+
 		dbRegistry[dsn] = conn
 	}
 
