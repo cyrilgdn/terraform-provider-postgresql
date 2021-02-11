@@ -117,11 +117,15 @@ func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) 
 }
 
 func createDatabase(db *DBConnection, d *schema.ResourceData) error {
-	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
+	dbName := d.Get(dbNameAttr).(string)
 
-	var err error
-	if owner != "" {
+	currentUser, err := getCurrentUser(db)
+	if err != nil {
+		return fmt.Errorf("Error creating database %q: %w", dbName, err)
+	}
+
+	if owner != "" && strings.ToUpper(owner) != "DEFAULT" {
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
 		ownerGranted, err := grantRoleMembership(db, owner, currentUser)
@@ -135,13 +139,14 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		}
 	}
 
-	dbName := d.Get(dbNameAttr).(string)
 	b := bytes.NewBufferString("CREATE DATABASE ")
 	fmt.Fprint(b, pq.QuoteIdentifier(dbName))
 
 	// Handle each option individually and stream results into the query
 	// buffer.
 	switch v, ok := d.GetOk(dbOwnerAttr); {
+	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
+		fmt.Fprint(b, " OWNER DEFAULT")
 	case ok:
 		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(v.(string)))
 	default:
