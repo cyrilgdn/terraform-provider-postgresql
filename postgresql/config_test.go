@@ -14,13 +14,14 @@ func TestConfigConnParams(t *testing.T) {
 		input *Config
 		want  []string
 	}{
-		{&Config{ConnectTimeoutSec: 10}, []string{"connect_timeout=10"}},
+		{&Config{Scheme: "postgres", SSLMode: "require", ConnectTimeoutSec: 10}, []string{"connect_timeout=10", "sslmode=require"}},
 		{&Config{Scheme: "postgres", SSLMode: "disable"}, []string{"connect_timeout=0", "sslmode=disable"}},
-		{&Config{Scheme: "awspostgres", SSLMode: "disable"}, []string{"connect_timeout=0"}},
-		{&Config{ExpectedVersion: semver.MustParse("9.0.0"), ApplicationName: "Terraform provider"}, []string{"connect_timeout=0", "fallback_application_name=Terraform+provider"}},
-		{&Config{ExpectedVersion: semver.MustParse("8.0.0"), ApplicationName: "Terraform provider"}, []string{"connect_timeout=0"}},
-		{&Config{SSLClientCert: &ClientCertificateConfig{CertificatePath: "/path/to/public-certificate.pem", KeyPath: "/path/to/private-key.pem"}}, []string{"connect_timeout=0", "sslcert=%2Fpath%2Fto%2Fpublic-certificate.pem", "sslkey=%2Fpath%2Fto%2Fprivate-key.pem"}},
-		{&Config{SSLRootCertPath: "/path/to/root.pem"}, []string{"connect_timeout=0", "sslrootcert=%2Fpath%2Fto%2Froot.pem"}},
+		{&Config{Scheme: "awspostgres", ConnectTimeoutSec: 10}, []string{}},
+		{&Config{Scheme: "awspostgres", SSLMode: "disable"}, []string{}},
+		{&Config{ExpectedVersion: semver.MustParse("9.0.0"), ApplicationName: "Terraform provider"}, []string{"fallback_application_name=Terraform+provider"}},
+		{&Config{ExpectedVersion: semver.MustParse("8.0.0"), ApplicationName: "Terraform provider"}, []string{}},
+		{&Config{SSLClientCert: &ClientCertificateConfig{CertificatePath: "/path/to/public-certificate.pem", KeyPath: "/path/to/private-key.pem"}}, []string{"sslcert=%2Fpath%2Fto%2Fpublic-certificate.pem", "sslkey=%2Fpath%2Fto%2Fprivate-key.pem"}},
+		{&Config{SSLRootCertPath: "/path/to/root.pem"}, []string{"sslrootcert=%2Fpath%2Fto%2Froot.pem"}},
 	}
 
 	for _, test := range tests {
