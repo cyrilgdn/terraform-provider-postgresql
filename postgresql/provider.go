@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
+	"github.com/hashicorp/go-azure-helpers/authentication"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
@@ -133,6 +134,80 @@ func Provider() terraform.ResourceProvider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"azure_ad_authentication": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				MaxItems:    1,
+				Description: "Connection details for connecting using Azure Active Directory.",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"client_id": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_CLIENT_ID", ""),
+							Description: "The Client ID which should be used for service principal authentication.",
+						},
+
+						"tenant_id": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_TENANT_ID", ""),
+							Description: "The Tenant ID which should be used. Works with all authentication methods except MSI.",
+						},
+
+						"metadata_host": {
+							Type:        schema.TypeString,
+							Required:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_METADATA_HOSTNAME", ""),
+							Description: "The Hostname which should be used for the Azure Metadata Service.",
+						},
+
+						"environment": {
+							Type:        schema.TypeString,
+							Required:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_ENVIRONMENT", "public"),
+							Description: "The Cloud Environment which should be used. Possible values are `public`, `usgovernment`, `german`, and `china`. Defaults to `public`.",
+						},
+
+						// Client Certificate specific fields
+						"client_certificate_password": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_CLIENT_CERTIFICATE_PASSWORD", ""),
+						},
+
+						"client_certificate_path": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_CLIENT_CERTIFICATE_PATH", ""),
+							Description: "The path to the Client Certificate associated with the Service Principal for use when authenticating as a Service Principal using a Client Certificate.",
+						},
+
+						// Client Secret specific fields
+						"client_secret": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_CLIENT_SECRET", ""),
+							Description: "The password to decrypt the Client Certificate. For use when authenticating as a Service Principal using a Client Certificate",
+						},
+
+						// Managed Service Identity specific fields
+						"use_msi": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_USE_MSI", false),
+							Description: "Allow Managed Service Identity to be used for Authentication.",
+						},
+
+						"msi_endpoint": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("ARM_MSI_ENDPOINT", ""),
+							Description: "The path to a custom endpoint for Managed Service Identity - in most circumstances this should be detected automatically. ",
+						},
+					},
+				},
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -156,6 +231,9 @@ func validateExpectedVersion(v interface{}, key string) (warnings []string, erro
 	return
 }
 
+// Microsoft’s Terraform Partner ID is this specific GUID
+const terraformPartnerId = "222c6c49-1b0a-5959-a213-6608f9eb8820"
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -169,20 +247,26 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	versionStr := d.Get("expected_version").(string)
 	version, _ := semver.ParseTolerant(versionStr)
 
+	azureADAuthenticationConfig, err := expandAzureADAuthentication(d.Get("azure_ad_authentication").([]interface{}))
+	if err != nil {
+		return nil, err
+	}
+
 	config := Config{
-		Scheme:            d.Get("scheme").(string),
-		Host:              d.Get("host").(string),
-		Port:              d.Get("port").(int),
-		Username:          d.Get("username").(string),
-		Password:          d.Get("password").(string),
-		DatabaseUsername:  d.Get("database_username").(string),
-		Superuser:         d.Get("superuser").(bool),
-		SSLMode:           sslMode,
-		ApplicationName:   "Terraform provider",
-		ConnectTimeoutSec: d.Get("connect_timeout").(int),
-		MaxConns:          d.Get("max_connections").(int),
-		ExpectedVersion:   version,
-		SSLRootCertPath:   d.Get("sslrootcert").(string),
+		Scheme:                      d.Get("scheme").(string),
+		Host:                        d.Get("host").(string),
+		Port:                        d.Get("port").(int),
+		Username:                    d.Get("username").(string),
+		Password:                    d.Get("password").(string),
+		DatabaseUsername:            d.Get("database_username").(string),
+		Superuser:                   d.Get("superuser").(bool),
+		SSLMode:                     sslMode,
+		ApplicationName:             "Terraform provider",
+		ConnectTimeoutSec:           d.Get("connect_timeout").(int),
+		MaxConns:                    d.Get("max_connections").(int),
+		ExpectedVersion:             version,
+		SSLRootCertPath:             d.Get("sslrootcert").(string),
+		AzureADAuthenticationConfig: azureADAuthenticationConfig,
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
@@ -194,6 +278,39 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		}
 	}
 
-	client := config.NewClient(d.Get("database").(string))
+	client, err := config.NewClient(d.Get("database").(string))
+	if err != nil {
+		return nil, fmt.Errorf("could not create client: %w", err)
+	}
 	return client, nil
+}
+
+func expandAzureADAuthentication(in []interface{}) (*authentication.Config, error) {
+	for _, raw := range in {
+		d := raw.(map[string]interface{})
+		builder := &authentication.Builder{
+			ClientID:           d["client_id"].(string),
+			ClientSecret:       d["client_secret"].(string),
+			TenantID:           d["tenant_id"].(string),
+			MetadataHost:       d["metadata_host"].(string),
+			Environment:        d["environment"].(string),
+			MsiEndpoint:        d["msi_endpoint"].(string),
+			ClientCertPassword: d["client_certificate_password"].(string),
+			ClientCertPath:     d["client_certificate_path"].(string),
+
+			// Feature Toggles
+			SupportsClientCertAuth:         true,
+			SupportsClientSecretAuth:       true,
+			SupportsManagedServiceIdentity: d["use_msi"].(bool),
+			SupportsAzureCliToken:          true,
+			TenantOnly:                     true,
+		}
+		config, err := builder.Build()
+		if err != nil {
+			return nil, fmt.Errorf("error building AzureAD Client: %w", err)
+		}
+		return config, nil
+	}
+
+	return nil, nil
 }

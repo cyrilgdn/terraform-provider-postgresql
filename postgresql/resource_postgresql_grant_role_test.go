@@ -96,7 +96,7 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 	skipIfNotAcc(t)
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
+	dsn := connStr(&config, "postgres")
 
 	dbSuffix, teardown := setupTestDatabase(t, false, true)
 	defer teardown()

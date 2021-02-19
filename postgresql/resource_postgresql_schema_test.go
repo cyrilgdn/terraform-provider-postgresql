@@ -358,7 +358,10 @@ func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
 func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 
-		client := testAccProvider.Meta().(*Client).config.NewClient(database)
+		client, err := testAccProvider.Meta().(*Client).config.NewClient(database)
+		if err != nil {
+			return err
+		}
 		db, err := client.Connect()
 		if err != nil {
 			return err
@@ -374,7 +377,10 @@ func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFun
 
 func testAccCheckSchemaOwner(database, schemaName, expectedOwner string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		client := testAccProvider.Meta().(*Client).config.NewClient(database)
+		client, err := testAccProvider.Meta().(*Client).config.NewClient(database)
+		if err != nil {
+			return err
+		}
 		db, err := client.Connect()
 		if err != nil {
 			return err
