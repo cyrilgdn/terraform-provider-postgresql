@@ -255,9 +255,9 @@ func validatePrivileges(d *schema.ResourceData) error {
 	privileges := d.Get("privileges").(*schema.Set).List()
 
 	// Verify fields that are mandatory for specific object types
-	if objectType != "database" && d.Get("schema").(string) == "" {
+	/* if objectType != "database" && objectType != "table" && d.Get("schema").(string) == "" {
 		return fmt.Errorf("parameter 'schema' is mandatory for object_type %s", objectType)
-	}
+	} */
 
 	allowed, ok := allowedPrivileges[objectType]
 	if !ok {
