@@ -107,17 +107,16 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 }
 
 func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
-
 	tfConfig := `
 resource "postgresql_database" "test_no_owner" {
    name = "test_no_owner"
 }
-
 resource "postgresql_database" "test_default_owner" {
-	name  = "test_default_owner"
-	owner = "default"
+   name  = "test_default_owner"
+   owner = "DEFAULT"
 }
 `
+	config := getTestConfig(t)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
@@ -127,10 +126,8 @@ resource "postgresql_database" "test_default_owner" {
 			{
 				Config: tfConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("test_no_owner", "postgres"),
-					testAccCheckPostgresqlDatabaseExists("test_default_owner", "postgres"),
-					resource.TestCheckResourceAttr("postgresql_database.test_no_owner", "name", "test_no_owner"),
-					resource.TestCheckResourceAttr("postgresql_database.test_default_owner", "name", "test_default_owner"),
+					testAccCheckPostgresqlDatabaseExists("test_no_owner", config.getDatabaseUsername()),
+					testAccCheckPostgresqlDatabaseExists("test_default_owner", config.getDatabaseUsername()),
 				),
 			},
 		},
@@ -168,7 +165,7 @@ resource postgresql_database test_db {
 }
 `, allowConnections),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("test_db", "postgres"),
+					testAccCheckPostgresqlDatabaseExists("test_db", ""),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr(
@@ -186,7 +183,7 @@ resource postgresql_database test_db {
 }
 	`,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("test_db", "owner"),
+					testAccCheckPostgresqlDatabaseExists("test_db", ""),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
 					resource.TestCheckResourceAttr(
@@ -348,7 +345,7 @@ func testAccCheckPostgresqlDatabaseExists(dbName, owner string) resource.TestChe
 		}
 
 		if !exists {
-			return errors.New("Db not found")
+			return fmt.Errorf("database %s not found", dbName)
 		}
 
 		return nil
