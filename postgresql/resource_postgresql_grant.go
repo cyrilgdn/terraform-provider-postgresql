@@ -115,6 +115,11 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 		)
 	}
 
+	// Verify schema is set for postgresql_grant
+	if d.Get("schema").(string) == "" && d.Get("object_type").(string) != "database" {
+		return fmt.Errorf("parameter 'schema' is mandatory for postgresql_grant resource")
+	}
+
 	if err := validatePrivileges(d); err != nil {
 		return err
 	}
