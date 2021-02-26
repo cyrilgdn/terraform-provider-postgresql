@@ -20,7 +20,7 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 			{
 				Config: testAccPostgreSQLDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb"),
+					testAccCheckPostgresqlDatabaseExists("mydb", "myrole"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.mydb", "name", "mydb"),
 					resource.TestCheckResourceAttr(
@@ -107,19 +107,30 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 }
 
 func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
+
+	tfConfig := `
+resource "postgresql_database" "test_no_owner" {
+   name = "test_no_owner"
+}
+
+resource "postgresql_database" "test_default_owner" {
+	name  = "test_default_owner"
+	owner = "default"
+}
+`
+
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccPostgreSQLDatabaseConfig,
+				Config: tfConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb_default_owner"),
-					resource.TestCheckResourceAttr(
-						"postgresql_database.mydb_default_owner", "name", "mydb_default_owner"),
-					resource.TestCheckResourceAttrSet(
-						"postgresql_database.mydb_default_owner", "owner"),
+					testAccCheckPostgresqlDatabaseExists("test_no_owner", "postgres"),
+					testAccCheckPostgresqlDatabaseExists("test_default_owner", "postgres"),
+					resource.TestCheckResourceAttr("postgresql_database.test_no_owner", "name", "test_no_owner"),
+					resource.TestCheckResourceAttr("postgresql_database.test_default_owner", "name", "test_default_owner"),
 				),
 			},
 		},
@@ -157,7 +168,7 @@ resource postgresql_database test_db {
 }
 `, allowConnections),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("test_db", "postgres"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr(
@@ -175,7 +186,7 @@ resource postgresql_database test_db {
 }
 	`,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("test_db", "owner"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
 					resource.TestCheckResourceAttr(
@@ -201,7 +212,7 @@ resource postgresql_role "test_owner" {
 }
 resource postgresql_database "test_db" {
        name  = "test_db"
-       owner = "${postgresql_role.test_owner.name}"
+       owner = postgresql_role.test_owner.name
 }
 `
 	resource.Test(t, resource.TestCase{
@@ -212,7 +223,7 @@ resource postgresql_database "test_db" {
 			{
 				Config: stateConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("test_db", "test_owner"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
@@ -254,7 +265,7 @@ resource postgresql_database "test_db" {
 			{
 				Config: stateConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("test_db", "test_owner"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
@@ -314,7 +325,7 @@ func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
 			continue
 		}
 
-		exists, err := checkDatabaseExists(client, rs.Primary.ID)
+		exists, err := checkDatabaseExists(client, rs.Primary.ID, "")
 
 		if err != nil {
 			return fmt.Errorf("Error checking db %s", err)
@@ -328,20 +339,10 @@ func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
+func testAccCheckPostgresqlDatabaseExists(dbName, owner string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[n]
-		if !ok {
-			return fmt.Errorf("Resource not found: %s", n)
-		}
-
-		if rs.Primary.ID == "" {
-			return errors.New("No ID is set")
-		}
-
 		client := testAccProvider.Meta().(*Client)
-		exists, err := checkDatabaseExists(client, rs.Primary.ID)
-
+		exists, err := checkDatabaseExists(client, dbName, owner)
 		if err != nil {
 			return fmt.Errorf("Error checking db %s", err)
 		}
@@ -354,18 +355,22 @@ func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
 	}
 }
 
-func checkDatabaseExists(client *Client, dbName string) (bool, error) {
+func checkDatabaseExists(client *Client, dbName, expectedOwner string) (bool, error) {
 	db, err := client.Connect()
 	if err != nil {
 		return false, err
 	}
-	var _rez int
-	err = db.QueryRow("SELECT 1 from pg_database d WHERE datname=$1", dbName).Scan(&_rez)
+	var owner string
+	err = db.QueryRow("SELECT pg_get_userbyid(d.datdba) from pg_database d WHERE datname=$1", dbName).Scan(&owner)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
 		return false, fmt.Errorf("Error reading info about database: %s", err)
+	}
+
+	if expectedOwner != "" && owner != expectedOwner {
+		return false, fmt.Errorf("expected owner of database %s to be %s, got %s", dbName, expectedOwner, owner)
 	}
 
 	return true, nil
@@ -441,9 +446,4 @@ resource "postgresql_database" "pg_default_opts" {
   connection_limit = 0
   is_template = true
 }
-
-resource "postgresql_database" "mydb_default_owner" {
-   name = "mydb_default_owner"
-}
-
 `
