@@ -111,6 +111,8 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 		// Create a test schema in this new database and grant usage to rolName
 		dbExecute(t, config.connStr(dbName), "CREATE SCHEMA test_schema")
 		dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", roleName))
+		dbExecute(t, config.connStr(dbName), "CREATE SCHEMA dev_schema")
+		dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA dev_schema to %s", roleName))
 	}
 
 	return suffix, func() {
