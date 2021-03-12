@@ -16,23 +16,24 @@ import (
 )
 
 const (
-	roleBypassRLSAttr         = "bypass_row_level_security"
-	roleConnLimitAttr         = "connection_limit"
-	roleCreateDBAttr          = "create_database"
-	roleCreateRoleAttr        = "create_role"
-	roleEncryptedPassAttr     = "encrypted_password"
-	roleInheritAttr           = "inherit"
-	roleLoginAttr             = "login"
-	roleNameAttr              = "name"
-	rolePasswordAttr          = "password"
-	roleReplicationAttr       = "replication"
-	roleSkipDropRoleAttr      = "skip_drop_role"
-	roleSkipReassignOwnedAttr = "skip_reassign_owned"
-	roleSuperuserAttr         = "superuser"
-	roleValidUntilAttr        = "valid_until"
-	roleRolesAttr             = "roles"
-	roleSearchPathAttr        = "search_path"
-	roleStatementTimeoutAttr  = "statement_timeout"
+	roleBypassRLSAttr                       = "bypass_row_level_security"
+	roleConnLimitAttr                       = "connection_limit"
+	roleCreateDBAttr                        = "create_database"
+	roleCreateRoleAttr                      = "create_role"
+	roleEncryptedPassAttr                   = "encrypted_password"
+	roleIdleInTransactionSessionTimeoutAttr = "idle_in_transaction_session_timeout"
+	roleInheritAttr                         = "inherit"
+	roleLoginAttr                           = "login"
+	roleNameAttr                            = "name"
+	rolePasswordAttr                        = "password"
+	roleReplicationAttr                     = "replication"
+	roleSkipDropRoleAttr                    = "skip_drop_role"
+	roleSkipReassignOwnedAttr               = "skip_reassign_owned"
+	roleSuperuserAttr                       = "superuser"
+	roleValidUntilAttr                      = "valid_until"
+	roleRolesAttr                           = "roles"
+	roleSearchPathAttr                      = "search_path"
+	roleStatementTimeoutAttr                = "statement_timeout"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -117,6 +118,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "Determine whether this role will be permitted to create new roles",
+			},
+			roleIdleInTransactionSessionTimeoutAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds",
+				ValidateFunc: validation.IntAtLeast(0),
 			},
 			roleInheritAttr: {
 				Type:        schema.TypeBool,
@@ -290,6 +297,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+		return err
+	}
+
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
@@ -439,6 +450,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.Set(roleStatementTimeoutAttr, statementTimeout)
 
+	idleInTransactionSessionTimeout, err := readIdleInTransactionSessionTimeout(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
+
 	d.SetId(roleName)
 
 	password, err := readRolePassword(db, d, roleCanLogin)
@@ -464,6 +482,23 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 		}
 	}
 	return nil
+}
+
+// readIdleInTransactionSessionTimeout searches for a idle_in_transaction_session_timeout entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, roleIdleInTransactionSessionTimeoutAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, roleIdleInTransactionSessionTimeoutAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
 }
 
 // readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
@@ -607,6 +642,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setStatementTimeout(txn, d); err != nil {
+		return err
+	}
+
+	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
 		return err
 	}
 
@@ -929,6 +968,31 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset statement_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleIdleInTransactionSessionTimeoutAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	idleInTransactionSessionTimeout := d.Get(roleIdleInTransactionSessionTimeoutAttr).(int)
+	if idleInTransactionSessionTimeout != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET idle_in_transaction_session_timeout TO %d", pq.QuoteIdentifier(roleName), idleInTransactionSessionTimeout,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set idle_in_transaction_session_timeout %d for %s: %w", idleInTransactionSessionTimeout, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET idle_in_transaction_session_timeout", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil
