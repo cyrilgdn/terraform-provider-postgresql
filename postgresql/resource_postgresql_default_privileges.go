@@ -97,6 +97,10 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
 
+	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {
+		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
+	}
+
 	if err := validatePrivileges(d); err != nil {
 		return err
 	}
