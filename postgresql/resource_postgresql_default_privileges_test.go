@@ -23,6 +23,10 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 	// Set default privileges to the test role then to public (i.e.: everyone)
 	for _, role := range []string{roleName, "public"} {
 		t.Run(role, func(t *testing.T) {
+			withGrant := true
+			if role == "public" {
+				withGrant = false
+			}
 
 			// We set PGUSER as owner as he will create the test table
 			var tfConfig = fmt.Sprintf(`
@@ -32,9 +36,10 @@ resource "postgresql_default_privileges" "test_ro" {
 	role        = "%s"
 	schema      = "test_schema"
 	object_type = "table"
+	with_grant_option = %t
 	privileges   = %%s
 }
-	`, dbName, config.Username, role)
+	`, dbName, config.Username, role, withGrant)
 
 			resource.Test(t, resource.TestCase{
 				PreCheck: func() {
@@ -56,6 +61,7 @@ resource "postgresql_default_privileges" "test_ro" {
 								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT"})
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "with_grant_option", fmt.Sprintf("%t", withGrant)),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
 						),
