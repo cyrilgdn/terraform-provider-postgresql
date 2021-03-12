@@ -41,7 +41,7 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 			},
 			"schema": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
 				Description: "The database schema to set default privileges for this role",
 			},
@@ -64,6 +64,13 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 				Set:         schema.HashString,
 				MinItems:    1,
 				Description: "The list of privileges to apply as default privileges",
+			},
+			"with_grant_option": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Default:     false,
+				Description: "Permit the grant recipient to grant it to others",
 			},
 		},
 	}
@@ -89,6 +96,11 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
+
+	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {
+		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
+	}
+
 	if err := validatePrivileges(d); err != nil {
 		return err
 	}
@@ -169,21 +181,36 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		return err
 	}
 
-	// This query aggregates the list of default privileges type (prtype)
-	// for the role (grantee), owner (grantor), schema (namespace name)
-	// and the specified object type (defaclobjtype).
-	query := `SELECT array_agg(prtype) FROM (
+	var query string
+	var queryArgs []interface{}
+
+	if pgSchema != "" {
+		query = `SELECT array_agg(prtype) FROM (
 		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
 		WHERE defaclobjtype = $3
 	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
-
 	JOIN pg_namespace ON pg_namespace.oid = namespace
 	WHERE grantee_oid = $1 AND nspname = $2 AND pg_get_userbyid(grantor_oid) = $4;
 `
+		queryArgs = []interface{}{roleOID, pgSchema, objectTypes[objectType], owner}
+	} else {
+		query = `SELECT array_agg(prtype) FROM (
+		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
+		WHERE defaclobjtype = $2
+	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
+	WHERE grantee_oid = $1 AND namespace = 0 AND pg_get_userbyid(grantor_oid) = $3;
+`
+		queryArgs = []interface{}{roleOID, objectTypes[objectType], owner}
+	}
+
+	// This query aggregates the list of default privileges type (prtype)
+	// for the role (grantee), owner (grantor), schema (namespace name)
+	// and the specified object type (defaclobjtype).
+
 	var privileges pq.ByteaArray
 
 	if err := txn.QueryRow(
-		query, roleOID, pgSchema, objectTypes[objectType], owner,
+		query, queryArgs...,
 	).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read default privileges: %w", err)
 	}
@@ -211,13 +238,24 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		privileges = append(privileges, priv.(string))
 	}
 
-	query := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT %s ON %sS TO %s",
+	var inSchema string
+
+	// If a schema is specified we need to build the part of the query string to action this
+	if pgSchema != "" {
+		inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
+	}
+
+	query := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s %s GRANT %s ON %sS TO %s",
 		pq.QuoteIdentifier(d.Get("owner").(string)),
-		pq.QuoteIdentifier(pgSchema),
+		inSchema,
 		strings.Join(privileges, ","),
 		strings.ToUpper(d.Get("object_type").(string)),
 		pq.QuoteIdentifier(role),
 	)
+
+	if d.Get("with_grant_option").(bool) == true {
+		query = query + " WITH GRANT OPTION"
+	}
 
 	_, err := txn.Exec(
 		query,
@@ -230,10 +268,18 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 }
 
 func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+	pgSchema := d.Get("schema").(string)
+
+	var inSchema string
+
+	// If a schema is specified we need to build the part of the query string to action this
+	if pgSchema != "" {
+		inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
+	}
 	query := fmt.Sprintf(
-		"ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s REVOKE ALL ON %sS FROM %s",
+		"ALTER DEFAULT PRIVILEGES FOR ROLE %s %s REVOKE ALL ON %sS FROM %s",
 		pq.QuoteIdentifier(d.Get("owner").(string)),
-		pq.QuoteIdentifier(d.Get("schema").(string)),
+		inSchema,
 		strings.ToUpper(d.Get("object_type").(string)),
 		pq.QuoteIdentifier(d.Get("role").(string)),
 	)
@@ -245,8 +291,14 @@ func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 }
 
 func generateDefaultPrivilegesID(d *schema.ResourceData) string {
+	pgSchema := d.Get("schema").(string)
+	if pgSchema == "" {
+		pgSchema = "noschema"
+	}
+
 	return strings.Join([]string{
-		d.Get("role").(string), d.Get("database").(string), d.Get("schema").(string),
+		d.Get("role").(string), d.Get("database").(string), pgSchema,
 		d.Get("owner").(string), d.Get("object_type").(string),
 	}, "_")
+
 }

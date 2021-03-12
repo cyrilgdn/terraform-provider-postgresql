@@ -172,14 +172,13 @@ func (c *Config) featureSupported(name featureName) bool {
 }
 
 func (c *Config) connParams() []string {
-	params := map[string]string{
-		"connect_timeout": strconv.Itoa(c.ConnectTimeoutSec),
-	}
+	params := map[string]string{}
 
-	// sslmode is not allowed with gocloud
+	// sslmode and connect_timeout are not allowed with gocloud
 	// (TLS is provided by gocloud directly)
 	if c.Scheme == "postgres" {
 		params["sslmode"] = c.SSLMode
+		params["connect_timeout"] = strconv.Itoa(c.ConnectTimeoutSec)
 	}
 
 	if c.featureSupported(featureFallbackApplicationName) {
@@ -196,7 +195,7 @@ func (c *Config) connParams() []string {
 
 	paramsArray := []string{}
 	for key, value := range params {
-		paramsArray = append(paramsArray, "%s=%s", key, url.QueryEscape(value))
+		paramsArray = append(paramsArray, fmt.Sprintf("%s=%s", key, url.QueryEscape(value)))
 	}
 
 	return paramsArray
