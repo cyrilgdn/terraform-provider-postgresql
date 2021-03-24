@@ -30,11 +30,11 @@ var objectTypes = map[string]string{
 
 func resourcePostgreSQLGrant() *schema.Resource {
 	return &schema.Resource{
-		Create: PGResourceFunc(resourcePostgreSQLGrantCreate),
+		Create: resourcePostgreSQLGrantCreate,
 		// As create revokes and grants we can use it to update too
-		Update: PGResourceFunc(resourcePostgreSQLGrantCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLGrantRead),
-		Delete: PGResourceFunc(resourcePostgreSQLGrantDelete),
+		Update: resourcePostgreSQLGrantCreate,
+		Read:   resourcePostgreSQLGrantRead,
+		Delete: resourcePostgreSQLGrantDelete,
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -80,15 +80,20 @@ func resourcePostgreSQLGrant() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featurePrivileges) {
+func resourcePostgreSQLGrantRead(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Client)
+
+	if !client.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
 			"postgresql_grant resource is not supported for this Postgres version (%s)",
-			db.version,
+			client.version,
 		)
 	}
 
-	exists, err := checkRoleDBSchemaExists(db.client, d)
+	client.catalogLock.RLock()
+	defer client.catalogLock.RUnlock()
+
+	exists, err := checkRoleDBSchemaExists(client, d)
 	if err != nil {
 		return err
 	}
@@ -98,7 +103,7 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 	}
 	d.SetId(generateGrantID(d))
 
-	txn, err := startTransaction(db.client, d.Get("database").(string))
+	txn, err := startTransaction(client, d.Get("database").(string))
 	if err != nil {
 		return err
 	}
@@ -107,11 +112,13 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 	return readRolePrivileges(txn, d)
 }
 
-func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featurePrivileges) {
+func resourcePostgreSQLGrantCreate(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Client)
+
+	if !client.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
 			"postgresql_grant resource is not supported for this Postgres version (%s)",
-			db.version,
+			client.version,
 		)
 	}
 
@@ -126,7 +133,10 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	database := d.Get("database").(string)
 
-	txn, err := startTransaction(db.client, database)
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
+
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return err
 	}
@@ -157,7 +167,7 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	d.SetId(generateGrantID(d))
 
-	txn, err = startTransaction(db.client, database)
+	txn, err = startTransaction(client, database)
 	if err != nil {
 		return err
 	}
@@ -166,15 +176,20 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	return readRolePrivileges(txn, d)
 }
 
-func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featurePrivileges) {
+func resourcePostgreSQLGrantDelete(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Client)
+
+	if !client.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
 			"postgresql_grant resource is not supported for this Postgres version (%s)",
-			db.version,
+			client.version,
 		)
 	}
 
-	txn, err := startTransaction(db.client, d.Get("database").(string))
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
+
+	txn, err := startTransaction(client, d.Get("database").(string))
 	if err != nil {
 		return err
 	}

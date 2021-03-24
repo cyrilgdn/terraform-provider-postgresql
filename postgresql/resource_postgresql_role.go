@@ -41,11 +41,11 @@ const (
 
 func resourcePostgreSQLRole() *schema.Resource {
 	return &schema.Resource{
-		Create: PGResourceFunc(resourcePostgreSQLRoleCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLRoleRead),
-		Update: PGResourceFunc(resourcePostgreSQLRoleUpdate),
-		Delete: PGResourceFunc(resourcePostgreSQLRoleDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLRoleExists),
+		Create: resourcePostgreSQLRoleCreate,
+		Read:   resourcePostgreSQLRoleRead,
+		Update: resourcePostgreSQLRoleUpdate,
+		Delete: resourcePostgreSQLRoleDelete,
+		Exists: resourcePostgreSQLRoleExists,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -171,8 +171,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) error {
-	txn, err := startTransaction(db.client, "")
+func resourcePostgreSQLRoleCreate(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
+	c.catalogLock.Lock()
+	defer c.catalogLock.Unlock()
+
+	txn, err := c.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -207,11 +211,11 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		// {roleEncryptedPassAttr, "ENCRYPTED", "UNENCRYPTED"},
 	}
 
-	if db.featureSupported(featureRLS) {
+	if c.featureSupported(featureRLS) {
 		boolOpts = append(boolOpts, boolOptType{roleBypassRLSAttr, "BYPASSRLS", "NOBYPASSRLS"})
 	}
 
-	if db.featureSupported(featureReplication) {
+	if c.featureSupported(featureReplication) {
 		boolOpts = append(boolOpts, boolOptType{roleReplicationAttr, "REPLICATION", "NOREPLICATION"})
 	}
 
@@ -272,7 +276,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	roleName := d.Get(roleNameAttr).(string)
 	createStr := strings.Join(createOpts, " ")
 	if len(createOpts) > 0 {
-		if db.featureSupported(featureCreateRoleWith) {
+		if c.featureSupported(featureCreateRoleWith) {
 			createStr = " WITH " + createStr
 		} else {
 			// NOTE(seanc@): Work around ParAccel/AWS RedShift's ancient fork of PostgreSQL
@@ -307,11 +311,15 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 
 	d.SetId(roleName)
 
-	return resourcePostgreSQLRoleReadImpl(db, d)
+	return resourcePostgreSQLRoleReadImpl(c, d)
 }
 
-func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) error {
-	txn, err := startTransaction(db.client, "")
+func resourcePostgreSQLRoleDelete(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
+	c.catalogLock.Lock()
+	defer c.catalogLock.Unlock()
+
+	txn, err := c.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -321,7 +329,7 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 
 	if !d.Get(roleSkipReassignOwnedAttr).(bool) {
 		if err := withRolesGranted(txn, []string{roleName}, func() error {
-			currentUser := db.client.config.getDatabaseUsername()
+			currentUser := c.config.getDatabaseUsername()
 			if _, err := txn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
 				return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)
 			}
@@ -349,9 +357,13 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 	return nil
 }
 
-func resourcePostgreSQLRoleExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+func resourcePostgreSQLRoleExists(d *schema.ResourceData, meta interface{}) (bool, error) {
+	c := meta.(*Client)
+	c.catalogLock.RLock()
+	defer c.catalogLock.RUnlock()
+
 	var roleName string
-	err := db.QueryRow("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname=$1", d.Id()).Scan(&roleName)
+	err := c.DB().QueryRow("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname=$1", d.Id()).Scan(&roleName)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -362,11 +374,15 @@ func resourcePostgreSQLRoleExists(db *DBConnection, d *schema.ResourceData) (boo
 	return true, nil
 }
 
-func resourcePostgreSQLRoleRead(db *DBConnection, d *schema.ResourceData) error {
-	return resourcePostgreSQLRoleReadImpl(db, d)
+func resourcePostgreSQLRoleRead(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
+	c.catalogLock.RLock()
+	defer c.catalogLock.RUnlock()
+
+	return resourcePostgreSQLRoleReadImpl(c, d)
 }
 
-func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) error {
+func resourcePostgreSQLRoleReadImpl(c *Client, d *schema.ResourceData) error {
 	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
@@ -399,12 +415,12 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		&roleConfig,
 	}
 
-	if db.featureSupported(featureReplication) {
+	if c.featureSupported(featureReplication) {
 		columns = append(columns, "rolreplication")
 		values = append(values, &roleReplication)
 	}
 
-	if db.featureSupported(featureRLS) {
+	if c.featureSupported(featureRLS) {
 		columns = append(columns, "rolbypassrls")
 		values = append(values, &roleBypassRLS)
 	}
@@ -416,7 +432,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		// select columns
 		strings.Join(columns, ", "),
 	)
-	err := db.QueryRow(roleSQL, roleID).Scan(values...)
+	err := c.DB().QueryRow(roleSQL, roleID).Scan(values...)
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -459,7 +475,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.SetId(roleName)
 
-	password, err := readRolePassword(db, d, roleCanLogin)
+	password, err := readRolePassword(c, d, roleCanLogin)
 	if err != nil {
 		return err
 	}
@@ -520,19 +536,19 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
 // or only from Terraform state.
-func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin bool) (string, error) {
+func readRolePassword(c *Client, d *schema.ResourceData, roleCanLogin bool) (string, error) {
 	statePassword := d.Get(rolePasswordAttr).(string)
 
 	// Role which cannot login does not have password in pg_shadow.
 	// Also, if user specifies that admin is not a superuser we don't try to read pg_shadow
 	// (only superuser can read pg_shadow)
-	if !roleCanLogin || !db.client.config.Superuser {
+	if !roleCanLogin || !c.config.Superuser {
 		return statePassword, nil
 	}
 
 	// Otherwise we check if connected user is really a superuser
 	// (in order to warn user instead of having a permission denied error)
-	superuser, err := db.isSuperuser()
+	superuser, err := c.isSuperuser()
 	if err != nil {
 		return "", err
 	}
@@ -542,12 +558,12 @@ func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin boo
 				"connected user %s is not a SUPERUSER. "+
 				"You can set `superuser = false` in the provider configuration "+
 				"so it will not try to read the password from Postgres",
-			db.client.config.getDatabaseUsername(),
+			c.config.getDatabaseUsername(),
 		)
 	}
 
 	var rolePassword string
-	err = db.QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", d.Id()).Scan(&rolePassword)
+	err = c.DB().QueryRow("SELECT COALESCE(passwd, '') FROM pg_catalog.pg_shadow AS s WHERE s.usename = $1", d.Id()).Scan(&rolePassword)
 	switch {
 	case err == sql.ErrNoRows:
 		// They don't have a password
@@ -577,8 +593,12 @@ func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin boo
 	return rolePassword, nil
 }
 
-func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) error {
-	txn, err := startTransaction(db.client, "")
+func resourcePostgreSQLRoleUpdate(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
+	c.catalogLock.Lock()
+	defer c.catalogLock.Unlock()
+
+	txn, err := c.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -592,7 +612,7 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	if err := setRoleBypassRLS(db, txn, d); err != nil {
+	if err := setRoleBypassRLS(c, txn, d); err != nil {
 		return err
 	}
 
@@ -653,7 +673,7 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
-	return resourcePostgreSQLRoleReadImpl(db, d)
+	return resourcePostgreSQLRoleReadImpl(c, d)
 }
 
 func setRoleName(txn *sql.Tx, d *schema.ResourceData) error {
@@ -695,13 +715,13 @@ func setRolePassword(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setRoleBypassRLS(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
+func setRoleBypassRLS(c *Client, txn *sql.Tx, d *schema.ResourceData) error {
 	if !d.HasChange(roleBypassRLSAttr) {
 		return nil
 	}
 
-	if !db.featureSupported(featureRLS) {
-		return fmt.Errorf("PostgreSQL client is talking with a server (%q) that does not support PostgreSQL Row-Level Security", db.version.String())
+	if !c.featureSupported(featureRLS) {
+		return fmt.Errorf("PostgreSQL client is talking with a server (%q) that does not support PostgreSQL Row-Level Security", c.version.String())
 	}
 
 	bypassRLS := d.Get(roleBypassRLSAttr).(bool)

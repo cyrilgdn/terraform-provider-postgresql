@@ -194,6 +194,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		}
 	}
 
-	client := config.NewClient(d.Get("database").(string))
+	client, err := config.NewClient(d.Get("database").(string))
+	if err != nil {
+		return nil, fmt.Errorf("Error initializing PostgreSQL client: %w", err)
+	}
+
 	return client, nil
 }

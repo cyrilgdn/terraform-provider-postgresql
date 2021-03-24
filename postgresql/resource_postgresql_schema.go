@@ -31,11 +31,11 @@ const (
 
 func resourcePostgreSQLSchema() *schema.Resource {
 	return &schema.Resource{
-		Create: PGResourceFunc(resourcePostgreSQLSchemaCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLSchemaRead),
-		Update: PGResourceFunc(resourcePostgreSQLSchemaUpdate),
-		Delete: PGResourceFunc(resourcePostgreSQLSchemaDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLSchemaExists),
+		Create: resourcePostgreSQLSchemaCreate,
+		Read:   resourcePostgreSQLSchemaRead,
+		Update: resourcePostgreSQLSchemaUpdate,
+		Delete: resourcePostgreSQLSchemaDelete,
+		Exists: resourcePostgreSQLSchemaExists,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -120,9 +120,14 @@ func resourcePostgreSQLSchema() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) error {
-	database := getDatabase(d, db.client.databaseName)
-	txn, err := startTransaction(db.client, database)
+func resourcePostgreSQLSchemaCreate(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
+
+	c.catalogLock.Lock()
+	defer c.catalogLock.Unlock()
+
+	database := getDatabase(d, c)
+	txn, err := startTransaction(c, database)
 	if err != nil {
 		return err
 	}
@@ -147,7 +152,7 @@ func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err := withRolesGranted(txn, rolesToGrant, func() error {
-		return createSchema(db, txn, d)
+		return createSchema(d, c, txn)
 	}); err != nil {
 		return err
 	}
@@ -156,12 +161,12 @@ func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) er
 		return fmt.Errorf("Error committing schema: %w", err)
 	}
 
-	d.SetId(generateSchemaID(d, database))
+	d.SetId(generateSchemaID(d, c))
 
-	return resourcePostgreSQLSchemaReadImpl(db, d)
+	return resourcePostgreSQLSchemaReadImpl(d, c)
 }
 
-func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
+func createSchema(d *schema.ResourceData, c *Client, txn *sql.Tx) error {
 	schemaName := d.Get(schemaNameAttr).(string)
 
 	// Check if previous tasks haven't already create schema
@@ -172,7 +177,7 @@ func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
 	switch {
 	case err == sql.ErrNoRows:
 		b := bytes.NewBufferString("CREATE SCHEMA ")
-		if db.featureSupported(featureSchemaCreateIfNotExist) {
+		if c.featureSupported(featureSchemaCreateIfNotExist) {
 			if v := d.Get(schemaIfNotExists); v.(bool) {
 				fmt.Fprint(b, "IF NOT EXISTS ")
 			}
@@ -232,10 +237,15 @@ func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) error {
-	database := getDatabase(d, db.client.databaseName)
+func resourcePostgreSQLSchemaDelete(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
 
-	txn, err := startTransaction(db.client, database)
+	c.catalogLock.Lock()
+	defer c.catalogLock.Unlock()
+
+	database := getDatabase(d, c)
+
+	txn, err := startTransaction(c, database)
 	if err != nil {
 		return err
 	}
@@ -279,19 +289,24 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 	return nil
 }
 
-func resourcePostgreSQLSchemaExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	database, schemaName, err := getDBSchemaName(d, db.client.databaseName)
+func resourcePostgreSQLSchemaExists(d *schema.ResourceData, meta interface{}) (bool, error) {
+	c := meta.(*Client)
+
+	c.catalogLock.RLock()
+	defer c.catalogLock.RUnlock()
+
+	database, schemaName, err := getDBSchemaName(d, c)
 	if err != nil {
 		return false, err
 	}
 
 	// Check if the database exists
-	exists, err := dbExists(db, database)
+	exists, err := dbExists(c.DB(), database)
 	if err != nil || !exists {
 		return false, err
 	}
 
-	txn, err := startTransaction(db.client, database)
+	txn, err := startTransaction(c, database)
 	if err != nil {
 		return false, err
 	}
@@ -308,17 +323,21 @@ func resourcePostgreSQLSchemaExists(db *DBConnection, d *schema.ResourceData) (b
 	return true, nil
 }
 
-func resourcePostgreSQLSchemaRead(db *DBConnection, d *schema.ResourceData) error {
-	return resourcePostgreSQLSchemaReadImpl(db, d)
+func resourcePostgreSQLSchemaRead(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
+	c.catalogLock.RLock()
+	defer c.catalogLock.RUnlock()
+
+	return resourcePostgreSQLSchemaReadImpl(d, c)
 }
 
-func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) error {
-	database, schemaName, err := getDBSchemaName(d, db.client.databaseName)
+func resourcePostgreSQLSchemaReadImpl(d *schema.ResourceData, c *Client) error {
+	database, schemaName, err := getDBSchemaName(d, c)
 	if err != nil {
 		return err
 	}
 
-	txn, err := startTransaction(db.client, database)
+	txn, err := startTransaction(c, database)
 	if err != nil {
 		return err
 	}
@@ -361,22 +380,27 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 		d.Set(schemaNameAttr, schemaName)
 		d.Set(schemaOwnerAttr, schemaOwner)
 		d.Set(schemaDatabaseAttr, database)
-		d.SetId(generateSchemaID(d, database))
+		d.SetId(generateSchemaID(d, c))
 
 		return nil
 	}
 }
 
-func resourcePostgreSQLSchemaUpdate(db *DBConnection, d *schema.ResourceData) error {
-	databaseName := getDatabase(d, db.client.databaseName)
+func resourcePostgreSQLSchemaUpdate(d *schema.ResourceData, meta interface{}) error {
+	c := meta.(*Client)
 
-	txn, err := startTransaction(db.client, databaseName)
+	database := getDatabase(d, c)
+
+	c.catalogLock.Lock()
+	defer c.catalogLock.Unlock()
+
+	txn, err := startTransaction(c, database)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
-	if err := setSchemaName(txn, d, databaseName); err != nil {
+	if err := setSchemaName(txn, d, c); err != nil {
 		return err
 	}
 
@@ -392,10 +416,10 @@ func resourcePostgreSQLSchemaUpdate(db *DBConnection, d *schema.ResourceData) er
 		return fmt.Errorf("Error committing schema: %w", err)
 	}
 
-	return resourcePostgreSQLSchemaReadImpl(db, d)
+	return resourcePostgreSQLSchemaReadImpl(d, c)
 }
 
-func setSchemaName(txn *sql.Tx, d *schema.ResourceData, databaseName string) error {
+func setSchemaName(txn *sql.Tx, d *schema.ResourceData, c *Client) error {
 	if !d.HasChange(schemaNameAttr) {
 		return nil
 	}
@@ -411,7 +435,7 @@ func setSchemaName(txn *sql.Tx, d *schema.ResourceData, databaseName string) err
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating schema NAME: %w", err)
 	}
-	d.SetId(generateSchemaID(d, databaseName))
+	d.SetId(generateSchemaID(d, c))
 
 	return nil
 }
@@ -606,9 +630,9 @@ func schemaPolicyToACL(policyMap map[string]interface{}) acl.Schema {
 	return rolePolicy
 }
 
-func generateSchemaID(d *schema.ResourceData, databaseName string) string {
+func generateSchemaID(d *schema.ResourceData, c *Client) string {
 	SchemaID := strings.Join([]string{
-		getDatabase(d, databaseName),
+		getDatabase(d, c),
 		d.Get(schemaNameAttr).(string),
 	}, ".")
 
@@ -620,8 +644,8 @@ func getSchemaNameFromID(ID string) string {
 	return splitted[0]
 }
 
-func getDBSchemaName(d *schema.ResourceData, databaseName string) (string, string, error) {
-	database := getDatabase(d, databaseName)
+func getDBSchemaName(d *schema.ResourceData, client *Client) (string, string, error) {
+	database := getDatabase(d, client)
 	schemaName := d.Get(schemaNameAttr).(string)
 
 	// When importing, we have to parse the ID to find schema and database names.

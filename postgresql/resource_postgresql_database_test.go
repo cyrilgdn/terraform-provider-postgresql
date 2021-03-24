@@ -139,11 +139,7 @@ func TestAccPostgresqlDatabase_Update(t *testing.T) {
 			testAccPreCheck(t)
 
 			client := testAccProvider.Meta().(*Client)
-			db, err := client.Connect()
-			if err != nil {
-				t.Fatalf("could not connect to database: %v", err)
-			}
-			allowConnections = db.featureSupported(featureDBAllowConnections)
+			allowConnections = client.featureSupported(featureDBAllowConnections)
 
 		},
 		Providers:    testAccProviders,
@@ -355,12 +351,8 @@ func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
 }
 
 func checkDatabaseExists(client *Client, dbName string) (bool, error) {
-	db, err := client.Connect()
-	if err != nil {
-		return false, err
-	}
 	var _rez int
-	err = db.QueryRow("SELECT 1 from pg_database d WHERE datname=$1", dbName).Scan(&_rez)
+	err := client.DB().QueryRow("SELECT 1 from pg_database d WHERE datname=$1", dbName).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

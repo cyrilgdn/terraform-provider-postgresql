@@ -244,12 +244,9 @@ func testAccCreateExtensionDependency(tableName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 
 		client := testAccProvider.Meta().(*Client)
-		db, err := client.Connect()
-		if err != nil {
-			return err
-		}
+		db := client.DB()
 
-		_, err = db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s; CREATE TABLE %s (id uuid DEFAULT gen_random_uuid())", tableName, tableName))
+		_, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s; CREATE TABLE %s (id uuid DEFAULT gen_random_uuid())", tableName, tableName))
 		if err != nil {
 			return fmt.Errorf("could not create test table in schema: %s", err)
 		}

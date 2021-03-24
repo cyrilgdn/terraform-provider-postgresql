@@ -20,12 +20,8 @@ const (
 // Can be used in a PreCheck function to disable test based on feature.
 func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 	client := testAccProvider.Meta().(*Client)
-	db, err := client.Connect()
-	if err != nil {
-		t.Fatalf("could connect to database: %v", err)
-	}
-	if !db.featureSupported(feature) {
-		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", db.version))
+	if !client.featureSupported(feature) {
+		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", client.version))
 	}
 }
 

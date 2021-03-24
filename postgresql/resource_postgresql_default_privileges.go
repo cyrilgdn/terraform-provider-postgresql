@@ -15,10 +15,10 @@ import (
 
 func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 	return &schema.Resource{
-		Create: PGResourceFunc(resourcePostgreSQLDefaultPrivilegesCreate),
-		Update: PGResourceFunc(resourcePostgreSQLDefaultPrivilegesCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLDefaultPrivilegesRead),
-		Delete: PGResourceFunc(resourcePostgreSQLDefaultPrivilegesDelete),
+		Create: resourcePostgreSQLDefaultPrivilegesCreate,
+		Update: resourcePostgreSQLDefaultPrivilegesCreate,
+		Read:   resourcePostgreSQLDefaultPrivilegesRead,
+		Delete: resourcePostgreSQLDefaultPrivilegesDelete,
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -76,8 +76,13 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.ResourceData) error {
-	exists, err := checkRoleDBSchemaExists(db.client, d)
+func resourcePostgreSQLDefaultPrivilegesRead(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Client)
+
+	client.catalogLock.RLock()
+	defer client.catalogLock.RUnlock()
+
+	exists, err := checkRoleDBSchemaExists(client, d)
 	if err != nil {
 		return err
 	}
@@ -86,7 +91,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 		return nil
 	}
 
-	txn, err := startTransaction(db.client, d.Get("database").(string))
+	txn, err := startTransaction(client, d.Get("database").(string))
 	if err != nil {
 		return err
 	}
@@ -95,7 +100,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 	return readRoleDefaultPrivileges(txn, d)
 }
 
-func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
+func resourcePostgreSQLDefaultPrivilegesCreate(d *schema.ResourceData, meta interface{}) error {
 
 	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {
 		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
@@ -106,9 +111,14 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 
 	database := d.Get("database").(string)
+
+	client := meta.(*Client)
 	owner := d.Get("owner").(string)
 
-	txn, err := startTransaction(db.client, database)
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
+
+	txn, err := startTransaction(client, database)
 	if err != nil {
 		return err
 	}
@@ -138,7 +148,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 
 	d.SetId(generateDefaultPrivilegesID(d))
 
-	txn, err = startTransaction(db.client, d.Get("database").(string))
+	txn, err = startTransaction(client, d.Get("database").(string))
 	if err != nil {
 		return err
 	}
@@ -147,10 +157,14 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	return readRoleDefaultPrivileges(txn, d)
 }
 
-func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
+func resourcePostgreSQLDefaultPrivilegesDelete(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Client)
 	owner := d.Get("owner").(string)
 
-	txn, err := startTransaction(db.client, d.Get("database").(string))
+	client.catalogLock.Lock()
+	defer client.catalogLock.Unlock()
+
+	txn, err := startTransaction(client, d.Get("database").(string))
 	if err != nil {
 		return err
 	}
