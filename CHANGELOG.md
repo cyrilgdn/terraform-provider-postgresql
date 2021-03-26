@@ -1,5 +1,19 @@
 ## Unreleased
 
+## 1.12.0 (March 26, 2021)
+
+FEATURES:
+
+* `postgresql_default_privileges`: Add `with_grant_option` - @stawii, @cyrilgdn
+  [#10](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/10) / 
+  [#63](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/63)
+
+* `postgresql_default_privileges`: Make `schema` optional for default privileges on all schemas - @darren-reddick
+  [#59](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/59)
+
+* `postgresql_role`: Add `idle_in_transaction_session_timeout` suppor - @colesnodgrass
+  [#39](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/39)
+
 ## 1.11.2 (February 16, 2021)
 
 FIXES:
