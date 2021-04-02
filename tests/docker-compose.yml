@@ -3,6 +3,12 @@ version: "3"
 services:
     postgres:
         image: postgres:${PGVERSION:-latest}
+        command:
+          - "postgres"
+          - "-c"
+          - "wal_level=logical"
+          - "-c"
+          - "max_replication_slots=10"
         environment:
             POSTGRES_PASSWORD: ${PGPASSWORD}
         ports:
