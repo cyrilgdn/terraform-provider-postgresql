@@ -14,9 +14,6 @@ func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*sc
 	return func(d *schema.ResourceData, meta interface{}) error {
 		client := meta.(*Client)
 
-		client.catalogLock.Lock()
-		defer client.catalogLock.Unlock()
-
 		db, err := client.Connect()
 		if err != nil {
 			return err
@@ -29,9 +26,6 @@ func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*sc
 func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, interface{}) (bool, error) {
 	return func(d *schema.ResourceData, meta interface{}) (bool, error) {
 		client := meta.(*Client)
-
-		client.catalogLock.Lock()
-		defer client.catalogLock.Unlock()
 
 		db, err := client.Connect()
 		if err != nil {
@@ -446,4 +440,12 @@ func getRoleOID(db QueryAble, role string) (int, error) {
 		return 0, fmt.Errorf("could not find oid for role %s: %w", role, err)
 	}
 	return oid, nil
+}
+
+func pgLockRole(txn *sql.Tx, role string) error {
+	if _, err := txn.Exec("SELECT pg_advisory_lock(oid::bigint) from pg_roles where rolname = $1", role); err != nil {
+		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
+	}
+
+	return nil
 }
