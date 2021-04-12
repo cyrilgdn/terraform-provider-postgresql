@@ -72,3 +72,13 @@ resource "postgresql_default_privileges" "alter_ro_sequence" {
   object_type = "sequence"
   privileges  = ["USAGE", "SELECT"]
 }
+
+resource "postgresql_grant" "revoke_public" {
+  database    = postgresql_database.test.name
+  role        = "public"
+  schema      = "public"
+  object_type = "schema"
+  privileges  = []
+
+  with_grant_option = true
+}
