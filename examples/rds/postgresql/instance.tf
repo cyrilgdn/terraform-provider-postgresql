@@ -1,5 +1,5 @@
 module "vpc" {
-  source = "../../aws_vpc/"
+  source = "../vpc/"
   name   = var.name
 }
 
