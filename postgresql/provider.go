@@ -140,6 +140,7 @@ func Provider() terraform.ResourceProvider {
 			"postgresql_default_privileges": resourcePostgreSQLDefaultPrivileges(),
 			"postgresql_extension":          resourcePostgreSQLExtension(),
 			"postgresql_grant":              resourcePostgreSQLGrant(),
+			"postgresql_grant_resource":     resourcePostgreSQLGrantResource(),
 			"postgresql_grant_role":         resourcePostgreSQLGrantRole(),
 			"postgresql_schema":             resourcePostgreSQLSchema(),
 			"postgresql_role":               resourcePostgreSQLRole(),
