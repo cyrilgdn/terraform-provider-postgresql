@@ -442,8 +442,16 @@ func getRoleOID(db QueryAble, role string) (int, error) {
 	return oid, nil
 }
 
+// Lock a role and all his members to avoid concurrent updates on some resources
 func pgLockRole(txn *sql.Tx, role string) error {
-	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) from pg_roles where rolname = $1", role); err != nil {
+	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
+		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
+	}
+
+	if _, err := txn.Exec(
+		"SELECT pg_advisory_xact_lock(member::bigint) FROM pg_auth_members JOIN pg_roles ON roleid = pg_roles.oid WHERE rolname = $1",
+		role,
+	); err != nil {
 		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
 	}
 
