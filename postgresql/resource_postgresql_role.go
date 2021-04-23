@@ -588,7 +588,8 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 	defer deferredRollback(txn)
 
-	if err := pgLockRole(txn, d.Get(roleNameAttr).(string)); err != nil {
+	oldName, _ := d.GetChange(roleNameAttr)
+	if err := pgLockRole(txn, oldName.(string)); err != nil {
 		return err
 	}
 

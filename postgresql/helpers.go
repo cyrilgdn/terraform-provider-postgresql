@@ -452,7 +452,7 @@ func pgLockRole(txn *sql.Tx, role string) error {
 		"SELECT pg_advisory_xact_lock(member::bigint) FROM pg_auth_members JOIN pg_roles ON roleid = pg_roles.oid WHERE rolname = $1",
 		role,
 	); err != nil {
-		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
+		return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
 	}
 
 	return nil
