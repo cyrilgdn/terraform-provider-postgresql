@@ -116,22 +116,20 @@ func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) 
 	return resourcePostgreSQLDatabaseReadImpl(db, d)
 }
 
-func createDatabase(db *DBConnection, d *schema.ResourceData) (err error) {
+func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
-	// Take a lock on db currentUser to avoid multiple database creation at the same time
-	// It can fail if they grant the same owner to current at the same time as it's not done in transaction.
-	lockTxn, err := startTransaction(db.client, "")
-	if err := pgLockRole(lockTxn, currentUser); err != nil {
-		return err
-	}
-
-	defer func() {
-		err = lockTxn.Rollback()
-	}()
-
+	var err error
 	if owner != "" {
+		// Take a lock on db currentUser to avoid multiple database creation at the same time
+		// It can fail if they grant the same owner to current at the same time as it's not done in transaction.
+		lockTxn, err := startTransaction(db.client, "")
+		if err := pgLockRole(lockTxn, currentUser); err != nil {
+			return err
+		}
+		defer deferredRollback(lockTxn)
+
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
 		ownerGranted, err := grantRoleMembership(db, owner, currentUser)
@@ -228,20 +226,18 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) (err error) {
 	return err
 }
 
-func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) (err error) {
+func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) error {
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
 	var dropWithForce string
+	var err error
 	if owner != "" {
 		lockTxn, err := startTransaction(db.client, "")
 		if err := pgLockRole(lockTxn, currentUser); err != nil {
 			return err
 		}
-
-		defer func() {
-			err = lockTxn.Rollback()
-		}()
+		defer deferredRollback(lockTxn)
 
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
@@ -390,7 +386,6 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 }
 
 func resourcePostgreSQLDatabaseUpdate(db *DBConnection, d *schema.ResourceData) error {
-
 	if err := setDBName(db, d); err != nil {
 		return err
 	}
@@ -441,7 +436,7 @@ func setDBName(db QueryAble, d *schema.ResourceData) error {
 	return nil
 }
 
-func setDBOwner(db *DBConnection, d *schema.ResourceData) (err error) {
+func setDBOwner(db *DBConnection, d *schema.ResourceData) error {
 	if !d.HasChange(dbOwnerAttr) {
 		return nil
 	}
@@ -456,10 +451,7 @@ func setDBOwner(db *DBConnection, d *schema.ResourceData) (err error) {
 	if err := pgLockRole(lockTxn, currentUser); err != nil {
 		return err
 	}
-
-	defer func() {
-		err = lockTxn.Rollback()
-	}()
+	defer deferredRollback(lockTxn)
 
 	//needed in order to set the owner of the db if the connection user is not a superuser
 	ownerGranted, err := grantRoleMembership(db, owner, currentUser)
