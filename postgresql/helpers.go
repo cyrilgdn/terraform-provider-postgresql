@@ -443,7 +443,7 @@ func getRoleOID(db QueryAble, role string) (int, error) {
 }
 
 func pgLockRole(txn *sql.Tx, role string) error {
-	if _, err := txn.Exec("SELECT pg_advisory_lock(oid::bigint) from pg_roles where rolname = $1", role); err != nil {
+	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) from pg_roles where rolname = $1", role); err != nil {
 		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
 	}
 
