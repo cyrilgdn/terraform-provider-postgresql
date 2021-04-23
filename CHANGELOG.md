@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 1.12.1 (April 23, 2021)
+
+FEATURES:
+
+* Update Go version to 1.16: This allows builds for for darwin arm64 - @benfdking
+  [#76](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/76)
+
 ## 1.12.0 (March 26, 2021)
 
 FEATURES:
