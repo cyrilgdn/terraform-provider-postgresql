@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 1.13.0 (May 21, 2021)
+
+FEATURE/FIXE:
+
+* Stop locking catalog for every resources - @cyrilgdn
+  [#80](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/80)
+
 ## 1.12.1 (April 23, 2021)
 
 FEATURES:
@@ -12,7 +19,7 @@ FEATURES:
 FEATURES:
 
 * `postgresql_default_privileges`: Add `with_grant_option` - @stawii, @cyrilgdn
-  [#10](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/10) / 
+  [#10](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/10) /
   [#63](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/63)
 
 * `postgresql_default_privileges`: Make `schema` optional for default privileges on all schemas - @darren-reddick
