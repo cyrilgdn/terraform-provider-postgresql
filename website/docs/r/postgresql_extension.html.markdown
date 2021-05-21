@@ -26,4 +26,4 @@ resource "postgresql_extension" "my_extension" {
 * `schema` - (Optional) Sets the schema of an extension.
 * `version` - (Optional) Sets the version number of the extension.
 * `database` - (Optional) Which database to create the extension on. Defaults to provider database.
-* `drop_cascade` - (Optional) "When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects. (Default: false)
+* `drop_cascade` - (Optional) When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects. (Default: false)
