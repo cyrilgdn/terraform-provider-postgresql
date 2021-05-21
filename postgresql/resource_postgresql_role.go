@@ -311,13 +311,17 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 }
 
 func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) error {
+	roleName := d.Get(roleNameAttr).(string)
+
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
-	roleName := d.Get(roleNameAttr).(string)
+	if err := pgLockRole(txn, roleName); err != nil {
+		return err
+	}
 
 	if !d.Get(roleSkipReassignOwnedAttr).(bool) {
 		if err := withRolesGranted(txn, []string{roleName}, func() error {
@@ -583,6 +587,11 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 	defer deferredRollback(txn)
+
+	oldName, _ := d.GetChange(roleNameAttr)
+	if err := pgLockRole(txn, oldName.(string)); err != nil {
+		return err
+	}
 
 	if err := setRoleName(txn, d); err != nil {
 		return err

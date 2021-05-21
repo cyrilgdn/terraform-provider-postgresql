@@ -141,13 +141,6 @@ type Client struct {
 	config Config
 
 	databaseName string
-
-	// PostgreSQL lock on pg_catalog.  Many of the operations that Terraform
-	// performs are not permitted to be concurrent.  Unlike traditional
-	// PostgreSQL tables that use MVCC, many of the PostgreSQL system
-	// catalogs look like tables, but are not in-fact able to be
-	// concurrently updated.
-	catalogLock sync.RWMutex
 }
 
 // NewClient returns client config for the specified database.

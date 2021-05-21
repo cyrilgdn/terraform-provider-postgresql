@@ -114,6 +114,10 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
+	if err := pgLockRole(txn, owner); err != nil {
+		return err
+	}
+
 	// Needed in order to set the owner of the db if the connection user is not a superuser
 	if err := withRolesGranted(txn, []string{owner}, func() error {
 
@@ -156,6 +160,10 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
+	if err := pgLockRole(txn, owner); err != nil {
+		return err
+	}
+
 	// Needed in order to set the owner of the db if the connection user is not a superuser
 	if err := withRolesGranted(txn, []string{owner}, func() error {
 		return revokeRoleDefaultPrivileges(txn, d)
@@ -175,6 +183,10 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
 	objectType := d.Get("object_type").(string)
+
+	if err := pgLockRole(txn, owner); err != nil {
+		return err
+	}
 
 	roleOID, err := getRoleOID(txn, role)
 	if err != nil {
@@ -208,7 +220,6 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	// and the specified object type (defaclobjtype).
 
 	var privileges pq.ByteaArray
-
 	if err := txn.QueryRow(
 		query, queryArgs...,
 	).Scan(&privileges); err != nil {
