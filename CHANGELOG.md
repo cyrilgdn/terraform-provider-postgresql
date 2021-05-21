@@ -7,6 +7,11 @@ FEATURE/FIXE:
 * Stop locking catalog for every resources - @cyrilgdn
   [#80](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/80)
 
+DOCUMENTATION:
+
+* Add miss `drop_cascade` docs for `postgresql_extension` - @MaxymVlasov
+  [#89](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/89)
+
 ## 1.12.1 (April 23, 2021)
 
 FEATURES:
