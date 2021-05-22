@@ -102,7 +102,7 @@ func resourcePostgreSQLGrantResourceRead(db *DBConnection, d *schema.ResourceDat
 		d.SetId("")
 		return nil
 	}
-	d.SetId(generateGrantID(d))
+	d.SetId(generateGrantResourcesID(d))
 
 	txn, err := startTransaction(db.client, d.Get("database").(string))
 	if err != nil {
@@ -156,7 +156,7 @@ func resourcePostgreSQLGrantResourceCreate(db *DBConnection, d *schema.ResourceD
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
-	d.SetId(generateGrantID(d))
+	d.SetId(generateGrantResourcesID(d))
 
 	txn, err = startTransaction(db.client, database)
 	if err != nil {
@@ -364,4 +364,14 @@ func revokeRoleResourcePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
 	return nil
+}
+
+func generateGrantResourcesID(d *schema.ResourceData) string {
+	parts := []string{d.Get("role").(string), d.Get("database").(string), d.Get("schema").(string), d.Get("object_type").(string)}
+
+	for _, priv := range d.Get("resources").(*schema.Set).List() {
+		parts = append(parts, priv.(string))
+	}
+
+	return strings.Join(parts, "_")
 }
