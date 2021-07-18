@@ -62,6 +62,14 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				ValidateFunc: validation.StringInSlice(allowedObjectTypes, false),
 				Description:  "The PostgreSQL object type to grant the privileges on (one of: " + strings.Join(allowedObjectTypes, ", ") + ")",
 			},
+			"objects": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				ForceNew:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Set:         schema.HashString,
+				Description: "The specific objects to grant privileges on for this role (empty means all objects of the requested type)",
+			},
 			"privileges": &schema.Schema{
 				Type:        schema.TypeSet,
 				Required:    true,
@@ -115,11 +123,14 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 		)
 	}
 
-	// Verify schema is set for postgresql_grant
-	if d.Get("schema").(string) == "" && d.Get("object_type").(string) != "database" {
+	// Validate parameters.
+	objectType := d.Get("object_type").(string)
+	if d.Get("schema").(string) == "" && objectType != "database" {
 		return fmt.Errorf("parameter 'schema' is mandatory for postgresql_grant resource")
 	}
-
+	if d.Get("objects").(*schema.Set).Len() > 0 && (objectType == "database" || objectType == "schema") {
+		return fmt.Errorf("cannot specify `objects` when `object_type` is `database` or `schema`")
+	}
 	if err := validatePrivileges(d); err != nil {
 		return err
 	}
@@ -239,6 +250,7 @@ WHERE grantee = $2
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
+	objects := d.Get("objects").(*schema.Set)
 
 	roleOID, err := getRoleOID(txn, role)
 	if err != nil {
@@ -311,6 +323,11 @@ GROUP BY pg_class.relname
 		if err := rows.Scan(&objName, &privileges); err != nil {
 			return err
 		}
+
+		if objects.Len() > 0 && !objects.Contains(objName) {
+			continue
+		}
+
 		privilegesSet := pgArrayToSet(privileges)
 
 		if !privilegesSet.Equal(d.Get("privileges").(*schema.Set)) {
@@ -347,13 +364,24 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
 	case "TABLE", "SEQUENCE", "FUNCTION":
-		query = fmt.Sprintf(
-			"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
-			strings.Join(privileges, ","),
-			strings.ToUpper(d.Get("object_type").(string)),
-			pq.QuoteIdentifier(d.Get("schema").(string)),
-			pq.QuoteIdentifier(d.Get("role").(string)),
-		)
+		objects := d.Get("objects").(*schema.Set)
+		if objects.Len() > 0 {
+			query = fmt.Sprintf(
+				"GRANT %s ON %s %s TO %s",
+				strings.Join(privileges, ","),
+				strings.ToUpper(d.Get("object_type").(string)),
+				setToPgIdentList(d.Get("schema").(string), objects),
+				pq.QuoteIdentifier(d.Get("role").(string)),
+			)
+		} else {
+			query = fmt.Sprintf(
+				"GRANT %s ON ALL %sS IN SCHEMA %s TO %s",
+				strings.Join(privileges, ","),
+				strings.ToUpper(d.Get("object_type").(string)),
+				pq.QuoteIdentifier(d.Get("schema").(string)),
+				pq.QuoteIdentifier(d.Get("role").(string)),
+			)
+		}
 	}
 
 	if d.Get("with_grant_option").(bool) == true {
@@ -380,12 +408,22 @@ func createRevokeQuery(d *schema.ResourceData) string {
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
 	case "TABLE", "SEQUENCE", "FUNCTION":
-		query = fmt.Sprintf(
-			"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
-			strings.ToUpper(d.Get("object_type").(string)),
-			pq.QuoteIdentifier(d.Get("schema").(string)),
-			pq.QuoteIdentifier(d.Get("role").(string)),
-		)
+		objects := d.Get("objects").(*schema.Set)
+		if objects.Len() > 0 {
+			query = fmt.Sprintf(
+				"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
+				strings.ToUpper(d.Get("object_type").(string)),
+				setToPgIdentList(d.Get("schema").(string), objects),
+				pq.QuoteIdentifier(d.Get("role").(string)),
+			)
+		} else {
+			query = fmt.Sprintf(
+				"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
+				strings.ToUpper(d.Get("object_type").(string)),
+				pq.QuoteIdentifier(d.Get("schema").(string)),
+				pq.QuoteIdentifier(d.Get("role").(string)),
+			)
+		}
 	}
 
 	return query
@@ -479,6 +517,10 @@ func generateGrantID(d *schema.ResourceData) string {
 		parts = append(parts, d.Get("schema").(string))
 	}
 	parts = append(parts, objectType)
+
+	for _, object := range d.Get("objects").(*schema.Set).List() {
+		parts = append(parts, object.(string))
+	}
 
 	return strings.Join(parts, "_")
 }
