@@ -136,14 +136,15 @@ func Provider() terraform.ResourceProvider {
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"postgresql_database":           resourcePostgreSQLDatabase(),
-			"postgresql_default_privileges": resourcePostgreSQLDefaultPrivileges(),
-			"postgresql_extension":          resourcePostgreSQLExtension(),
-			"postgresql_grant":              resourcePostgreSQLGrant(),
-			"postgresql_grant_role":         resourcePostgreSQLGrantRole(),
-			"postgresql_replication_slot":   resourcePostgreSQLReplicationSlot(),
-			"postgresql_schema":             resourcePostgreSQLSchema(),
-			"postgresql_role":               resourcePostgreSQLRole(),
+			"postgresql_database":                  resourcePostgreSQLDatabase(),
+			"postgresql_default_privileges":        resourcePostgreSQLDefaultPrivileges(),
+			"postgresql_extension":                 resourcePostgreSQLExtension(),
+			"postgresql_grant":                     resourcePostgreSQLGrant(),
+			"postgresql_grant_role":                resourcePostgreSQLGrantRole(),
+			"postgresql_replication_slot":          resourcePostgreSQLReplicationSlot(),
+			"postgresql_physical_replication_slot": resourcePostgreSQLPhysicalReplicationSlot(),
+			"postgresql_schema":                    resourcePostgreSQLSchema(),
+			"postgresql_role":                      resourcePostgreSQLRole(),
 		},
 
 		ConfigureFunc: providerConfigure,
