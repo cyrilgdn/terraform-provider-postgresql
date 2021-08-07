@@ -258,6 +258,59 @@ func testAccCreateExtensionDependency(tableName string) resource.TestCheckFunc {
 	}
 }
 
+func TestAccPostgresqlExtension_CreateCascade(t *testing.T) {
+	skipIfNotAcc(t)
+
+	var testAccPostgresqlExtensionConfig = `
+resource "postgresql_extension" "cascade" {
+  name = "earthdistance"
+  create_cascade = true
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureExtension)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlExtensionConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlExtensionExists("postgresql_extension.cascade"),
+					resource.TestCheckResourceAttr("postgresql_extension.cascade", "name", "earthdistance"),
+					// The cube extension should be installed as a dependency of earthdistance.
+					testAccCheckExtensionDependency("cube"),
+				),
+			},
+		},
+	})
+}
+
+func testAccCheckExtensionDependency(extName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+
+		client := testAccProvider.Meta().(*Client)
+		txn, err := startTransaction(client, client.databaseName)
+		if err != nil {
+			return err
+		}
+		defer deferredRollback(txn)
+
+		exists, err := checkExtensionExists(txn, extName)
+		if err != nil {
+			return fmt.Errorf("Error checking extension %s", err)
+		}
+		if !exists {
+			return fmt.Errorf("Extension %s not found", extName)
+		}
+
+		return nil
+	}
+}
+
 var testAccPostgresqlExtensionConfig = `
 resource "postgresql_extension" "myextension" {
   name = "pg_trgm"
