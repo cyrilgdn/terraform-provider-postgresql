@@ -14,6 +14,7 @@ func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
 	var fdwName = "baz"
+	var srvName = "qux"
 
 	cases := []struct {
 		resource   *schema.ResourceData
@@ -106,6 +107,27 @@ func TestCreateGrantQuery(t *testing.T) {
 			privileges: []string{"ALL PRIVILEGES"},
 			expected:   fmt.Sprintf("GRANT ALL PRIVILEGES ON FOREIGN DATA WRAPPER %s TO %s WITH GRANT OPTION", pq.QuoteIdentifier(fdwName), pq.QuoteIdentifier(roleName)),
 		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type":    "FOREIGN_SERVER",
+				"database":       databaseName,
+				"role":           roleName,
+				"foreign_server": srvName,
+			}),
+			privileges: []string{"USAGE"},
+			expected:   fmt.Sprintf("GRANT USAGE ON FOREIGN SERVER %s TO %s", pq.QuoteIdentifier(srvName), pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type":       "foreign_server",
+				"database":          databaseName,
+				"role":              roleName,
+				"foreign_server":    srvName,
+				"with_grant_option": true,
+			}),
+			privileges: []string{"ALL PRIVILEGES"},
+			expected:   fmt.Sprintf("GRANT ALL PRIVILEGES ON FOREIGN SERVER %s TO %s WITH GRANT OPTION", pq.QuoteIdentifier(srvName), pq.QuoteIdentifier(roleName)),
+		},
 	}
 
 	for _, c := range cases {
@@ -120,6 +142,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
 	var fdwName = "baz"
+	var srvName = "qux"
 
 	cases := []struct {
 		resource *schema.ResourceData
@@ -165,6 +188,15 @@ func TestCreateRevokeQuery(t *testing.T) {
 				"foreign_data_wrapper": fdwName,
 			}),
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON FOREIGN DATA WRAPPER %s FROM %s", pq.QuoteIdentifier(fdwName), pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type":    "foreign_server",
+				"database":       databaseName,
+				"role":           roleName,
+				"foreign_server": srvName,
+			}),
+			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON FOREIGN SERVER %s FROM %s", pq.QuoteIdentifier(srvName), pq.QuoteIdentifier(roleName)),
 		},
 	}
 
@@ -592,7 +624,7 @@ func TestAccPostgresqlGrantForeignDataWrapper(t *testing.T) {
 	dbExecute(t, dsn, "CREATE FOREIGN DATA WRAPPER test_fdw")
 
 	defer func() {
-		// Drop a test foreign data wrapper
+		// Cleanup
 		dbExecute(t, dsn, "DROP FOREIGN DATA WRAPPER test_fdw")
 	}()
 
@@ -641,12 +673,68 @@ resource "postgresql_grant" "test" {
 					testCheckForeignDataWrapperPrivileges(t, false),
 				),
 			},
-			// Grant all privileges
+		},
+	})
+}
+
+func TestAccPostgresqlGrantForeignServer(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	// Create a test foreign data wrapper
+	dbExecute(t, dsn, "CREATE FOREIGN DATA WRAPPER test_fdw")
+	dbExecute(t, dsn, "CREATE SERVER test_srv FOREIGN DATA WRAPPER test_fdw")
+
+	defer func() {
+		// Cleanup
+		dbExecute(t, dsn, "DROP FOREIGN DATA WRAPPER test_fdw CASCADE")
+	}()
+
+	// create a TF config with placeholder for privileges
+	// it will be filled in each step.
+	tfConfig := fmt.Sprintf(`
+resource "postgresql_role" "test" {
+	name     = "test_role"
+	password = "%s"
+	login    = true
+}
+
+resource "postgresql_grant" "test" {
+	depends_on        = [postgresql_role.test]
+	database          = "postgres"
+	role              = postgresql_role.test.name
+	foreign_server    = "test_srv"
+	object_type       = "foreign_server"
+	privileges        = %%s
+	with_grant_option = %%s
+}
+`, testRolePassword)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			// Grant usage
 			{
-				Config: fmt.Sprintf(tfConfig, `["ALL"]`, `false`),
+				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `false`),
 				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_server"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
-					testCheckForeignDataWrapperPrivileges(t, true),
+					testCheckForeignServerPrivileges(t, false),
+				),
+			},
+			// Revoke all privileges
+			{
+				Config: fmt.Sprintf(tfConfig, `[]`, `false`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
+					testCheckForeignServerPrivileges(t, false),
 				),
 			},
 		},
@@ -705,6 +793,13 @@ func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform
 }
 
 func testCheckForeignDataWrapperPrivileges(t *testing.T, create bool) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		//TODO
+		return nil
+	}
+}
+
+func testCheckForeignServerPrivileges(t *testing.T, create bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		//TODO
 		return nil

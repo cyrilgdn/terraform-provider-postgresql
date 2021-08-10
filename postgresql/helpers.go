@@ -242,6 +242,7 @@ var allowedPrivileges = map[string][]string{
 	"function":             []string{"ALL", "EXECUTE"},
 	"type":                 []string{"ALL", "USAGE"},
 	"foreign_data_wrapper": []string{"ALL", "USAGE"},
+	"foreign_server":       []string{"ALL", "USAGE"},
 }
 
 // validatePrivileges checks that privileges to apply are allowed for this object type.
