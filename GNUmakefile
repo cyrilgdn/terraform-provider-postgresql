@@ -1,5 +1,5 @@
 TEST?=$$(go list ./... |grep -v 'vendor')
-GOFMT_FILES?=$$(find . -name '*.go' |grep -v vendor)
+GO_FILES ?= $(shell find . -name '*.go' | grep -v vendor)
 WEBSITE_REPO=github.com/hashicorp/terraform-website
 PKG_NAME=postgresql
 
@@ -32,7 +32,7 @@ vet:
 	fi
 
 fmt:
-	gofmt -w $(GOFMT_FILES)
+	gofmt -w $(GO_FILES )
 
 fmtcheck:
 	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
@@ -65,3 +65,5 @@ endif
 
 .PHONY: build test testacc vet fmt fmtcheck errcheck test-compile website website-test
 
+terraform-provider-postgresql: $(GO_FILES)
+	go build
