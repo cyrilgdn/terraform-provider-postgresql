@@ -141,8 +141,6 @@ func Provider() terraform.ResourceProvider {
 				},
 				MaxItems: 2,
 				MinItems: 1,
-
-				//Default:  []string{"PRIMARY", "PRIVATE"},
 			},
 		},
 

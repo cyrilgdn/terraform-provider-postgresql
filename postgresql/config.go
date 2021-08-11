@@ -305,7 +305,7 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	return &version, nil
 }
 
-// Decorator to avoid complexity on connect() funct
+// Decorator to avoid complexity on connect() func
 func (c *Client) gcpPostgresOpen(ctx context.Context, dsn string) (*sql.DB, error) {
 
 	creds, err := gcp.DefaultCredentials(ctx)
