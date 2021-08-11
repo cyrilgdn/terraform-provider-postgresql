@@ -133,6 +133,7 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+	GCPIPAddrTypeOpts []string
 }
 
 // Client struct holding connection string
