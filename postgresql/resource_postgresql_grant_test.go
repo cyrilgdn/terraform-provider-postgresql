@@ -625,7 +625,7 @@ func TestAccPostgresqlGrantForeignDataWrapper(t *testing.T) {
 
 	defer func() {
 		// Cleanup
-		dbExecute(t, dsn, "DROP FOREIGN DATA WRAPPER test_fdw")
+		dbExecute(t, dsn, "DROP FOREIGN DATA WRAPPER test_fdw CASCADE")
 	}()
 
 	// create a TF config with placeholder for privileges
@@ -657,12 +657,12 @@ resource "postgresql_grant" "test" {
 		Steps: []resource.TestStep{
 			// Grant usage
 			{
-				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `false`),
+				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `true`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_data_wrapper"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
-					testCheckForeignDataWrapperPrivileges(t, false),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "true"),
+					testCheckForeignDataWrapperPrivileges(t, true),
 				),
 			},
 			// Revoke all privileges
@@ -726,7 +726,7 @@ resource "postgresql_grant" "test" {
 					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_server"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
-					testCheckForeignServerPrivileges(t, false),
+					testCheckForeignServerPrivileges(t, true),
 				),
 			},
 			// Revoke all privileges
@@ -792,16 +792,28 @@ func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform
 	}
 }
 
-func testCheckForeignDataWrapperPrivileges(t *testing.T, create bool) func(*terraform.State) error {
+func testCheckForeignDataWrapperPrivileges(t *testing.T, usage bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
-		//TODO
+		db := connectAsTestRole(t, "test_role", "postgres")
+		defer db.Close()
+
+		if err := testHasGrantForQuery(db, "CREATE SERVER test_srv FOREIGN DATA WRAPPER test_fdw", usage); err != nil {
+			return err
+		}
+
 		return nil
 	}
 }
 
-func testCheckForeignServerPrivileges(t *testing.T, create bool) func(*terraform.State) error {
+func testCheckForeignServerPrivileges(t *testing.T, usage bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
-		//TODO
+		db := connectAsTestRole(t, "test_role", "postgres")
+		defer db.Close()
+
+		if err := testHasGrantForQuery(db, "CREATE FOREIGN TABLE test_tbl() SERVER test_srv", usage); err != nil {
+			return err
+		}
+
 		return nil
 	}
 }
