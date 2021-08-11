@@ -110,6 +110,11 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+* `gcp_ip_addr_type_opts` - (Optional) Specify the type of connectivity to use on gcppostgres connections
+  ONLY FOR gcppostgres scheme. Valid values are:
+  * `["PRIMARY"]`: Uses instance's Public IP
+  * `["PRIVATE"]`: Uses instance's Private IP
+  * `["PRIMARY", "PRIVATE"]`: Default value, if the Instance has Public IP, if not uses Private IP
 
 ## GoCloud
 
@@ -156,6 +161,7 @@ provider "postgresql" {
   port     = 5432
   password = "test1234"
 
+  gcp_ip_addr_type_opts = ["PRIMARY", "PRIVATE"]
   superuser = false
 }
 ```
