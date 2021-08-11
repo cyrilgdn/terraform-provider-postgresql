@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -133,6 +134,11 @@ func Provider() terraform.ResourceProvider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"jumphost": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Jumphost used to connect.",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -184,6 +190,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		MaxConns:          d.Get("max_connections").(int),
 		ExpectedVersion:   version,
 		SSLRootCertPath:   d.Get("sslrootcert").(string),
+		JumpHost:          d.Get("jumphost").(string),
+		// 1024 to 65535
+		TunneledPort: rand.Intn(65535-1024) + 1024,
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

@@ -1,13 +1,18 @@
 package postgresql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"net"
 	"net/url"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
@@ -133,6 +138,8 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+	JumpHost          string
+	TunneledPort      int
 }
 
 // Client struct holding connection string
@@ -195,7 +202,15 @@ func (c *Config) connParams() []string {
 }
 
 func (c *Config) connStr(database string) string {
-	host := c.Host
+	var host string
+	var port int
+	if c.shouldUseJumpHost() {
+		host = "localhost"
+		port = c.TunneledPort
+	} else {
+		host = c.Host
+		port = c.Port
+	}
 
 	// For GCP, support both project/region/instance and project:region:instance
 	// (The second one allows to use the output of google_sql_database_instance as host
@@ -209,7 +224,7 @@ func (c *Config) connStr(database string) string {
 		url.QueryEscape(c.Username),
 		url.QueryEscape(c.Password),
 		host,
-		c.Port,
+		port,
 		database,
 		strings.Join(c.connParams(), "&"),
 	)
@@ -231,6 +246,12 @@ func (c *Client) Connect() (*DBConnection, error) {
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
 
+	if c.config.shouldUseJumpHost() {
+		err := c.connectToJumpHost()
+		if err != nil {
+			return nil, fmt.Errorf("Failed to open a tunnel to jumphost %w", err)
+		}
+	}
 	dsn := c.config.connStr(c.databaseName)
 	conn, found := dbRegistry[dsn]
 	if !found {
@@ -274,6 +295,46 @@ func (c *Client) Connect() (*DBConnection, error) {
 	return conn, nil
 }
 
+func (c *Client) connectToJumpHost() error {
+	log.Println("[DEBUG] Connecting to jumphost")
+	args := []string{
+		c.config.JumpHost,
+		"-o", "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no",
+		"-L", fmt.Sprintf("127.0.0.1:%d:%s:%d", c.config.TunneledPort, c.config.Host, c.config.Port),
+		"-N",
+	}
+	var combinedOutput bytes.Buffer
+
+	log.Printf("[DEBUG] Calling ssh with %v\n", args)
+	cmd := exec.Command("ssh")
+	cmd.Args = append(cmd.Args, args...)
+	cmd.Stderr = &combinedOutput
+	cmd.Stdout = &combinedOutput
+	err := cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start ssh tunnel: %w", err)
+	}
+	errorChannel := make(chan error)
+	go func() {
+		errorChannel <- cmd.Wait()
+	}()
+	for try := 0; try < 10; try++ {
+		select {
+		case err := <-errorChannel:
+			return fmt.Errorf("ssh exited: %w %s", err, combinedOutput.String())
+		case <-time.After(time.Millisecond * 100):
+			_, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", c.config.TunneledPort))
+			if err == nil {
+				log.Printf("[DEBUG] Failed to connect on tunnel port %d\n", c.config.TunneledPort)
+				return nil
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	return fmt.Errorf("ssh failed to connect: %s", combinedOutput.String())
+}
+
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
 // capabilities.  This is only run once per Client.
 func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
@@ -298,4 +359,8 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	}
 
 	return &version, nil
+}
+
+func (c *Config) shouldUseJumpHost() bool {
+	return c.JumpHost != "" && c.TunneledPort != 0
 }
