@@ -140,7 +140,9 @@ func Provider() terraform.ResourceProvider {
 					Type: schema.TypeString,
 				},
 				MaxItems: 2,
-				Default:  []string{"PRIMARY", "PRIVATE",},
+				MinItems: 1,
+
+				//Default:  []string{"PRIMARY", "PRIVATE"},
 			},
 		},
 
