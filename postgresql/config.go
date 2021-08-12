@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -310,6 +311,9 @@ func (c *Client) connectToJumpHost() error {
 	cmd.Args = append(cmd.Args, args...)
 	cmd.Stderr = &combinedOutput
 	cmd.Stdout = &combinedOutput
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGKILL,
+	}
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start ssh tunnel: %w", err)
