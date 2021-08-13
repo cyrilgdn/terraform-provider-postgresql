@@ -321,6 +321,7 @@ func TestAccPostgresqlGrantObjects(t *testing.T) {
 				),
 			},
 			{
+				// Empty list means that privileges will be applied on all tables.
 				Config: fmt.Sprintf(testGrant, `[]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "0"),
