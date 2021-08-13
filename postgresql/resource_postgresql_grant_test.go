@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
@@ -13,6 +14,7 @@ import (
 func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
+	var objects = []interface{}{"o1", "o2"}
 
 	cases := []struct {
 		resource   *schema.ResourceData
@@ -84,6 +86,16 @@ func TestCreateGrantQuery(t *testing.T) {
 			privileges: []string{"ALL PRIVILEGES"},
 			expected:   fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s WITH GRANT OPTION", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "table",
+				"objects":     objects,
+				"schema":      databaseName,
+				"role":        roleName,
+			}),
+			privileges: []string{"SELECT"},
+			expected:   fmt.Sprintf(`GRANT SELECT ON TABLE %[1]s."o2",%[1]s."o1" TO %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+		},
 	}
 
 	for _, c := range cases {
@@ -97,6 +109,7 @@ func TestCreateGrantQuery(t *testing.T) {
 func TestCreateRevokeQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
+	var objects = []interface{}{"o1", "o2"}
 
 	cases := []struct {
 		resource *schema.ResourceData
@@ -133,6 +146,15 @@ func TestCreateRevokeQuery(t *testing.T) {
 				"role":        roleName,
 			}),
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "table",
+				"objects":     objects,
+				"schema":      databaseName,
+				"role":        roleName,
+			}),
+			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON TABLE %[1]s."o2",%[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 	}
 
@@ -222,6 +244,136 @@ func TestAccPostgresqlGrant(t *testing.T) {
 						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{})
 					},
 				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrantObjects(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table", "test_schema.test_table2"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// create a TF config with placeholder for privileges
+	// it will be filled in each step.
+	var testGrant = fmt.Sprintf(`
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		objects     = %%s
+		privileges  = ["SELECT"]
+	}
+	`, dbName, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(testGrant, `["test_table"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"postgresql_grant.test", "id", fmt.Sprintf("%s_%s_test_schema_table_test_table", roleName, dbName),
+					),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.4260833613", "test_table"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"SELECT"})
+					},
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, []string{testTables[1]}, []string{})
+					},
+				),
+			},
+			{
+				Config: fmt.Sprintf(testGrant, `["test_table", "test_table2"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.4260833613", "test_table"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.306541577", "test_table2"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{"SELECT"})
+					},
+				),
+			},
+			{
+				Config: fmt.Sprintf(testGrant, `["test_table"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.4260833613", "test_table"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"SELECT"})
+					},
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, []string{testTables[1]}, []string{})
+					},
+				),
+			},
+			{
+				// Empty list means that privileges will be applied on all tables.
+				Config: fmt.Sprintf(testGrant, `[]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "0"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{"SELECT"})
+					},
+				),
+			},
+			{
+				Config:  fmt.Sprintf(testGrant, `[]`),
+				Destroy: true,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "0"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{})
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrantObjectsError(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: `resource "postgresql_grant" "test" {
+					database    = "test_db"
+					role        = "test_role"
+					object_type = "database"
+					objects     = ["o1", "o2"]
+					privileges  = ["CONNECT"]
+				}`,
+				ExpectError: regexp.MustCompile("cannot specify `objects` when `object_type` is `database` or `schema`"),
+			},
+			{
+				Config: `resource "postgresql_grant" "test" {
+					database    = "test_db"
+					schema      = "test_schema"
+					role        = "test_role"
+					object_type = "schema"
+					objects     = ["o1", "o2"]
+					privileges  = ["CONNECT"]
+				}`,
+				ExpectError: regexp.MustCompile("cannot specify `objects` when `object_type` is `database` or `schema`"),
 			},
 		},
 	})
