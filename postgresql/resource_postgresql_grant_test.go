@@ -399,7 +399,8 @@ func TestAccPostgresqlGrantPublic(t *testing.T) {
 	// to assert that PUBLIC is applied to everyone
 	role2 := fmt.Sprintf("tf_tests_role2_%s", dbSuffix)
 	createTestRole(t, role2)
-	dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", role2))
+	connStr, _ := config.connStr(dbName)
+	dbExecute(t, connStr, fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", role2))
 
 	// create a TF config with placeholder for privileges
 	// it will be filled in each step.
@@ -487,7 +488,8 @@ func TestAccPostgresqlGrantEmptyPrivileges(t *testing.T) {
 	dbName, roleName := getTestDBNames(dbSuffix)
 
 	// Grant some privileges on this table to our role to assert that they will be revoked
-	dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA test_schema TO %s", roleName))
+	connStr, _ := config.connStr(dbName)
+	dbExecute(t, connStr, fmt.Sprintf("GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA test_schema TO %s", roleName))
 
 	var tfConfig = fmt.Sprintf(`
 	resource "postgresql_grant" "test" {
@@ -526,7 +528,7 @@ func TestAccPostgresqlGrantFunction(t *testing.T) {
 	skipIfNotAcc(t)
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
+	dsn, _ := config.connStr("postgres")
 
 	// Create a test role and a schema as public has too wide open privileges
 	dbExecute(t, dsn, fmt.Sprintf("CREATE ROLE test_role LOGIN PASSWORD '%s'", testRolePassword))
@@ -729,7 +731,7 @@ func testCheckFunctionExecutable(t *testing.T, role, function string) func(*terr
 func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		config := getTestConfig(t)
-		dsn := config.connStr("postgres")
+		dsn, _ := config.connStr("postgres")
 
 		// Create a table in the schema to check if user has usage privilege
 		dbExecute(t, dsn, "CREATE TABLE IF NOT EXISTS test_schema.test_usage (id serial)")

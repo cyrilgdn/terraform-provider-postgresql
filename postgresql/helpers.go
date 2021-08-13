@@ -10,6 +10,10 @@ import (
 	"github.com/lib/pq"
 )
 
+const (
+	createIfNotExistsAttr = "create_if_not_exists"
+)
+
 func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, interface{}) error {
 	return func(d *schema.ResourceData, meta interface{}) error {
 		client := meta.(*Client)

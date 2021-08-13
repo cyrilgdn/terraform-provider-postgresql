@@ -49,7 +49,7 @@ func TestConfigConnStr(t *testing.T) {
 
 	for _, test := range tests {
 
-		connStr := test.input.connStr("postgres")
+		connStr, _ := test.input.connStr("postgres")
 
 		splitConnStr := strings.Split(connStr, "?")
 

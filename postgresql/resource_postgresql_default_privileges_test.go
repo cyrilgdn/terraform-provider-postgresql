@@ -101,7 +101,7 @@ func TestAccPostgresqlDefaultPrivileges_GrantOwner(t *testing.T) {
 	defer teardown()
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
+	dsn, _ := config.connStr("postgres")
 	dbName, roleName := getTestDBNames(dbSuffix)
 
 	// We set PGUSER as owner as he will create the test table

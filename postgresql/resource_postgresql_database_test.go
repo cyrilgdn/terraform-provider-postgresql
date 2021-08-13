@@ -193,7 +193,7 @@ func TestAccPostgresqlDatabase_GrantOwner(t *testing.T) {
 	skipIfNotAcc(t)
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
+	dsn, _ := config.connStr("postgres")
 
 	var stateConfig = `
 resource postgresql_role "test_owner" {
@@ -230,7 +230,7 @@ func TestAccPostgresqlDatabase_GrantOwnerNotNeeded(t *testing.T) {
 	skipIfNotAcc(t)
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
+	dsn, _ := config.connStr("postgres")
 
 	dbExecute(
 		t, dsn,

@@ -268,8 +268,6 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		}
 		createOpts = append(createOpts, valStr)
 	}
-
-	roleName := d.Get(roleNameAttr).(string)
 	createStr := strings.Join(createOpts, " ")
 	if len(createOpts) > 0 {
 		if db.featureSupported(featureCreateRoleWith) {

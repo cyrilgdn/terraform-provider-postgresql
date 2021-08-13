@@ -99,25 +99,27 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 
 	dbName, roleName := getTestDBNames(suffix)
 
+	postgresDsn, _ := config.connStr("postgres")
+	dsn, _ := config.connStr(dbName)
 	if createRole {
-		dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
+		dbExecute(t, postgresDsn, fmt.Sprintf(
 			"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
 			roleName, testRolePassword,
 		))
 	}
 
 	if createDB {
-		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("CREATE DATABASE %s", dbName))
+		dbExecute(t, postgresDsn, fmt.Sprintf("CREATE DATABASE %s", dbName))
 		// Create a test schema in this new database and grant usage to rolName
-		dbExecute(t, config.connStr(dbName), "CREATE SCHEMA test_schema")
-		dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", roleName))
-		dbExecute(t, config.connStr(dbName), "CREATE SCHEMA dev_schema")
-		dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA dev_schema to %s", roleName))
+		dbExecute(t, dsn, "CREATE SCHEMA test_schema")
+		dbExecute(t, dsn, fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", roleName))
+		dbExecute(t, dsn, "CREATE SCHEMA dev_schema")
+		dbExecute(t, dsn, fmt.Sprintf("GRANT usage ON SCHEMA dev_schema to %s", roleName))
 	}
 
 	return suffix, func() {
-		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
-		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
+		dbExecute(t, postgresDsn, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		dbExecute(t, postgresDsn, fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
 	}
 }
 
@@ -126,13 +128,14 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 func createTestRole(t *testing.T, roleName string) func() {
 	config := getTestConfig(t)
 
-	dbExecute(t, config.connStr("postgres"), fmt.Sprintf(
+	postgresDsn, _ := config.connStr("postgres")
+	dbExecute(t, postgresDsn, fmt.Sprintf(
 		"CREATE ROLE %s LOGIN ENCRYPTED PASSWORD '%s'",
 		roleName, testRolePassword,
 	))
 
 	return func() {
-		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
+		dbExecute(t, postgresDsn, fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
 	}
 }
 
@@ -141,7 +144,8 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	dbName, _ := getTestDBNames(dbSuffix)
 	adminUser := config.getDatabaseUsername()
 
-	db, err := sql.Open("postgres", config.connStr(dbName))
+	dsn, _ := config.connStr(dbName)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 	}
@@ -176,7 +180,8 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 
 	// In this case we need to drop table after each test.
 	return func() {
-		db, err := sql.Open("postgres", config.connStr(dbName))
+		dsn, _ = config.connStr(dbName)
+		db, err := sql.Open("postgres", dsn)
 		defer db.Close()
 
 		if err != nil {
@@ -227,7 +232,8 @@ func connectAsTestRole(t *testing.T, role, dbName string) *sql.DB {
 	config.Username = role
 	config.Password = testRolePassword
 
-	db, err := sql.Open("postgres", config.connStr(dbName))
+	dsn, _ := config.connStr(dbName)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 	}

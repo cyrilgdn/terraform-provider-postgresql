@@ -141,6 +141,7 @@ type Config struct {
 	SSLRootCertPath   string
 	JumpHost          string
 	TunneledPort      int
+	PasswordCommand   string
 }
 
 // Client struct holding connection string
@@ -202,7 +203,7 @@ func (c *Config) connParams() []string {
 	return paramsArray
 }
 
-func (c *Config) connStr(database string) string {
+func (c *Config) connStr(database string) (string, error) {
 	var host string
 	var port int
 	if c.shouldUseJumpHost() {
@@ -219,18 +220,27 @@ func (c *Config) connStr(database string) string {
 		host = strings.ReplaceAll(host, ":", "/")
 	}
 
+	password := c.Password
+	if c.PasswordCommand != "" {
+		newPassword, err := getCommandOutput("bash", "-c", c.PasswordCommand)
+		if err != nil {
+			return "", fmt.Errorf("failed to execute the password command %w", err)
+		}
+		password = newPassword
+	}
+
 	connStr := fmt.Sprintf(
 		"%s://%s:%s@%s:%d/%s?%s",
 		c.Scheme,
 		url.QueryEscape(c.Username),
-		url.QueryEscape(c.Password),
+		url.QueryEscape(password),
 		host,
 		port,
 		database,
 		strings.Join(c.connParams(), "&"),
 	)
 
-	return connStr
+	return connStr, nil
 }
 
 func (c *Config) getDatabaseUsername() string {
@@ -253,7 +263,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 			return nil, fmt.Errorf("Failed to open a tunnel to jumphost %w", err)
 		}
 	}
-	dsn := c.config.connStr(c.databaseName)
+	dsn, err := c.config.connStr(c.databaseName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection string %w", err)
+	}
 	conn, found := dbRegistry[dsn]
 	if !found {
 
