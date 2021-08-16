@@ -102,6 +102,12 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Computed:    true,
 				Description: "If true, then this database can be cloned by any user with CREATEDB privileges",
 			},
+			createIfNotExistsAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "If true, it tries to create the database with IF NOT EXISTS",
+			},
 		},
 	}
 }
@@ -143,8 +149,17 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		}
 	}
 
-	dbName := d.Get(dbNameAttr).(string)
 	b := bytes.NewBufferString("CREATE DATABASE ")
+	dbName := d.Get(dbNameAttr).(string)
+	if v, ok := d.GetOk(createIfNotExistsAttr); ok && v.(bool) {
+		result, err := db.Query("SELECT 1 FROM pg_database WHERE datname = $1", dbName)
+		if err != nil {
+			return fmt.Errorf("failed to check if the database %s exists %w", dbName, err)
+		}
+		if result.Next() {
+			return nil
+		}
+	}
 	fmt.Fprint(b, pq.QuoteIdentifier(dbName))
 
 	// Handle each option individually and stream results into the query

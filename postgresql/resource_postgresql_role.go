@@ -167,11 +167,32 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Description:  "Abort any statement that takes more than the specified number of milliseconds",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
+			createIfNotExistsAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "If true, it tries to create the role with IF NOT EXISTS",
+			},
 		},
 	}
 }
 
 func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) error {
+	roleName := d.Get(roleNameAttr).(string)
+	if v, ok := d.GetOk(createIfNotExistsAttr); ok && v.(bool) {
+		log.Printf("[DEBUG] Creating role %s with IF NOT EXISTS", roleName)
+		result, err := db.Query("SELECT 1 FROM pg_roles WHERE rolname = $1", roleName)
+		if err != nil {
+			return fmt.Errorf("failed to check if the role %s exists %w", roleName, err)
+		}
+		if result.Next() {
+			log.Printf("[DEBUG] Role already exists, skipping %s", roleName)
+
+			d.SetId(roleName)
+			return resourcePostgreSQLRoleReadImpl(db, d)
+		}
+	}
+
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
