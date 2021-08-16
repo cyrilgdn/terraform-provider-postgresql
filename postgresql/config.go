@@ -126,24 +126,25 @@ type ClientCertificateConfig struct {
 
 // Config - provider config
 type Config struct {
-	Scheme            string
-	Host              string
-	Port              int
-	Username          string
-	Password          string
-	DatabaseUsername  string
-	Superuser         bool
-	SSLMode           string
-	ApplicationName   string
-	Timeout           int
-	ConnectTimeoutSec int
-	MaxConns          int
-	ExpectedVersion   semver.Version
-	SSLClientCert     *ClientCertificateConfig
-	SSLRootCertPath   string
-	JumpHost          string
-	TunneledPort      int
-	PasswordCommand   string
+	Scheme                   string
+	Host                     string
+	Port                     int
+	Username                 string
+	Password                 string
+	DatabaseUsername         string
+	Superuser                bool
+	SSLMode                  string
+	ApplicationName          string
+	Timeout                  int
+	ConnectTimeoutSec        int
+	MaxConns                 int
+	ExpectedVersion          semver.Version
+	SSLClientCert            *ClientCertificateConfig
+	SSLRootCertPath          string
+	JumpHost                 string
+	TunneledPort             int
+	PasswordCommand          string
+	FallbackToStaticPassword bool
 
 	ctx context.Context
 }
@@ -229,12 +230,16 @@ func (c *Config) connStr(database string) (string, error) {
 	}
 
 	password := c.Password
-	if c.PasswordCommand != "" {
+	if c.PasswordCommand != "" && !c.FallbackToStaticPassword {
+		log.Printf("[DEBUG] Trying to get the password from an external command")
 		newPassword, err := getCommandOutput(c.ctx, "bash", "-c", c.PasswordCommand)
 		if err != nil {
 			return "", fmt.Errorf("failed to execute the password command %w", err)
 		}
 		password = newPassword
+		log.Printf("[DEBUG] Password fetched successfuly")
+	} else {
+		log.Printf("[DEBUG] Using specified password for authentication")
 	}
 
 	connStr := fmt.Sprintf(
@@ -262,15 +267,20 @@ func (c *Config) getDatabaseUsername() string {
 // Callers must return their database resources. Use of QueryRow() or Exec() is encouraged.
 // Query() must have their rows.Close()'ed.
 func (c *Client) Connect() (*DBConnection, error) {
+	// Lock only the public method as the internal one calls it recursivelly when falling back
+	// to static password
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
-
 	if c.config.shouldUseJumpHost() {
 		err := c.connectToJumpHost()
 		if err != nil {
-			return nil, fmt.Errorf("Failed to open a tunnel to jumphost %w", err)
+			return nil, fmt.Errorf("failed to open a tunnel to jumphost %w", err)
 		}
 	}
+	return c.connect()
+}
+
+func (c *Client) connect() (*DBConnection, error) {
 	dsn, err := c.config.connStr(c.databaseName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection string %w", err)
@@ -302,10 +312,15 @@ func (c *Client) Connect() (*DBConnection, error) {
 			version, err = fingerprintCapabilities(db)
 			if err != nil {
 				db.Close()
+				if !c.config.FallbackToStaticPassword && c.config.Password != "" && c.config.PasswordCommand != "" {
+					c.config.FallbackToStaticPassword = true
+					log.Printf("[DEBUG] Falling back to static password")
+					return c.connect()
+				}
+				c.config.FallbackToStaticPassword = false
 				return nil, fmt.Errorf("error detecting capabilities: %w", err)
 			}
 		}
-
 		conn = &DBConnection{
 			db,
 			c,
