@@ -31,6 +31,21 @@ resource "postgresql_default_privileges" "read_only_tables" {
 * `role` - (Required) The name of the role to which grant default privileges on.
 * `database` - (Required) The database to grant default privileges for this role.
 * `owner` - (Required) Role for which apply default privileges (You can change default privileges only for objects that will be created by yourself or by roles that you are a member of).
-* `schema` - (Required) The database schema to set default privileges for this role.
+* `schema` - (Optional) The database schema to set default privileges for this role.
 * `object_type` - (Required) The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type).
-* `privileges` - (Required) The list of privileges to apply as default privileges.
+* `privileges` - (Required) The list of privileges to apply as default privileges. An empty list could be provided to revoke all default privileges for this role.
+
+
+## Examples
+
+Revoke default privileges for functions for "public" role:
+
+```hcl
+resource "postgresql_default_priviliges" "revoke_public" {
+  database    = postgresql_database.example_db.name
+  role        = "public"
+  owner       = "object_owner"
+  object_type = "function"
+  privileges  = []
+}
+```
