@@ -49,6 +49,23 @@ resource "postgresql_default_privileges" "test_ro" {
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
 					{
+						Config: fmt.Sprintf(tfConfig, `[]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								tables := []string{"test_schema.test_table"}
+								// To test default privileges, we need to create a table
+								// after having apply the state.
+								dropFunc := createTestTables(t, dbSuffix, tables, "")
+								defer dropFunc()
+
+								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{})
+							},
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "with_grant_option", fmt.Sprintf("%t", withGrant)),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "0"),
+						),
+					},
+					{
 						Config: fmt.Sprintf(tfConfig, `["SELECT"]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
