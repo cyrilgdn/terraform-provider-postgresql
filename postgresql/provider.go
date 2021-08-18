@@ -3,6 +3,9 @@ package postgresql
 import (
 	"fmt"
 	"math/rand"
+	"time"
+
+	"context"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -15,8 +18,12 @@ const (
 	defaultExpectedPostgreSQLVersion  = "9.0.0"
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // Provider returns a terraform.ResourceProvider.
-func Provider() terraform.ResourceProvider {
+func Provider(ctx context.Context) terraform.ResourceProvider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"scheme": {
@@ -158,7 +165,7 @@ func Provider() terraform.ResourceProvider {
 			"postgresql_role":               resourcePostgreSQLRole(),
 		},
 
-		ConfigureFunc: providerConfigure,
+		ConfigureFunc: func(d *schema.ResourceData) (interface{}, error) { return providerConfigure(ctx, d) },
 	}
 }
 
@@ -169,7 +176,7 @@ func validateExpectedVersion(v interface{}, key string) (warnings []string, erro
 	return
 }
 
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
 		sslMode = sslModeRaw.(string)
@@ -200,6 +207,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		// 1024 to 65535
 		TunneledPort:    rand.Intn(65535-1024) + 1024,
 		PasswordCommand: d.Get("password_command").(string),
+		ctx:             ctx,
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

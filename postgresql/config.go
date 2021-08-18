@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -42,6 +41,9 @@ const (
 var (
 	dbRegistryLock sync.Mutex
 	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
+
+	runningCommandsLock = &sync.Mutex{}
+	runningCommands     = make([]chan error, 0)
 
 	// Mapping of feature flags to versions
 	featureSupported = map[featureName]semver.Range{
@@ -142,6 +144,8 @@ type Config struct {
 	JumpHost          string
 	TunneledPort      int
 	PasswordCommand   string
+
+	ctx context.Context
 }
 
 // Client struct holding connection string
@@ -150,6 +154,9 @@ type Client struct {
 	config Config
 
 	databaseName string
+
+	jumphostLock    *sync.Mutex
+	jumphostCommand *exec.Cmd
 }
 
 // NewClient returns client config for the specified database.
@@ -157,6 +164,7 @@ func (c *Config) NewClient(database string) *Client {
 	return &Client{
 		config:       *c,
 		databaseName: database,
+		jumphostLock: &sync.Mutex{},
 	}
 }
 
@@ -222,7 +230,7 @@ func (c *Config) connStr(database string) (string, error) {
 
 	password := c.Password
 	if c.PasswordCommand != "" {
-		newPassword, err := getCommandOutput("bash", "-c", c.PasswordCommand)
+		newPassword, err := getCommandOutput(c.ctx, "bash", "-c", c.PasswordCommand)
 		if err != nil {
 			return "", fmt.Errorf("failed to execute the password command %w", err)
 		}
@@ -310,6 +318,12 @@ func (c *Client) Connect() (*DBConnection, error) {
 }
 
 func (c *Client) connectToJumpHost() error {
+	c.jumphostLock.Lock()
+	defer c.jumphostLock.Unlock()
+	if c.jumphostCommand != nil {
+		log.Println("[DEBUG] Reusing jumphost process")
+		return nil
+	}
 	log.Println("[DEBUG] Connecting to jumphost")
 	args := []string{
 		c.config.JumpHost,
@@ -320,13 +334,10 @@ func (c *Client) connectToJumpHost() error {
 	var combinedOutput bytes.Buffer
 
 	log.Printf("[DEBUG] Calling ssh with %v\n", args)
-	cmd := exec.Command("ssh")
+	cmd := exec.CommandContext(c.config.ctx, "ssh")
 	cmd.Args = append(cmd.Args, args...)
 	cmd.Stderr = &combinedOutput
 	cmd.Stdout = &combinedOutput
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Pdeathsig: syscall.SIGKILL,
-	}
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start ssh tunnel: %w", err)
@@ -342,9 +353,12 @@ func (c *Client) connectToJumpHost() error {
 		case <-time.After(time.Millisecond * 100):
 			_, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", c.config.TunneledPort))
 			if err == nil {
-				log.Printf("[DEBUG] Failed to connect on tunnel port %d\n", c.config.TunneledPort)
+				log.Printf("[DEBUG] Sucessfuly connected on tunnel port %d\n", c.config.TunneledPort)
+				c.jumphostCommand = cmd
+				trackRunningCommand(errorChannel)
 				return nil
 			}
+			log.Printf("[DEBUG] Failed to connect on tunnel port %d\n", c.config.TunneledPort)
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -380,4 +394,16 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 
 func (c *Config) shouldUseJumpHost() bool {
 	return c.JumpHost != "" && c.TunneledPort != 0
+}
+
+func trackRunningCommand(errorChannel chan error) {
+	runningCommandsLock.Lock()
+	defer runningCommandsLock.Unlock()
+	runningCommands = append(runningCommands, errorChannel)
+}
+
+func WaitForRunningCommands() {
+	for _, errorChannel := range runningCommands {
+		<-errorChannel
+	}
 }

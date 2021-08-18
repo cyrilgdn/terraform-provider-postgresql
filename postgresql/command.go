@@ -2,12 +2,13 @@ package postgresql
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 )
 
-func getCommandOutput(command string, args ...string) (string, error) {
-	cmd := exec.Command(command, args...)
+func getCommandOutput(ctx context.Context, command string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, command, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
