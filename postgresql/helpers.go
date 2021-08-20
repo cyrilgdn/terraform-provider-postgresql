@@ -455,6 +455,8 @@ func getRoleOID(db QueryAble, role string) (int, error) {
 
 // Lock a role and all his members to avoid concurrent updates on some resources
 func pgLockRole(txn *sql.Tx, role string) error {
+	// Disable statement timeout for this connection otherwise the lock could fail
+	txn.Exec("SET statement_timeout = 0")
 	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
 		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
 	}
