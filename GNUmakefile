@@ -1,5 +1,6 @@
 TEST?=$$(go list ./... |grep -v 'vendor')
 GO_FILES ?= $(shell find . -name '*.go' | grep -v vendor)
+GO_ARGS ?= ""
 WEBSITE_REPO=github.com/hashicorp/terraform-website
 PKG_NAME=postgresql
 
@@ -66,4 +67,4 @@ endif
 .PHONY: build test testacc vet fmt fmtcheck errcheck test-compile website website-test
 
 terraform-provider-postgresql: $(GO_FILES)
-	go build
+	go build -gcflags="all=-N -l" 
