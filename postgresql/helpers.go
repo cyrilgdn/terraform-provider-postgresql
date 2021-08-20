@@ -12,6 +12,8 @@ import (
 
 const (
 	createIfNotExistsAttr = "create_if_not_exists"
+	// https://github.com/lib/pq/blob/9e747ca50601fcb6c958dd89f4cb8aea3e067767/error.go#L199
+	pgInvalidAuth = pq.ErrorClass("28")
 )
 
 func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, interface{}) error {

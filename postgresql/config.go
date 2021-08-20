@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -12,7 +13,7 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
-	_ "github.com/lib/pq" //PostgreSQL db
+	"github.com/lib/pq"
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
 	_ "gocloud.dev/postgres/gcppostgres"
@@ -267,7 +268,8 @@ func (c *Client) Connect() (*DBConnection, error) {
 			return nil, fmt.Errorf("failed to open a tunnel to jumphost %w", err)
 		}
 	}
-	return c.connect()
+
+	return c.tryConnectWithFallback()
 }
 
 func (c *Client) connect() (*DBConnection, error) {
@@ -276,57 +278,82 @@ func (c *Client) connect() (*DBConnection, error) {
 		return nil, fmt.Errorf("failed to get connection string %w", err)
 	}
 	conn, found := dbRegistry[dsn]
-	if !found {
-
-		var db *sql.DB
-		var err error
-		if c.config.Scheme == "postgres" {
-			db, err = sql.Open("postgres", dsn)
-		} else {
-			db, err = postgres.Open(context.Background(), dsn)
+	if found {
+		log.Printf("Reusing database connection")
+		if _, err := conn.Query("SELECT 1"); err != nil {
+			delete(dbRegistry, dsn)
+			return nil, fmt.Errorf("failed to ping database %w", err)
 		}
-		if err != nil {
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %w", c.config.Host, c.config.Scheme, err)
-		}
-
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dopped in the plan.
-		db.SetMaxIdleConns(0)
-		db.SetMaxOpenConns(c.config.MaxConns)
-
-		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
-		version := &c.config.ExpectedVersion
-		if defaultVersion.Equals(c.config.ExpectedVersion) {
-			// Version hint not set by user, need to fingerprint
-			version, err = fingerprintCapabilities(db)
-			if err != nil {
-				db.Close()
-				if !c.config.FallbackToStaticPassword && c.config.Password != "" && c.config.PasswordCommand != "" {
-					c.config.FallbackToStaticPassword = true
-					log.Printf("[DEBUG] Falling back to static password")
-					return c.connect()
-				}
-				c.config.FallbackToStaticPassword = false
-				return nil, fmt.Errorf("error detecting capabilities: %w", err)
-			}
-		}
-		conn = &DBConnection{
-			db,
-			c,
-			*version,
-		}
-		dbRegistry[dsn] = conn
+		return conn, nil
 	}
+	log.Printf("Creating a new database connection")
+	var db *sql.DB
+	if c.config.Scheme == "postgres" {
+		db, err = sql.Open("postgres", dsn)
+	} else {
+		db, err = postgres.Open(c.config.ctx, dsn)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %w", c.config.Host, c.config.Scheme, err)
+	}
+
+	// We don't want to retain connection
+	// So when we connect on a specific database which might be managed by terraform,
+	// we don't keep opened connection in case of the db has to be dopped in the plan.
+	// TODO: For RDS usage this breaks the connection after a grant to rds_iam is used
+	// db.SetMaxIdleConns(0)
+	db.SetMaxOpenConns(c.config.MaxConns)
+
+	defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
+	version := &c.config.ExpectedVersion
+	if defaultVersion.Equals(c.config.ExpectedVersion) {
+		// Version hint not set by user, need to fingerprint
+		version, err = fingerprintCapabilities(db)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("error detecting capabilities: %w", err)
+		}
+	}
+
+	conn = &DBConnection{
+		db,
+		c,
+		*version,
+	}
+	dbRegistry[dsn] = conn
 
 	return conn, nil
 }
 
-	}
-	}
-		}
+func (c *Client) tryConnectWithFallback() (*DBConnection, error) {
+	var err error
+	conn, err := c.connect()
+	if err == nil {
+		return conn, nil
 	}
 
+	var driverError *pq.Error
+
+	if !errors.As(err, &driverError) || driverError.Code.Class() != pgInvalidAuth {
+		// Just wrap the error for the stacktrace
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	useFallback := !c.config.FallbackToStaticPassword && c.config.Password != "" && c.config.PasswordCommand != ""
+	if useFallback {
+		c.config.FallbackToStaticPassword = true
+		defer func() {
+			c.config.FallbackToStaticPassword = false
+		}()
+		log.Printf("[DEBUG] Falling back to static password")
+		conn, err := c.connect()
+		if err != nil {
+			panic(err)
+		}
+		return conn, err
+	}
+
+	return nil, fmt.Errorf("%w", err)
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
