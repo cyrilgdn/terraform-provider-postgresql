@@ -1,18 +1,14 @@
 package postgresql
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
 	"log"
-	"net"
 	"net/url"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 
 	"github.com/blang/semver"
@@ -42,8 +38,6 @@ var (
 	dbRegistryLock sync.Mutex
 	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
 
-	runningCommandsLock = &sync.Mutex{}
-	runningCommands     = make([]chan error, 0)
 
 	// Mapping of feature flags to versions
 	featureSupported = map[featureName]semver.Range{
@@ -155,9 +149,6 @@ type Client struct {
 	config Config
 
 	databaseName string
-
-	jumphostLock    *sync.Mutex
-	jumphostCommand *exec.Cmd
 }
 
 // NewClient returns client config for the specified database.
@@ -165,7 +156,6 @@ func (c *Config) NewClient(database string) *Client {
 	return &Client{
 		config:       *c,
 		databaseName: database,
-		jumphostLock: &sync.Mutex{},
 	}
 }
 
@@ -272,7 +262,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
 	if c.config.shouldUseJumpHost() {
-		err := c.connectToJumpHost()
+		err := connectToJumpHost(&c.config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open a tunnel to jumphost %w", err)
 		}
@@ -332,53 +322,11 @@ func (c *Client) connect() (*DBConnection, error) {
 	return conn, nil
 }
 
-func (c *Client) connectToJumpHost() error {
-	c.jumphostLock.Lock()
-	defer c.jumphostLock.Unlock()
-	if c.jumphostCommand != nil {
-		log.Println("[DEBUG] Reusing jumphost process")
-		return nil
 	}
-	log.Println("[DEBUG] Connecting to jumphost")
-	args := []string{
-		c.config.JumpHost,
-		"-o", "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no",
-		"-L", fmt.Sprintf("127.0.0.1:%d:%s:%d", c.config.TunneledPort, c.config.Host, c.config.Port),
-		"-N",
 	}
-	var combinedOutput bytes.Buffer
-
-	log.Printf("[DEBUG] Calling ssh with %v\n", args)
-	cmd := exec.CommandContext(c.config.ctx, "ssh")
-	cmd.Args = append(cmd.Args, args...)
-	cmd.Stderr = &combinedOutput
-	cmd.Stdout = &combinedOutput
-	err := cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start ssh tunnel: %w", err)
-	}
-	errorChannel := make(chan error)
-	go func() {
-		errorChannel <- cmd.Wait()
-	}()
-	for try := 0; try < 10; try++ {
-		select {
-		case err := <-errorChannel:
-			return fmt.Errorf("ssh exited: %w %s", err, combinedOutput.String())
-		case <-time.After(time.Millisecond * 100):
-			_, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", c.config.TunneledPort))
-			if err == nil {
-				log.Printf("[DEBUG] Sucessfuly connected on tunnel port %d\n", c.config.TunneledPort)
-				c.jumphostCommand = cmd
-				trackRunningCommand(errorChannel)
-				return nil
-			}
-			log.Printf("[DEBUG] Failed to connect on tunnel port %d\n", c.config.TunneledPort)
-			time.Sleep(1 * time.Second)
 		}
 	}
 
-	return fmt.Errorf("ssh failed to connect: %s", combinedOutput.String())
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
@@ -409,16 +357,4 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 
 func (c *Config) shouldUseJumpHost() bool {
 	return c.JumpHost != "" && c.TunneledPort != 0
-}
-
-func trackRunningCommand(errorChannel chan error) {
-	runningCommandsLock.Lock()
-	defer runningCommandsLock.Unlock()
-	runningCommands = append(runningCommands, errorChannel)
-}
-
-func WaitForRunningCommands() {
-	for _, errorChannel := range runningCommands {
-		<-errorChannel
-	}
 }

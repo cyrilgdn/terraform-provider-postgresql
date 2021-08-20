@@ -189,10 +189,13 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	versionStr := d.Get("expected_version").(string)
 	version, _ := semver.ParseTolerant(versionStr)
 
+	host := d.Get("host").(string)
+	port := d.Get("port").(int)
+
 	config := Config{
 		Scheme:            d.Get("scheme").(string),
-		Host:              d.Get("host").(string),
-		Port:              d.Get("port").(int),
+		Host:              host,
+		Port:              port,
 		Username:          d.Get("username").(string),
 		Password:          d.Get("password").(string),
 		DatabaseUsername:  d.Get("database_username").(string),
@@ -205,7 +208,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		SSLRootCertPath:   d.Get("sslrootcert").(string),
 		JumpHost:          d.Get("jumphost").(string),
 		// 1024 to 65535
-		TunneledPort:    rand.Intn(65535-1024) + 1024,
+		TunneledPort:    getRandomPort(fmt.Sprintf("%s%d", host, port)),
 		PasswordCommand: d.Get("password_command").(string),
 		ctx:             ctx,
 	}
