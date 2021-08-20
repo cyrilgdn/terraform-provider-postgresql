@@ -39,6 +39,8 @@ var (
 	dbRegistryLock sync.Mutex
 	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
 
+	passwordCacheLock sync.Mutex = sync.Mutex{}
+	passwordCache                = make(map[string]string)
 
 	// Mapping of feature flags to versions
 	featureSupported = map[featureName]semver.Range{
@@ -222,10 +224,11 @@ func (c *Config) connStr(database string) (string, error) {
 
 	password := c.Password
 	if c.PasswordCommand != "" && !c.FallbackToStaticPassword {
+		log.Printf("user %s password %s command %s", c.Username, c.Password, c.PasswordCommand)
 		log.Printf("[DEBUG] Trying to get the password from an external command")
-		newPassword, err := getCommandOutput(c.ctx, "bash", "-c", c.PasswordCommand)
+		newPassword, err := c.getCachedPassword()
 		if err != nil {
-			return "", fmt.Errorf("failed to execute the password command %w", err)
+			return "", fmt.Errorf("%w", err)
 		}
 		password = newPassword
 		log.Printf("[DEBUG] Password fetched successfuly")
@@ -245,6 +248,22 @@ func (c *Config) connStr(database string) (string, error) {
 	)
 
 	return connStr, nil
+}
+
+func (c *Config) getCachedPassword() (string, error) {
+	passwordCacheLock.Lock()
+	defer passwordCacheLock.Unlock()
+
+	cacheKey := fmt.Sprintf("%s%s%s", c.Host, c.Port, c.Username)
+	if password, ok := passwordCache[cacheKey]; ok {
+		return password, nil
+	}
+	newPassword, err := getCommandOutput(c.ctx, "bash", "-ec", c.PasswordCommand)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute the password command %w", err)
+	}
+	passwordCache[cacheKey] = newPassword
+	return newPassword, nil
 }
 
 func (c *Config) getDatabaseUsername() string {
