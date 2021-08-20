@@ -729,8 +729,8 @@ resource "postgresql_grant" "test" {
 	depends_on           = [postgresql_role.test]
 	database             = "postgres"
 	role                 = postgresql_role.test.name
-	foreign_data_wrapper = "test_fdw"
 	object_type          = "foreign_data_wrapper"
+	objects              = ["test_fdw"]
 	privileges           = %%s
 	with_grant_option    = %%s
 }
@@ -747,7 +747,7 @@ resource "postgresql_grant" "test" {
 			{
 				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `true`),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_data_wrapper"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_data_wrapper_test_fdw"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "true"),
 					testCheckForeignDataWrapperPrivileges(t, true),
@@ -793,8 +793,8 @@ resource "postgresql_grant" "test" {
 	depends_on        = [postgresql_role.test]
 	database          = "postgres"
 	role              = postgresql_role.test.name
-	foreign_server    = "test_srv"
 	object_type       = "foreign_server"
+	objects           = ["test_srv"]
 	privileges        = %%s
 	with_grant_option = %%s
 }
@@ -811,7 +811,7 @@ resource "postgresql_grant" "test" {
 			{
 				Config: fmt.Sprintf(tfConfig, `["USAGE"]`, `false`),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_server"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "id", "test_role_postgres_foreign_server_test_srv"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
 					testCheckForeignServerPrivileges(t, true),
@@ -884,9 +884,9 @@ func testCheckForeignDataWrapperPrivileges(t *testing.T, usage bool) func(*terra
 	return func(*terraform.State) error {
 		config := getTestConfig(t)
 		dsn := config.connStr("postgres")
-		
+
 		defer func() {
-                	dbExecute(t, dsn, "DROP SERVER IF EXISTS test_srv")
+			dbExecute(t, dsn, "DROP SERVER IF EXISTS test_srv")
 		}()
 		db := connectAsTestRole(t, "test_role", "postgres")
 		defer db.Close()
@@ -901,6 +901,12 @@ func testCheckForeignDataWrapperPrivileges(t *testing.T, usage bool) func(*terra
 
 func testCheckForeignServerPrivileges(t *testing.T, usage bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
+		config := getTestConfig(t)
+		dsn := config.connStr("postgres")
+
+		defer func() {
+			dbExecute(t, dsn, "DROP FOREIGN TABLE IF EXISTS test_tbl")
+		}()
 		db := connectAsTestRole(t, "test_role", "postgres")
 		defer db.Close()
 
