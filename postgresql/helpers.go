@@ -271,6 +271,17 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 	return schema.NewSet(schema.HashString, s)
 }
 
+func setToPgIdentList(schema string, idents *schema.Set) string {
+	quotedIdents := make([]string, idents.Len())
+	for i, ident := range idents.List() {
+		quotedIdents[i] = fmt.Sprintf(
+			"%s.%s",
+			pq.QuoteIdentifier(schema), pq.QuoteIdentifier(ident.(string)),
+		)
+	}
+	return strings.Join(quotedIdents, ",")
+}
+
 // startTransaction starts a new DB transaction on the specified database.
 // If the database is specified and different from the one configured in the provider,
 // it will create a new connection pool if needed.
