@@ -133,8 +133,8 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	if d.Get("objects").(*schema.Set).Len() > 0 && (objectType == "database" || objectType == "schema") {
 		return fmt.Errorf("cannot specify `objects` when `object_type` is `database` or `schema`")
 	}
-	if d.Get("objects").(*schema.Set).Len() > 1 && (objectType == "foreign_data_wrapper" || objectType == "foreign_server") {
-		return fmt.Errorf("multiple values are not allowed in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`")
+	if d.Get("objects").(*schema.Set).Len() != 1 && (objectType == "foreign_data_wrapper" || objectType == "foreign_server") {
+		return fmt.Errorf("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`")
 	}
 	if err := validatePrivileges(d); err != nil {
 		return err
