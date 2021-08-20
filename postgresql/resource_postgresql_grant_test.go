@@ -882,6 +882,12 @@ func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform
 
 func testCheckForeignDataWrapperPrivileges(t *testing.T, usage bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
+		config := getTestConfig(t)
+		dsn := config.connStr("postgres")
+		
+		defer func() {
+                	dbExecute(t, dsn, "DROP SERVER IF EXISTS test_srv")
+		}()
 		db := connectAsTestRole(t, "test_role", "postgres")
 		defer db.Close()
 
