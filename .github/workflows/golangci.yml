@@ -1,0 +1,19 @@
+name: Golangci-Lint
+
+on: [pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.3.4
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16.x
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v2.5.2
+        with:
+          version: v1.40

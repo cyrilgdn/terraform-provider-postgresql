@@ -264,7 +264,7 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		pq.QuoteIdentifier(role),
 	)
 
-	if d.Get("with_grant_option").(bool) == true {
+	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
 

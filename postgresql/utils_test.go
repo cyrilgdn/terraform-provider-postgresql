@@ -177,11 +177,10 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	// In this case we need to drop table after each test.
 	return func() {
 		db, err := sql.Open("postgres", config.connStr(dbName))
-		defer db.Close()
-
 		if err != nil {
 			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 		}
+		defer db.Close()
 
 		if owner != "" && !config.Superuser {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
