@@ -14,7 +14,8 @@ import (
 func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
-	var objects = []interface{}{"o1", "o2"}
+	var tableObjects = []interface{}{"o1", "o2"}
+	var fdwObjects = []interface{}{"baz"}
 
 	cases := []struct {
 		resource   *schema.ResourceData
@@ -89,12 +90,50 @@ func TestCreateGrantQuery(t *testing.T) {
 		{
 			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
 				"object_type": "table",
-				"objects":     objects,
+				"objects":     tableObjects,
 				"schema":      databaseName,
 				"role":        roleName,
 			}),
 			privileges: []string{"SELECT"},
 			expected:   fmt.Sprintf(`GRANT SELECT ON TABLE %[1]s."o2",%[1]s."o1" TO %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "foreign_data_wrapper",
+				"objects":     fdwObjects,
+				"role":        roleName,
+			}),
+			privileges: []string{"USAGE"},
+			expected:   fmt.Sprintf(`GRANT USAGE ON FOREIGN DATA WRAPPER "baz" TO %s`, pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type":       "foreign_data_wrapper",
+				"objects":           fdwObjects,
+				"role":              roleName,
+				"with_grant_option": true,
+			}),
+			privileges: []string{"ALL PRIVILEGES"},
+			expected:   fmt.Sprintf(`GRANT ALL PRIVILEGES ON FOREIGN DATA WRAPPER "baz" TO %s WITH GRANT OPTION`, pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "foreign_server",
+				"objects":     fdwObjects,
+				"role":        roleName,
+			}),
+			privileges: []string{"USAGE"},
+			expected:   fmt.Sprintf(`GRANT USAGE ON FOREIGN SERVER "baz" TO %s`, pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type":       "foreign_server",
+				"objects":           fdwObjects,
+				"role":              roleName,
+				"with_grant_option": true,
+			}),
+			privileges: []string{"ALL PRIVILEGES"},
+			expected:   fmt.Sprintf(`GRANT ALL PRIVILEGES ON FOREIGN SERVER "baz" TO %s WITH GRANT OPTION`, pq.QuoteIdentifier(roleName)),
 		},
 	}
 
@@ -109,7 +148,8 @@ func TestCreateGrantQuery(t *testing.T) {
 func TestCreateRevokeQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
-	var objects = []interface{}{"o1", "o2"}
+	var tableObjects = []interface{}{"o1", "o2"}
+	var fdwObjects = []interface{}{"baz"}
 
 	cases := []struct {
 		resource *schema.ResourceData
@@ -150,11 +190,27 @@ func TestCreateRevokeQuery(t *testing.T) {
 		{
 			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
 				"object_type": "table",
-				"objects":     objects,
+				"objects":     tableObjects,
 				"schema":      databaseName,
 				"role":        roleName,
 			}),
 			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON TABLE %[1]s."o2",%[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "foreign_data_wrapper",
+				"objects":     fdwObjects,
+				"role":        roleName,
+			}),
+			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON FOREIGN DATA WRAPPER "baz" FROM %s`, pq.QuoteIdentifier(roleName)),
+		},
+		{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+				"object_type": "foreign_server",
+				"objects":     fdwObjects,
+				"role":        roleName,
+			}),
+			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON FOREIGN SERVER "baz" FROM %s`, pq.QuoteIdentifier(roleName)),
 		},
 	}
 
@@ -374,6 +430,26 @@ func TestAccPostgresqlGrantObjectsError(t *testing.T) {
 					privileges  = ["CONNECT"]
 				}`,
 				ExpectError: regexp.MustCompile("cannot specify `objects` when `object_type` is `database` or `schema`"),
+			},
+			{
+				Config: `resource "postgresql_grant" "test" {
+					database    = "test_db"
+					role        = "test_role"
+					object_type = "foreign_data_wrapper"
+					objects     = ["o1", "o2"]
+					privileges  = ["USAGE"]
+				}`,
+				ExpectError: regexp.MustCompile("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`"),
+			},
+			{
+				Config: `resource "postgresql_grant" "test" {
+					database    = "test_db"
+					role        = "test_role"
+					object_type = "foreign_server"
+					objects     = ["o1", "o2"]
+					privileges  = ["USAGE"]
+				}`,
+				ExpectError: regexp.MustCompile("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`"),
 			},
 		},
 	})
@@ -704,6 +780,7 @@ resource "postgresql_grant" "test" {
 
 func TestAccPostgresqlGrantForeignDataWrapper(t *testing.T) {
 	skipIfNotAcc(t)
+	skipIfNotSuperuser(t)
 
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
@@ -767,6 +844,7 @@ resource "postgresql_grant" "test" {
 
 func TestAccPostgresqlGrantForeignServer(t *testing.T) {
 	skipIfNotAcc(t)
+	skipIfNotSuperuser(t)
 
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
