@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	extNameAttr        = "name"
-	extSchemaAttr      = "schema"
-	extVersionAttr     = "version"
-	extDatabaseAttr    = "database"
-	extDropCascadeAttr = "drop_cascade"
+	extNameAttr          = "name"
+	extSchemaAttr        = "schema"
+	extVersionAttr       = "version"
+	extDatabaseAttr      = "database"
+	extDropCascadeAttr   = "drop_cascade"
+	extCreateCascadeAttr = "create_cascade"
 )
 
 func resourcePostgreSQLExtension() *schema.Resource {
@@ -62,6 +63,12 @@ func resourcePostgreSQLExtension() *schema.Resource {
 				Default:     false,
 				Description: "When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects",
 			},
+			extCreateCascadeAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "When true, will also create any extensions that this extension depends on that are not already installed",
+			},
 		},
 	}
 }
@@ -86,6 +93,10 @@ func resourcePostgreSQLExtensionCreate(db *DBConnection, d *schema.ResourceData)
 
 	if v, ok := d.GetOk(extVersionAttr); ok {
 		fmt.Fprint(b, " VERSION ", pq.QuoteIdentifier(v.(string)))
+	}
+
+	if d.Get(extCreateCascadeAttr).(bool) {
+		fmt.Fprint(b, " CASCADE")
 	}
 
 	txn, err := startTransaction(db.client, databaseName)
