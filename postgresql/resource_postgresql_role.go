@@ -564,7 +564,9 @@ func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin boo
 	if statePassword != "" && !strings.HasPrefix(statePassword, "md5") && !strings.HasPrefix(statePassword, "SCRAM-SHA-256") {
 		if strings.HasPrefix(rolePassword, "md5") {
 			hasher := md5.New()
-			hasher.Write([]byte(statePassword + d.Id()))
+			if _, err := hasher.Write([]byte(statePassword + d.Id())); err != nil {
+				return "", err
+			}
 			hashedPassword := "md5" + hex.EncodeToString(hasher.Sum(nil))
 
 			if hashedPassword == rolePassword {

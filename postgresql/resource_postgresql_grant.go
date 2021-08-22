@@ -384,7 +384,7 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 		}
 	}
 
-	if d.Get("with_grant_option").(bool) == true {
+	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
 
@@ -493,7 +493,7 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 		if err != nil {
 			return false, err
 		}
-		defer dbTxn.Rollback()
+		defer deferredRollback(dbTxn)
 
 		// Check the schema exists (the SQL connection needs to be on the right database)
 		exists, err = schemaExists(dbTxn, pgSchema)
