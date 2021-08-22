@@ -19,6 +19,8 @@ var allowedObjectTypes = []string{
 	"schema",
 	"sequence",
 	"table",
+	"foreign_data_wrapper",
+	"foreign_server",
 }
 
 var objectTypes = map[string]string{
@@ -125,11 +127,14 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	// Validate parameters.
 	objectType := d.Get("object_type").(string)
-	if d.Get("schema").(string) == "" && objectType != "database" {
+	if d.Get("schema").(string) == "" && !sliceContainsStr([]string{"database", "foreign_data_wrapper", "foreign_server"}, objectType) {
 		return fmt.Errorf("parameter 'schema' is mandatory for postgresql_grant resource")
 	}
 	if d.Get("objects").(*schema.Set).Len() > 0 && (objectType == "database" || objectType == "schema") {
 		return fmt.Errorf("cannot specify `objects` when `object_type` is `database` or `schema`")
+	}
+	if d.Get("objects").(*schema.Set).Len() != 1 && (objectType == "foreign_data_wrapper" || objectType == "foreign_server") {
+		return fmt.Errorf("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`")
 	}
 	if err := validatePrivileges(d); err != nil {
 		return err
@@ -247,6 +252,46 @@ WHERE grantee = $2
 	return nil
 }
 
+func readForeignDataWrapperRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+	objects := d.Get("objects").(*schema.Set).List()
+	fdwName := objects[0].(string)
+	query := `
+SELECT pg_catalog.array_agg(privilege_type)
+FROM (
+	SELECT (pg_catalog.aclexplode(fdwacl)).* FROM pg_catalog.pg_foreign_data_wrapper WHERE fdwname=$1
+) as privileges
+WHERE grantee = $2
+`
+
+	var privileges pq.ByteaArray
+	if err := txn.QueryRow(query, fdwName, roleOID).Scan(&privileges); err != nil {
+		return fmt.Errorf("could not read privileges for foreign data wrapper %s: %w", fdwName, err)
+	}
+
+	d.Set("privileges", pgArrayToSet(privileges))
+	return nil
+}
+
+func readForeignServerRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+	objects := d.Get("objects").(*schema.Set).List()
+	srvName := objects[0].(string)
+	query := `
+SELECT pg_catalog.array_agg(privilege_type)
+FROM (
+	SELECT (pg_catalog.aclexplode(srvacl)).* FROM pg_catalog.pg_foreign_server WHERE srvname=$1
+) as privileges
+WHERE grantee = $2
+`
+
+	var privileges pq.ByteaArray
+	if err := txn.QueryRow(query, srvName, roleOID).Scan(&privileges); err != nil {
+		return fmt.Errorf("could not read privileges for foreign server %s: %w", srvName, err)
+	}
+
+	d.Set("privileges", pgArrayToSet(privileges))
+	return nil
+}
+
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
@@ -266,6 +311,12 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	case "schema":
 		return readSchemaRolePriviges(txn, d, roleOID)
+
+	case "foreign_data_wrapper":
+		return readForeignDataWrapperRolePrivileges(txn, d, roleOID)
+
+	case "foreign_server":
+		return readForeignServerRolePrivileges(txn, d, roleOID)
 
 	case "function":
 		query = `
@@ -363,6 +414,22 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 			pq.QuoteIdentifier(d.Get("schema").(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
+	case "FOREIGN_DATA_WRAPPER":
+		fdwName := d.Get("objects").(*schema.Set).List()[0]
+		query = fmt.Sprintf(
+			"GRANT %s ON FOREIGN DATA WRAPPER %s TO %s",
+			strings.Join(privileges, ","),
+			pq.QuoteIdentifier(fdwName.(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "FOREIGN_SERVER":
+		srvName := d.Get("objects").(*schema.Set).List()[0]
+		query = fmt.Sprintf(
+			"GRANT %s ON FOREIGN SERVER %s TO %s",
+			strings.Join(privileges, ","),
+			pq.QuoteIdentifier(srvName.(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
 	case "TABLE", "SEQUENCE", "FUNCTION":
 		objects := d.Get("objects").(*schema.Set)
 		if objects.Len() > 0 {
@@ -405,6 +472,20 @@ func createRevokeQuery(d *schema.ResourceData) string {
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON SCHEMA %s FROM %s",
 			pq.QuoteIdentifier(d.Get("schema").(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "FOREIGN_DATA_WRAPPER":
+		fdwName := d.Get("objects").(*schema.Set).List()[0]
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON FOREIGN DATA WRAPPER %s FROM %s",
+			pq.QuoteIdentifier(fdwName.(string)),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
+	case "FOREIGN_SERVER":
+		srvName := d.Get("objects").(*schema.Set).List()[0]
+		query = fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON FOREIGN SERVER %s FROM %s",
+			pq.QuoteIdentifier(srvName.(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
 	case "TABLE", "SEQUENCE", "FUNCTION":
@@ -487,7 +568,7 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 
 	pgSchema := d.Get("schema").(string)
 
-	if d.Get("object_type").(string) != "database" && pgSchema != "" {
+	if !sliceContainsStr([]string{"database", "foreign_data_wrapper", "foreign_server"}, d.Get("object_type").(string)) && pgSchema != "" {
 		// Connect on this database to check if schema exists
 		dbTxn, err := startTransaction(client, database)
 		if err != nil {
@@ -513,7 +594,7 @@ func generateGrantID(d *schema.ResourceData) string {
 	parts := []string{d.Get("role").(string), d.Get("database").(string)}
 
 	objectType := d.Get("object_type").(string)
-	if objectType != "database" {
+	if objectType != "database" && objectType != "foreign_data_wrapper" && objectType != "foreign_server" {
 		parts = append(parts, d.Get("schema").(string))
 	}
 	parts = append(parts, objectType)
@@ -532,7 +613,7 @@ func getRolesToGrant(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 	owners := []string{}
 	objectType := d.Get("object_type")
 
-	if objectType == "database" {
+	if objectType == "database" || objectType == "foreign_data_wrapper" || objectType == "foreign_server" {
 		return owners, nil
 	}
 
