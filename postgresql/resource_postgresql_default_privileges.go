@@ -57,12 +57,11 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 				}, false),
 				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type)",
 			},
-			"privileges": &schema.Schema{
+			"privileges": {
 				Type:        schema.TypeSet,
 				Required:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
-				MinItems:    1,
 				Description: "The list of privileges to apply as default privileges",
 			},
 			"with_grant_option": {
@@ -183,6 +182,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
 	objectType := d.Get("object_type").(string)
+	privilegesInput := d.Get("privileges").(*schema.Set).List()
 
 	if err := pgLockRole(txn, owner); err != nil {
 		return err
@@ -226,11 +226,13 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		return fmt.Errorf("could not read default privileges: %w", err)
 	}
 
-	// We consider no privileges as "not exists"
+	// We consider no privileges as "not exists" unless no privileges were provided as input
 	if len(privileges) == 0 {
 		log.Printf("[DEBUG] no default privileges for role %s in schema %s", role, pgSchema)
-		d.SetId("")
-		return nil
+		if len(privilegesInput) != 0 {
+			d.SetId("")
+			return nil
+		}
 	}
 
 	privilegesSet := pgArrayToSet(privileges)
@@ -247,6 +249,11 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	privileges := []string{}
 	for _, priv := range d.Get("privileges").(*schema.Set).List() {
 		privileges = append(privileges, priv.(string))
+	}
+
+	if len(privileges) == 0 {
+		log.Printf("[DEBUG] no default privileges to grant for role %s, owner %s in database: %s,", d.Get("role").(string), d.Get("owner").(string), d.Get("database").(string))
+		return nil
 	}
 
 	var inSchema string
