@@ -54,6 +54,7 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 					"sequence",
 					"function",
 					"type",
+					"schema",
 				}, false),
 				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type)",
 			},
@@ -95,6 +96,12 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
+	pgSchema := d.Get("schema").(string)
+	objectType := d.Get("object_type").(string)
+
+	if pgSchema != "" && objectType == "schema" {
+		return fmt.Errorf("cannot specify `schema` when `object_type` is `schema`")
+	}
 
 	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {
 		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
