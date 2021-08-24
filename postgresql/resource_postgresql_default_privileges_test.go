@@ -34,8 +34,8 @@ resource "postgresql_default_privileges" "test_ro" {
 	database    = "%s"
 	owner       = "%s"
 	role        = "%s"
-	schema      = "test_schema"
-	object_type = "table"
+	schema      = %%s
+	object_type = %%s
 	with_grant_option = %t
 	privileges   = %%s
 }
@@ -49,7 +49,7 @@ resource "postgresql_default_privileges" "test_ro" {
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
 					{
-						Config: fmt.Sprintf(tfConfig, `[]`),
+						Config: fmt.Sprintf(tfConfig, `"test_schema"`, `"table"`, `[]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								tables := []string{"test_schema.test_table"}
@@ -66,7 +66,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						),
 					},
 					{
-						Config: fmt.Sprintf(tfConfig, `["SELECT"]`),
+						Config: fmt.Sprintf(tfConfig, `"test_schema"`, `"table"`, `["SELECT"]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								tables := []string{"test_schema.test_table"}
@@ -84,7 +84,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						),
 					},
 					{
-						Config: fmt.Sprintf(tfConfig, `["SELECT", "UPDATE"]`),
+						Config: fmt.Sprintf(tfConfig, `"test_schema"`, `"table"`, `["SELECT", "UPDATE"]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								tables := []string{"test_schema.test_table"}
@@ -101,7 +101,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						),
 					},
 					{
-						Config: fmt.Sprintf(tfConfig, `[]`),
+						Config: fmt.Sprintf(tfConfig, `"test_schema"`, `"table"`, `[]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								tables := []string{"test_schema.test_table"}
@@ -115,6 +115,43 @@ resource "postgresql_default_privileges" "test_ro" {
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "with_grant_option", fmt.Sprintf("%t", withGrant)),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "0"),
+						),
+					},
+					{
+						Config: fmt.Sprintf(tfConfig, `null`, `"schema"`, `[]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								schemas := []string{"test_schema2"}
+								// To test default privileges, we need to create a schema
+								// after having apply the state.
+								dropFunc := createTestSchemas(t, dbSuffix, schemas, "")
+								defer dropFunc()
+
+								return testCheckSchemasPrivileges(t, dbName, roleName, schemas, []string{})
+							},
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "schema"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "with_grant_option", fmt.Sprintf("%t", withGrant)),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "0"),
+						),
+					},
+					{
+						Config: fmt.Sprintf(tfConfig, `null`, `"schema"`, `["CREATE", "USAGE"]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								schemas := []string{"test_schema2"}
+								// To test default privileges, we need to create a schema
+								// after having apply the state.
+								dropFunc := createTestSchemas(t, dbSuffix, schemas, "")
+								defer dropFunc()
+
+								return testCheckSchemasPrivileges(t, dbName, roleName, schemas, []string{"CREATE", "USAGE"})
+							},
+							resource.TestCheckResourceAttr(
+								"postgresql_default_privileges.test_ro", "id", fmt.Sprintf("%s_%s_noschema_postgres_schema", role, dbName),
+							),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.2133731197", "CREATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.666868928", "USAGE"),
 						),
 					},
 				},
