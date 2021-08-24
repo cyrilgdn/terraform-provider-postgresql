@@ -147,7 +147,7 @@ resource "postgresql_default_privileges" "test_ro" {
 								return testCheckSchemasPrivileges(t, dbName, roleName, schemas, []string{"CREATE", "USAGE"})
 							},
 							resource.TestCheckResourceAttr(
-								"postgresql_default_privileges.test_ro", "id", fmt.Sprintf("%s_%s_noschema_postgres_schema", role, dbName),
+								"postgresql_default_privileges.test_ro", "id", fmt.Sprintf("%s_%s_noschema_%s_schema", role, dbName, config.Username),
 							),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.2133731197", "CREATE"),
