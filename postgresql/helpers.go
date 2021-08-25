@@ -235,14 +235,16 @@ func sliceContainsStr(haystack []string, needle string) bool {
 // allowedPrivileges is the list of privileges allowed per object types in Postgres.
 // see: https://www.postgresql.org/docs/current/sql-grant.html
 var allowedPrivileges = map[string][]string{
-	"database":             []string{"ALL", "CREATE", "CONNECT", "TEMPORARY", "TEMP"},
-	"table":                []string{"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
-	"sequence":             []string{"ALL", "USAGE", "SELECT", "UPDATE"},
-	"schema":               []string{"ALL", "CREATE", "USAGE"},
-	"function":             []string{"ALL", "EXECUTE"},
-	"type":                 []string{"ALL", "USAGE"},
-	"foreign_data_wrapper": []string{"ALL", "USAGE"},
-	"foreign_server":       []string{"ALL", "USAGE"},
+	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY", "TEMP"},
+	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
+	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE"},
+	"schema":               {"ALL", "CREATE", "USAGE"},
+	"function":             {"ALL", "EXECUTE"},
+	"procedure":            {"ALL", "EXECUTE"},
+	"routine":              {"ALL", "EXECUTE"},
+	"type":                 {"ALL", "USAGE"},
+	"foreign_data_wrapper": {"ALL", "USAGE"},
+	"foreign_server":       {"ALL", "USAGE"},
 }
 
 // validatePrivileges checks that privileges to apply are allowed for this object type.

@@ -29,6 +29,8 @@ const (
 	featureReplication
 	featureExtension
 	featurePrivileges
+	featureProcedure
+	featureRoutine
 	featureForceDropDatabase
 	featurePid
 )
@@ -66,6 +68,12 @@ var (
 		// We do not support postgresql_grant and postgresql_default_privileges
 		// for Postgresql < 9.
 		featurePrivileges: semver.MustParseRange(">=9.0.0"),
+
+		// Object PROCEDURE support
+		featureProcedure: semver.MustParseRange(">=11.0.0"),
+
+		// Object ROUTINE support
+		featureRoutine: semver.MustParseRange(">=11.0.0"),
 
 		// DROP DATABASE WITH FORCE
 		// for Postgresql >= 13
