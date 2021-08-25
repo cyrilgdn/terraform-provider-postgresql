@@ -743,6 +743,7 @@ resource postgresql_grant "test" {
 				PreCheck: func() {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
+					testCheckCompatibleVersion(t, featureProcedure)
 				},
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
@@ -810,6 +811,7 @@ resource postgresql_grant "test" {
 				PreCheck: func() {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
+					testCheckCompatibleVersion(t, featureRoutine)
 				},
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
