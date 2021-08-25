@@ -703,6 +703,7 @@ resource postgresql_grant "test" {
 
 func TestAccPostgresqlGrantProcedure(t *testing.T) {
 	skipIfNotAcc(t)
+	testCheckCompatibleVersion(t, featureProcedure)
 
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
@@ -743,7 +744,6 @@ resource postgresql_grant "test" {
 				PreCheck: func() {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
-					testCheckCompatibleVersion(t, featureProcedure)
 				},
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
@@ -765,6 +765,7 @@ resource postgresql_grant "test" {
 
 func TestAccPostgresqlGrantRoutine(t *testing.T) {
 	skipIfNotAcc(t)
+	testCheckCompatibleVersion(t, featureRoutine)
 
 	config := getTestConfig(t)
 	dsn := config.connStr("postgres")
@@ -811,7 +812,6 @@ resource postgresql_grant "test" {
 				PreCheck: func() {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
-					testCheckCompatibleVersion(t, featureRoutine)
 				},
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
