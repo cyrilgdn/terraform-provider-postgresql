@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
+	"github.com/davrodpin/mole/tunnel"
 	_ "github.com/lib/pq" //PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
@@ -33,6 +37,8 @@ const (
 	featureForceDropDatabase
 	featurePid
 )
+
+var sshTunnel *tunnel.Tunnel
 
 var (
 	dbRegistryLock sync.Mutex
@@ -121,6 +127,34 @@ type ClientCertificateConfig struct {
 	KeyPath         string
 }
 
+type JumpHostConfig struct {
+	Host       string
+	User       string
+	Port       int
+	LocalPort  int
+	PrivateKey string
+}
+
+func getEnv(key, fallback string) string {
+	value := os.Getenv(key)
+	if len(value) == 0 {
+		return fallback
+	}
+	return value
+}
+
+func getEnvInt(key string, fallback int) int {
+	str_value := os.Getenv(key)
+	if len(str_value) == 0 {
+		return fallback
+	}
+	value, err := strconv.Atoi(str_value)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
 // Config - provider config
 type Config struct {
 	Scheme            string
@@ -138,6 +172,7 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+	JumpHost          *JumpHostConfig
 }
 
 // Client struct holding connection string
@@ -200,7 +235,15 @@ func (c *Config) connParams() []string {
 }
 
 func (c *Config) connStr(database string) string {
-	host := c.Host
+	var host string
+	var port int
+	if c.shouldUseJumpHost() {
+		host = "localhost"
+		port = c.JumpHost.LocalPort
+	} else {
+		host = c.Host
+		port = c.Port
+	}
 
 	// For GCP, support both project/region/instance and project:region:instance
 	// (The second one allows to use the output of google_sql_database_instance as host
@@ -214,7 +257,7 @@ func (c *Config) connStr(database string) string {
 		url.QueryEscape(c.Username),
 		url.QueryEscape(c.Password),
 		host,
-		c.Port,
+		port,
 		database,
 		strings.Join(c.connParams(), "&"),
 	)
@@ -227,6 +270,45 @@ func (c *Config) getDatabaseUsername() string {
 		return c.DatabaseUsername
 	}
 	return c.Username
+}
+
+func (c *Client) ConnectTunnel() (*tunnel.Tunnel, error) {
+	var err error
+	var t *tunnel.Tunnel
+
+	server, err := tunnel.NewServer(
+		c.config.JumpHost.User,
+		fmt.Sprintf("%s:%d", c.config.JumpHost.Host, c.config.JumpHost.Port),
+		"",
+		getEnv("SSH_AUTH_SOCK", ""),
+		"",
+	)
+	if err != nil {
+		log.Fatalf("error processing server options: %v\n", err)
+	}
+
+	server.Insecure = true
+
+	if c.config.JumpHost.PrivateKey != "" {
+		server.Key = &tunnel.PemKey{Data: []byte(c.config.JumpHost.PrivateKey)}
+	}
+
+	t, err = tunnel.New(
+		"local",
+		server,
+		[]string{fmt.Sprintf("localhost:%d", c.config.JumpHost.LocalPort)},
+		[]string{fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)},
+		"",
+	)
+	if err != nil {
+		log.Fatalf("error creating tunnel: %v\n", err)
+	}
+	t.KeepAliveInterval = 10 * time.Second
+	// Start the tunnel
+	go t.Start()
+	// Wait until ready
+	<-t.Ready
+	return t, err
 }
 
 // Connect returns a copy to an sql.Open()'ed database connection wrapped in a DBConnection struct.
@@ -242,6 +324,11 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 		var db *sql.DB
 		var err error
+
+		if c.config.shouldUseJumpHost() && sshTunnel == nil {
+			sshTunnel, _ = c.ConnectTunnel()
+		}
+
 		if c.config.Scheme == "postgres" {
 			db, err = sql.Open("postgres", dsn)
 		} else {
@@ -303,4 +390,14 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	}
 
 	return &version, nil
+}
+
+func (c *Config) shouldUseJumpHost() bool {
+	if c.JumpHost == nil {
+		return false
+	}
+	if c.JumpHost.Host == "" {
+		return false
+	}
+	return true
 }

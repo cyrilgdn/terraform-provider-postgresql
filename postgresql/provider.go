@@ -11,6 +11,9 @@ import (
 const (
 	defaultProviderMaxOpenConnections = 20
 	defaultExpectedPostgreSQLVersion  = "9.0.0"
+	defaultJumpHostUser               = "root"
+	defaultJumpHostPort               = 22
+	defaultJumpHostLocalPort          = 15432
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -132,6 +135,45 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"jumphost": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Description: "Jumphost settings to connect",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"host": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("JUMPHOST", ""),
+							Description: "Jumphost hostname used to connect",
+						},
+						"user": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("JUMPHOST_USER", defaultJumpHostUser),
+							Description: "Jumphost user used to connect",
+						},
+						"port": {
+							Type:        schema.TypeInt,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("JUMPHOST_PORT", defaultJumpHostPort),
+							Description: "Jumphost ssh port used to connect",
+						},
+						"local_port": {
+							Type:        schema.TypeInt,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("JUMPHOST_LOCALPORT", defaultJumpHostLocalPort),
+							Description: "Local jumphost ssh tunnel port used to connect",
+						},
+						"private_key": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							DefaultFunc: schema.EnvDefaultFunc("JUMPHOST_PRIVATE_KEY", ""),
+							Description: "Jumphost private key used to connect",
+						},
+					},
+				},
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -192,6 +234,26 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 			}
+		}
+	}
+
+	if value, ok := d.GetOk("jumphost"); ok {
+		if spec, ok := value.([]interface{})[0].(map[string]interface{}); ok {
+			config.JumpHost = &JumpHostConfig{
+				Host:       spec["host"].(string),
+				User:       spec["user"].(string),
+				Port:       spec["port"].(int),
+				LocalPort:  spec["local_port"].(int),
+				PrivateKey: spec["private_key"].(string),
+			}
+		}
+	} else if getEnv("JUMPHOST", "") != "" {
+		config.JumpHost = &JumpHostConfig{
+			Host:       getEnv("JUMPHOST", ""),
+			User:       getEnv("JUMPHOST_USER", ""),
+			Port:       getEnvInt("JUMPHOST_PORT", 5432),
+			LocalPort:  getEnvInt("JUMPHOST_LOCALPORT", 15432),
+			PrivateKey: getEnv("JUMPHOST_PRIVATE_KEY", ""),
 		}
 	}
 

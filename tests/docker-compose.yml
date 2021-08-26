@@ -13,3 +13,16 @@ services:
             POSTGRES_PASSWORD: ${PGPASSWORD}
         ports:
             - 25432:5432
+    jumphost:
+        image: geekinutah/ssh-jumphost:latest
+        environment:
+            USER: tunnel
+        volumes:
+            - ./keys/public:/keys
+        ports:
+            - "2222:22"
+        ulimits:
+            nproc: 655350
+            nofile:
+                soft: 200000
+                hard: 400000
