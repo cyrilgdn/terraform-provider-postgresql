@@ -88,7 +88,7 @@ github.com/blang/semver
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
-# github.com/davrodpin/mole v1.0.1
+# github.com/davrodpin/mole v1.0.2-0.20210917195927-fb64add5a0ff
 ## explicit; go 1.14
 github.com/davrodpin/mole/tunnel
 # github.com/fatih/color v1.7.0
@@ -223,7 +223,7 @@ github.com/klauspost/compress/huff0
 github.com/klauspost/compress/snappy
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/konsorten/go-windows-terminal-sequences v1.0.2
+# github.com/konsorten/go-windows-terminal-sequences v1.0.3
 ## explicit
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/lib/pq v1.9.0
@@ -249,7 +249,7 @@ github.com/mitchellh/go-testing-interface
 # github.com/mitchellh/go-wordwrap v1.0.0
 ## explicit
 github.com/mitchellh/go-wordwrap
-# github.com/mitchellh/mapstructure v1.4.0
+# github.com/mitchellh/mapstructure v1.4.1
 ## explicit; go 1.14
 github.com/mitchellh/mapstructure
 # github.com/mitchellh/reflectwalk v1.0.2
@@ -261,8 +261,8 @@ github.com/oklog/run
 # github.com/sean-/postgresql-acl v0.0.0-20161225120419-d10489e5d217
 ## explicit
 github.com/sean-/postgresql-acl
-# github.com/sirupsen/logrus v1.4.2
-## explicit
+# github.com/sirupsen/logrus v1.6.0
+## explicit; go 1.13
 github.com/sirupsen/logrus
 # github.com/ulikunitz/xz v0.5.8
 ## explicit; go 1.12
