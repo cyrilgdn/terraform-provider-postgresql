@@ -268,7 +268,7 @@ func TestAccPostgresqlDefaultPrivilegesOnSchemas(t *testing.T) {
 	skipIfNotAcc(t)
 
 	// We have to create the database outside of resource.Test
-	// because we need to create a table to assert that grant are correctly applied
+	// because we need to create schemas to assert that grant are correctly applied
 	// and we don't have this resource yet
 	dbSuffix, teardown := setupTestDatabase(t, true, true)
 	defer teardown()
