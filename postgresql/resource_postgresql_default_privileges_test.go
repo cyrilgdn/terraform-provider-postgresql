@@ -159,7 +159,6 @@ resource "postgresql_default_privileges" "test_ro" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
-			testCheckCompatibleVersion(t, featurePrivilegesOnSchemas)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
@@ -210,11 +209,11 @@ resource "postgresql_default_privileges" "test_ro" {
 	database    = "%s"
 	owner       = "%s"
 	role        = "%s"
-	object_type = %%s
+	object_type = "table"
 	privileges  = %%s
 }
 `
-			// We set PGUSER as owner as he will create the test objects
+			// We set PGUSER as owner as he will create the test table
 			var tfConfig = fmt.Sprintf(hclText, dbName, config.Username, role)
 
 			resource.Test(t, resource.TestCase{
@@ -225,7 +224,7 @@ resource "postgresql_default_privileges" "test_ro" {
 				Providers: testAccProviders,
 				Steps: []resource.TestStep{
 					{
-						Config: fmt.Sprintf(tfConfig, `"table"`, `["SELECT"]`),
+						Config: fmt.Sprintf(tfConfig, `["SELECT"]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								tables := []string{"test_schema.test_table", "dev_schema.test_table"}
@@ -242,7 +241,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						),
 					},
 					{
-						Config: fmt.Sprintf(tfConfig, `"table"`, `["SELECT", "UPDATE"]`),
+						Config: fmt.Sprintf(tfConfig, `["SELECT", "UPDATE"]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								tables := []string{"test_schema.test_table", "dev_schema.test_table"}
@@ -258,8 +257,51 @@ resource "postgresql_default_privileges" "test_ro" {
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1759376126", "UPDATE"),
 						),
 					},
+				},
+			})
+		})
+	}
+}
+
+// Test defaults privileges on schemas
+func TestAccPostgresqlDefaultPrivilegesOnSchemas(t *testing.T) {
+	skipIfNotAcc(t)
+
+	// We have to create the database outside of resource.Test
+	// because we need to create a table to assert that grant are correctly applied
+	// and we don't have this resource yet
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Set default privileges to the test role then to public (i.e.: everyone)
+	for _, role := range []string{roleName, "public"} {
+		t.Run(role, func(t *testing.T) {
+
+			hclText := `
+resource "postgresql_default_privileges" "test_ro" {
+	database    = "%s"
+	owner       = "%s"
+	role        = "%s"
+	object_type = "schema"
+	privileges  = %%s
+}
+`
+			// We set PGUSER as owner as he will create the test schemas
+			var tfConfig = fmt.Sprintf(hclText, dbName, config.Username, role)
+
+			resource.Test(t, resource.TestCase{
+				PreCheck: func() {
+					testAccPreCheck(t)
+					testCheckCompatibleVersion(t, featurePrivileges)
+					testCheckCompatibleVersion(t, featurePrivilegesOnSchemas)
+				},
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
 					{
-						Config: fmt.Sprintf(tfConfig, `"schema"`, `[]`),
+						Config: fmt.Sprintf(tfConfig, `[]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								schemas := []string{"test_schema2", "dev_schema2"}
@@ -275,7 +317,7 @@ resource "postgresql_default_privileges" "test_ro" {
 						),
 					},
 					{
-						Config: fmt.Sprintf(tfConfig, `"schema"`, `["CREATE", "USAGE"]`),
+						Config: fmt.Sprintf(tfConfig, `["CREATE", "USAGE"]`),
 						Check: resource.ComposeTestCheckFunc(
 							func(*terraform.State) error {
 								schemas := []string{"test_schema2", "dev_schema2"}
