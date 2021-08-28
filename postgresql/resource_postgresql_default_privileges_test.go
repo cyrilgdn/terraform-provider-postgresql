@@ -159,6 +159,7 @@ resource "postgresql_default_privileges" "test_ro" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featurePrivilegesOnSchemas)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
