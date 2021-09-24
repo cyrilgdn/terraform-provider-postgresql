@@ -209,6 +209,71 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	}
 }
 
+func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner string) func() {
+	config := getTestConfig(t)
+	dbName, _ := getTestDBNames(dbSuffix)
+	adminUser := config.getDatabaseUsername()
+
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer db.Close()
+
+	if owner != "" {
+		if !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+				t.Fatalf("could not grant role %s to current user: %v", owner, err)
+			}
+		}
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
+			t.Fatalf("could not set role to %s: %v", owner, err)
+		}
+	}
+
+	for _, schema := range schemas {
+		if _, err := db.Exec(fmt.Sprintf("CREATE SCHEMA %s", schema)); err != nil {
+			t.Fatalf("could not create test schema in db %s: %v", dbName, err)
+		}
+		if owner != "" {
+			if _, err := db.Exec(fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", schema, owner)); err != nil {
+				t.Fatalf("could not set test schema owner to %s: %v", owner, err)
+			}
+		}
+	}
+	if owner != "" && !config.Superuser {
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
+			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+		}
+	}
+
+	// In this case we need to drop schema after each test.
+	return func() {
+		db, err := sql.Open("postgres", config.connStr(dbName))
+		if err != nil {
+			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+		}
+		defer db.Close()
+
+		if owner != "" && !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+				t.Fatalf("could not grant role %s to current user: %v", owner, err)
+			}
+		}
+
+		for _, schema := range schemas {
+			if _, err := db.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE", schema)); err != nil {
+				t.Fatalf("could not drop schema %s: %v", schema, err)
+			}
+		}
+		if owner != "" && !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
+				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+			}
+		}
+	}
+}
+
 // testHasGrantForQuery executes a query and checks that it fails if
 // we were not allowed or succeses if we're allowed.
 func testHasGrantForQuery(db *sql.DB, query string, allowed bool) error {
@@ -250,6 +315,25 @@ func testCheckTablesPrivileges(t *testing.T, dbName, roleName string, tables []s
 			"INSERT": fmt.Sprintf("INSERT INTO %s VALUES ('test')", table),
 			"UPDATE": fmt.Sprintf("UPDATE %s SET val = 'test'", table),
 			"DELETE": fmt.Sprintf("DELETE FROM %s", table),
+		}
+
+		for queryType, query := range queries {
+			if err := testHasGrantForQuery(db, query, sliceContainsStr(allowedPrivileges, queryType)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas []string, allowedPrivileges []string) error {
+	db := connectAsTestRole(t, roleName, dbName)
+	defer db.Close()
+
+	for _, schema := range schemas {
+		queries := map[string]string{
+			"USAGE":  fmt.Sprintf("DROP TABLE IF EXISTS %s.test_table", schema),
+			"CREATE": fmt.Sprintf("CREATE TABLE %s.test_table()", schema),
 		}
 
 		for queryType, query := range queries {

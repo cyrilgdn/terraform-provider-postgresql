@@ -54,6 +54,7 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 					"sequence",
 					"function",
 					"type",
+					"schema",
 				}, false),
 				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type)",
 			},
@@ -76,6 +77,16 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 }
 
 func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.ResourceData) error {
+	pgSchema := d.Get("schema").(string)
+	objectType := d.Get("object_type").(string)
+
+	if pgSchema != "" && objectType == "schema" && !db.featureSupported(featurePrivilegesOnSchemas) {
+		return fmt.Errorf(
+			"changing default privileges for schemas is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	exists, err := checkRoleDBSchemaExists(db.client, d)
 	if err != nil {
 		return err
@@ -95,6 +106,18 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
+	pgSchema := d.Get("schema").(string)
+	objectType := d.Get("object_type").(string)
+
+	if pgSchema != "" && objectType == "schema" {
+		if !db.featureSupported(featurePrivilegesOnSchemas) {
+			return fmt.Errorf(
+				"changing default privileges for schemas is not supported for this Postgres version (%s)",
+				db.version,
+			)
+		}
+		return fmt.Errorf("cannot specify `schema` when `object_type` is `schema`")
+	}
 
 	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {
 		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
@@ -152,6 +175,15 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 
 func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
 	owner := d.Get("owner").(string)
+	pgSchema := d.Get("schema").(string)
+	objectType := d.Get("object_type").(string)
+
+	if pgSchema != "" && objectType == "schema" && !db.featureSupported(featurePrivilegesOnSchemas) {
+		return fmt.Errorf(
+			"changing default privileges for schemas is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
 
 	txn, err := startTransaction(db.client, d.Get("database").(string))
 	if err != nil {

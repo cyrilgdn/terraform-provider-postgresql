@@ -28,6 +28,7 @@ var objectTypes = map[string]string{
 	"sequence": "S",
 	"function": "f",
 	"type":     "T",
+	"schema":   "n",
 }
 
 func resourcePostgreSQLGrant() *schema.Resource {
