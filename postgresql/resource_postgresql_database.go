@@ -32,7 +32,6 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLDatabaseRead),
 		Update: PGResourceFunc(resourcePostgreSQLDatabaseUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLDatabaseDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLDatabaseExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -286,16 +285,6 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 
 	// Returning err even if it's nil so defer func can modify it.
 	return err
-}
-
-func resourcePostgreSQLDatabaseExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	return dbExists(txn, d.Id())
 }
 
 func resourcePostgreSQLDatabaseRead(db *DBConnection, d *schema.ResourceData) error {

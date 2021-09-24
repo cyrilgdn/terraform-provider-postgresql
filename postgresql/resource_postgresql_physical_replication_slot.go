@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
@@ -11,7 +12,6 @@ func resourcePostgreSQLPhysicalReplicationSlot() *schema.Resource {
 		Create: PGResourceFunc(resourcePostgreSQLPhysicalReplicationSlotCreate),
 		Read:   PGResourceFunc(resourcePostgreSQLPhysicalReplicationSlotRead),
 		Delete: PGResourceFunc(resourcePostgreSQLPhysicalReplicationSlotDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLPhysicalReplicationSlotExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -37,22 +37,22 @@ func resourcePostgreSQLPhysicalReplicationSlotCreate(db *DBConnection, d *schema
 	return nil
 }
 
-func resourcePostgreSQLPhysicalReplicationSlotExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+func resourcePostgreSQLPhysicalReplicationSlotRead(db *DBConnection, d *schema.ResourceData) error {
+	slotName := d.Id()
+
 	query := "SELECT 1 FROM pg_catalog.pg_replication_slots WHERE slot_name = $1 and slot_type = 'physical'"
+
 	var unused int
-	err := db.QueryRow(query, d.Id()).Scan(&unused)
+	err := db.QueryRow(query, slotName).Scan(&unused)
 	switch {
 	case err == sql.ErrNoRows:
-		return false, nil
+		d.SetId("")
+		return nil
 	case err != nil:
-		return false, err
+		return err
 	}
 
-	return true, nil
-}
-
-func resourcePostgreSQLPhysicalReplicationSlotRead(db *DBConnection, d *schema.ResourceData) error {
-	d.Set("name", d.Id())
+	d.Set("name", slotName)
 	return nil
 }
 

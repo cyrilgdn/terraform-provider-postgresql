@@ -45,7 +45,6 @@ func resourcePostgreSQLRole() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLRoleRead),
 		Update: PGResourceFunc(resourcePostgreSQLRoleUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLRoleDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLRoleExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -351,19 +350,6 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 	d.SetId("")
 
 	return nil
-}
-
-func resourcePostgreSQLRoleExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	var roleName string
-	err := db.QueryRow("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname=$1", d.Id()).Scan(&roleName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
 }
 
 func resourcePostgreSQLRoleRead(db *DBConnection, d *schema.ResourceData) error {

@@ -35,7 +35,6 @@ func resourcePostgreSQLSchema() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLSchemaRead),
 		Update: PGResourceFunc(resourcePostgreSQLSchemaUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLSchemaDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLSchemaExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -275,35 +274,6 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 	return nil
 }
 
-func resourcePostgreSQLSchemaExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	database, schemaName, err := getDBSchemaName(d, db.client.databaseName)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	err = txn.QueryRow("SELECT n.nspname FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaName).Scan(&schemaName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("Error reading schema: %w", err)
-	}
-
-	return true, nil
-}
-
 func resourcePostgreSQLSchemaRead(db *DBConnection, d *schema.ResourceData) error {
 	return resourcePostgreSQLSchemaReadImpl(db, d)
 }
@@ -312,6 +282,18 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 	database, schemaName, err := getDBSchemaName(d, db.client.databaseName)
 	if err != nil {
 		return err
+	}
+
+	// Check if the database exists
+	exists, err := dbExists(db, database)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		log.Printf("[DEBUG] Database %s for schema %s does not exist", database, schemaName)
+		d.SetId("")
+		return nil
 	}
 
 	txn, err := startTransaction(db.client, database)
