@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/lib/pq"
 	acl "github.com/sean-/postgresql-acl"
 )
@@ -37,7 +37,7 @@ func resourcePostgreSQLSchema() *schema.Resource {
 		Delete: PGResourceFunc(resourcePostgreSQLSchemaDelete),
 		Exists: PGResourceExistsFunc(resourcePostgreSQLSchemaExists),
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -79,18 +79,16 @@ func resourcePostgreSQLSchema() *schema.Resource {
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						schemaPolicyCreateAttr: {
-							Type:          schema.TypeBool,
-							Optional:      true,
-							Default:       false,
-							Description:   "If true, allow the specified ROLEs to CREATE new objects within the schema(s)",
-							ConflictsWith: []string{schemaPolicyAttr + "." + schemaPolicyCreateWithGrantAttr},
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Default:     false,
+							Description: "If true, allow the specified ROLEs to CREATE new objects within the schema(s)",
 						},
 						schemaPolicyCreateWithGrantAttr: {
-							Type:          schema.TypeBool,
-							Optional:      true,
-							Default:       false,
-							Description:   "If true, allow the specified ROLEs to CREATE new objects within the schema(s) and GRANT the same CREATE privilege to different ROLEs",
-							ConflictsWith: []string{schemaPolicyAttr + "." + schemaPolicyCreateAttr},
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Default:     false,
+							Description: "If true, allow the specified ROLEs to CREATE new objects within the schema(s) and GRANT the same CREATE privilege to different ROLEs",
 						},
 						schemaPolicyRoleAttr: {
 							Type:        schema.TypeString,
@@ -100,18 +98,16 @@ func resourcePostgreSQLSchema() *schema.Resource {
 							Description: "ROLE who will receive this policy (default: PUBLIC)",
 						},
 						schemaPolicyUsageAttr: {
-							Type:          schema.TypeBool,
-							Optional:      true,
-							Default:       false,
-							Description:   "If true, allow the specified ROLEs to use objects within the schema(s)",
-							ConflictsWith: []string{schemaPolicyAttr + "." + schemaPolicyUsageWithGrantAttr},
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Default:     false,
+							Description: "If true, allow the specified ROLEs to use objects within the schema(s)",
 						},
 						schemaPolicyUsageWithGrantAttr: {
-							Type:          schema.TypeBool,
-							Optional:      true,
-							Default:       false,
-							Description:   "If true, allow the specified ROLEs to use objects within the schema(s) and GRANT the same USAGE privilege to different ROLEs",
-							ConflictsWith: []string{schemaPolicyAttr + "." + schemaPolicyUsageAttr},
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Default:     false,
+							Description: "If true, allow the specified ROLEs to use objects within the schema(s) and GRANT the same USAGE privilege to different ROLEs",
 						},
 					},
 				},

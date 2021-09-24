@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
@@ -80,7 +80,7 @@ resource "postgresql_default_privileges" "test_ro" {
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "with_grant_option", fmt.Sprintf("%t", withGrant)),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 						),
 					},
 					{
@@ -96,8 +96,8 @@ resource "postgresql_default_privileges" "test_ro" {
 								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT", "UPDATE"})
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1759376126", "UPDATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1", "UPDATE"),
 						),
 					},
 					{
@@ -176,7 +176,7 @@ resource "postgresql_default_privileges" "test_ro" {
 					},
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 
 					// check if connected user does not have test_owner granted anymore.
 					checkUserMembership(t, dsn, config.Username, "test_owner", false),
@@ -237,7 +237,7 @@ resource "postgresql_default_privileges" "test_ro" {
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 						),
 					},
 					{
@@ -253,8 +253,8 @@ resource "postgresql_default_privileges" "test_ro" {
 								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT", "UPDATE"})
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1759376126", "UPDATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1", "UPDATE"),
 						),
 					},
 				},
@@ -332,8 +332,8 @@ resource "postgresql_default_privileges" "test_ro" {
 								"postgresql_default_privileges.test_ro", "id", fmt.Sprintf("%s_%s_noschema_%s_schema", role, dbName, config.Username),
 							),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.2133731197", "CREATE"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.666868928", "USAGE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "CREATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1", "USAGE"),
 						),
 					},
 				},
