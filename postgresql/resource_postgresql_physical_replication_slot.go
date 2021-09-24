@@ -3,7 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func resourcePostgreSQLPhysicalReplicationSlot() *schema.Resource {
@@ -13,7 +13,7 @@ func resourcePostgreSQLPhysicalReplicationSlot() *schema.Resource {
 		Delete: PGResourceFunc(resourcePostgreSQLPhysicalReplicationSlotDelete),
 		Exists: PGResourceExistsFunc(resourcePostgreSQLPhysicalReplicationSlotExists),
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Schema: map[string]*schema.Schema{
