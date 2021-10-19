@@ -136,7 +136,7 @@ func Provider() *schema.Provider {
 				ValidateFunc: validateExpectedVersion,
 			},
 			"jumphost": {
-				Type:        schema.TypeSet,
+				Type:        schema.TypeList,
 				Optional:    true,
 				Description: "Jumphost settings to connect",
 				Elem: &schema.Resource{
