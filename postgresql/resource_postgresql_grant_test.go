@@ -387,7 +387,7 @@ func TestAccPostgresqlGrantColumns(t *testing.T) {
 	dbSuffix, teardown := setupTestDatabase(t, true, true)
 	defer teardown()
 
-	testTables := []string{"test_schema.test_table", "test_schema.test_table2"}
+	testTables := []string{"test_schema.test_table"}
 	createTestTables(t, dbSuffix, testTables, "")
 
 	dbName, roleName := getTestDBNames(dbSuffix)
@@ -415,8 +415,10 @@ func TestAccPostgresqlGrantColumns(t *testing.T) {
 				Config: fmt.Sprintf(testGrant, `["test_column_one", "test_column_two"]`, `["SELECT"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.4260833613", "test_table"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3138006342", "SELECT"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "SELECT"),
 					func(*terraform.State) error {
 						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"SELECT"}, []string{"test_column_one"})
 					},
@@ -429,8 +431,11 @@ func TestAccPostgresqlGrantColumns(t *testing.T) {
 				Config: fmt.Sprintf(testGrant, `["test_column_one", "test_column_two"]`, `["INSERT"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.4260833613", "test_table"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.892623219", "INSERT"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.0", "test_column_one"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "INSERT"),
 					func(*terraform.State) error {
 						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"INSERT"}, []string{`"test_column_one"`})
 					},
@@ -443,8 +448,12 @@ func TestAccPostgresqlGrantColumns(t *testing.T) {
 				Config: fmt.Sprintf(testGrant, `["test_column_one", "test_column_two"]`, `["UPDATE"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.4260833613", "test_table"),
-					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.1759376126", "UPDATE"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "columns.0", "test_column_one"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "UPDATE"),
+
 					func(*terraform.State) error {
 						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"UPDATE"}, []string{"test_column_one"})
 					},

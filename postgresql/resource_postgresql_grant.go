@@ -333,11 +333,113 @@ WHERE grantee = $2
 	return nil
 }
 
+func readColumnRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+	objects := d.Get("objects").(*schema.Set)
+
+	missingColumns := d.Get("columns").(*schema.Set) // Getting columns from state.
+	// If the query returns a column, it is a removed from the missingColumns.
+
+	roleOID, err := getRoleOID(txn, d.Get("role").(string))
+	if err != nil {
+		return err
+	}
+
+	var rows *sql.Rows
+
+	// The following query is made up of 3 parts
+	// The first one simply aggregates all privileges on one column in one table into one line.
+	// The second part fetches all permissions on all columns for a given user & a given table in a give schema.
+	// The third part fetches all table-level permissions for the aforementioned table.
+	// Subtracting the third part from the second part allows us
+	// to get column-level privileges without those created by table-level privileges.
+	query := `
+SELECT table_name, column_name, array_agg(privilege_type) AS column_privileges
+FROM (
+  SELECT table_name, column_name, privilege_type
+  FROM information_schema.column_privileges
+    WHERE
+      grantee = $1
+    AND
+      table_schema = $2
+    AND
+      table_name = $3
+    AND
+      privilege_type = $6
+  EXCEPT
+  SELECT pg_class.relname, pg_attribute.attname, privilege_type AS table_grant
+  FROM pg_class
+  JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+  LEFT JOIN (
+    SELECT acls.*
+    FROM
+      (SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c) as acls
+    WHERE grantee=$4
+    ) privs
+  USING (relname, relnamespace, relkind)
+  LEFT JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
+  WHERE nspname = $2 AND relkind = $5
+  )
+AS col_privs_without_table_privs
+GROUP BY col_privs_without_table_privs.table_name, col_privs_without_table_privs.column_name, col_privs_without_table_privs.privilege_type
+ORDER BY col_privs_without_table_privs.column_name
+;`
+	rows, err = txn.Query(
+		query, d.Get("role").(string), d.Get("schema"), objects.List()[0], roleOID, objectTypes["table"], d.Get("privileges").(*schema.Set).List()[0],
+	)
+
+	if err != nil {
+		return err
+	}
+
+	for rows.Next() {
+		var objName string
+		var colName string
+		var privileges pq.ByteaArray
+
+		if err := rows.Scan(&objName, &colName, &privileges); err != nil {
+			return err
+		}
+
+		if objects.Len() > 0 && !objects.Contains(objName) {
+			continue
+		}
+
+		if missingColumns.Contains(colName) {
+			missingColumns.Remove(colName)
+		}
+
+		privilegesSet := pgArrayToSet(privileges)
+
+		if !privilegesSet.Equal(d.Get("privileges").(*schema.Set)) {
+			// If any object doesn't have the same privileges as saved in the state,
+			// we return its privileges to force an update.
+			log.Printf(
+				"[DEBUG] %s %s has not the expected privileges %v for role %s",
+				strings.ToTitle("column"), objName, privileges, d.Get("role"),
+			)
+			d.Set("privileges", privilegesSet)
+			break
+		}
+	}
+
+	if missingColumns.Len() > 0 {
+		// If missingColumns is not empty by the end of the result processing loop
+		// it means that a column is missing
+		remainingColumns := d.Get("columns").(*schema.Set).Difference(missingColumns)
+		log.Printf(
+			"[DEBUG] Role %s does not have the expected privileges on columns",
+			d.Get("role"),
+		)
+		d.Set("columns", remainingColumns)
+	}
+
+	return nil
+}
+
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
 	objects := d.Get("objects").(*schema.Set)
-	privileges := d.Get("privileges").(*schema.Set)
 
 	roleOID, err := getRoleOID(txn, role)
 	if err != nil {
@@ -381,46 +483,7 @@ GROUP BY pg_proc.proname
 		)
 
 	case "column":
-		// The following query is made up of 3 parts
-		// The first one simply aggregates all privileges on one column in one table into one line.
-		// The second part fetches all permissions on all columns for a given user & a given table in a give schema.
-		// The third part fetches all table-level permissions for the aforementioned table.
-		// Subtracting the third part from the second part allows us
-		// to get column-level privileges without those created by table-level privileges.
-		query = `
-SELECT table_name, array_agg(privilege_type) AS column_privileges
-FROM (
-  SELECT table_name, column_name, privilege_type
-  FROM information_schema.column_privileges
-    WHERE
-      grantee = $1
-    AND
-      table_schema = $2
-    AND
-      table_name = $3
-    AND
-      privilege_type = $6
-  EXCEPT
-  SELECT pg_class.relname, pg_attribute.attname, privilege_type AS table_grant
-  FROM pg_class
-  JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-  LEFT JOIN (
-    SELECT acls.*
-    FROM
-      (SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c) as acls
-    WHERE grantee=$4
-    ) privs
-  USING (relname, relnamespace, relkind)
-  LEFT JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
-  WHERE nspname = $2 AND relkind = $5 AND attname NOT IN ('ctid', 'cmax', 'cmin', 'tableoid', 'xmin', 'xmax')
-  )
-AS col_privs_without_table_privs
-GROUP BY col_privs_without_table_privs.table_name, col_privs_without_table_privs.column_name
-ORDER BY col_privs_without_table_privs.column_name
-;`
-		rows, err = txn.Query(
-			query, role, d.Get("schema"), objects.List()[0], roleOID, objectTypes["table"], privileges.List()[0],
-		)
+		return readColumnRolePrivileges(txn, d)
 
 	default:
 		query = `
@@ -598,24 +661,13 @@ func createRevokeQuery(d *schema.ResourceData) string {
 		)
 	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
 		objects := d.Get("objects").(*schema.Set)
-		privileges := d.Get("privileges").(*schema.Set)
 		if objects.Len() > 0 {
-			if privileges.Len() > 0 {
-				query = fmt.Sprintf(
-					"REVOKE %s ON %s %s FROM %s",
-					setToPgIdentSimpleList(privileges),
-					strings.ToUpper(d.Get("object_type").(string)),
-					setToPgIdentList(d.Get("schema").(string), objects),
-					pq.QuoteIdentifier(d.Get("role").(string)),
-				)
-			} else {
-				query = fmt.Sprintf(
-					"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
-					strings.ToUpper(d.Get("object_type").(string)),
-					setToPgIdentList(d.Get("schema").(string), objects),
-					pq.QuoteIdentifier(d.Get("role").(string)),
-				)
-			}
+			query = fmt.Sprintf(
+				"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
+				strings.ToUpper(d.Get("object_type").(string)),
+				setToPgIdentList(d.Get("schema").(string), objects),
+				pq.QuoteIdentifier(d.Get("role").(string)),
+			)
 		} else {
 			query = fmt.Sprintf(
 				"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
