@@ -288,10 +288,7 @@ func setToPgIdentList(schema string, idents *schema.Set) string {
 func setToPgIdentSimpleList(idents *schema.Set) string {
 	quotedIdents := make([]string, idents.Len())
 	for i, ident := range idents.List() {
-		quotedIdents[i] = fmt.Sprintf(
-			"%s",
-			ident.(string),
-		)
+		quotedIdents[i] = ident.(string)
 	}
 	return strings.Join(quotedIdents, ",")
 }

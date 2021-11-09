@@ -652,13 +652,18 @@ func createRevokeQuery(d *schema.ResourceData) string {
 		objects := d.Get("objects").(*schema.Set)
 		columns := d.Get("columns").(*schema.Set)
 		privileges := d.Get("privileges").(*schema.Set)
-		query = fmt.Sprintf(
-			"REVOKE %s (%s) ON TABLE %s FROM %s",
-			setToPgIdentSimpleList(privileges),
-			setToPgIdentSimpleList(columns),
-			setToPgIdentList(d.Get("schema").(string), objects),
-			pq.QuoteIdentifier(d.Get("role").(string)),
-		)
+		if privileges.Len() == 0 || columns.Len() == 0 {
+			// No privileges to revoke, so don't revoke anything
+			query = "SELECT NULL"
+		} else {
+			query = fmt.Sprintf(
+				"REVOKE %s (%s) ON TABLE %s FROM %s",
+				setToPgIdentSimpleList(privileges),
+				setToPgIdentSimpleList(columns),
+				setToPgIdentList(d.Get("schema").(string), objects),
+				pq.QuoteIdentifier(d.Get("role").(string)),
+			)
+		}
 	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
 		objects := d.Get("objects").(*schema.Set)
 		if objects.Len() > 0 {

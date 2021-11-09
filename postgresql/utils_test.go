@@ -356,7 +356,7 @@ func testCheckColumnPrivileges(t *testing.T, dbName, roleName string, tables []s
 	}
 
 	updateColumnValues := []string{}
-	for i, _ := range columns {
+	for i := range columns {
 		updateColumnValues = append(updateColumnValues, fmt.Sprint(columns[i], " = ", columnValues[i]))
 	}
 
