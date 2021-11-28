@@ -17,17 +17,17 @@ Requirements
 Building The Provider
 ---------------------
 
-Clone repository to: `$GOPATH/src/github.com/terraform-providers/terraform-provider-postgresql`
+Clone repository to: `$GOPATH/src/github.com/cyrilgdn/terraform-provider-postgresql`
 
 ```sh
 $ mkdir -p $GOPATH/src/github.com/terraform-providers; cd $GOPATH/src/github.com/terraform-providers
-$ git clone git@github.com:terraform-providers/terraform-provider-postgresql
+$ git clone git@github.com:cyrilgdn/terraform-provider-postgresql
 ```
 
 Enter the provider directory and build the provider
 
 ```sh
-$ cd $GOPATH/src/github.com/terraform-providers/terraform-provider-postgresql
+$ cd $GOPATH/src/github.com/cyrilgdn/terraform-provider-postgresql
 $ make build
 ```
 
