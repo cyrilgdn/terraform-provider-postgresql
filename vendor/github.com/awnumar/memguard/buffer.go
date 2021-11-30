@@ -25,7 +25,7 @@ Value monitored by a finalizer so that we can clean up LockedBuffers that have g
 */
 type drop [16]byte
 
-// Constructs a LockedBuffer object from a core.Buffer while also setting up the finaliser for it.
+// Constructs a LockedBuffer object from a core.Buffer while also setting up the finalizer for it.
 func newBuffer(buf *core.Buffer) *LockedBuffer {
 	b := &LockedBuffer{buf, new(drop)}
 	runtime.SetFinalizer(b.drop, func(_ *drop) {
@@ -34,16 +34,19 @@ func newBuffer(buf *core.Buffer) *LockedBuffer {
 	return b
 }
 
+// Constructs a quasi-destroyed LockedBuffer with size zero.
+func newNullBuffer() *LockedBuffer {
+	return &LockedBuffer{new(core.Buffer), new(drop)}
+}
+
 /*
 NewBuffer creates a mutable data container of the specified size.
-
-The size must be strictly positive or the function will panic.
 */
 func NewBuffer(size int) *LockedBuffer {
 	// Construct a Buffer of the specified size.
 	buf, err := core.NewBuffer(size)
 	if err != nil {
-		core.Panic(err)
+		return newNullBuffer()
 	}
 
 	// Construct and return the wrapped container object.
@@ -51,13 +54,14 @@ func NewBuffer(size int) *LockedBuffer {
 }
 
 /*
-NewBufferFromBytes constructs an immutable buffer from a byte slice.
-
-The length of the buffer must be non-zero or the function will panic. The source buffer is wiped after the value has been copied over to the created container.
+NewBufferFromBytes constructs an immutable buffer from a byte slice. The source buffer is wiped after the value has been copied over to the created container.
 */
 func NewBufferFromBytes(src []byte) *LockedBuffer {
 	// Construct a buffer of the correct size.
 	b := NewBuffer(len(src))
+	if b.Size() == 0 {
+		return b
+	}
 
 	// Move the data over.
 	b.Move(src)
@@ -70,22 +74,23 @@ func NewBufferFromBytes(src []byte) *LockedBuffer {
 }
 
 /*
-NewBufferFromReader reads a given number of bytes from a Reader into a LockedBuffer. The returned object will be immutable.
+NewBufferFromReader reads some number of bytes from an io.Reader into an immutable LockedBuffer.
 
-If an error is encountered before size bytes are read, a smaller LockedBuffer object will be returned and the number of bytes read can be inferred using the Size method. If no bytes are read, a destroyed LockedBuffer with size zero is returned.
-
-The provided size must be strictly positive or the function will panic.
+An error is returned precisely when the number of bytes read is less than the requested amount. Any data read is returned in either case.
 */
-func NewBufferFromReader(r io.Reader, size int) *LockedBuffer {
+func NewBufferFromReader(r io.Reader, size int) (*LockedBuffer, error) {
 	// Construct a buffer of the provided size.
 	b := NewBuffer(size)
+	if b.Size() == 0 {
+		return b, nil
+	}
 
 	// Attempt to fill it with data from the Reader.
 	if n, err := io.ReadFull(r, b.Bytes()); err != nil {
 		if n == 0 {
 			// nothing was read
 			b.Destroy()
-			return &LockedBuffer{new(core.Buffer), new(drop)}
+			return newNullBuffer(), err
 		}
 
 		// partial read
@@ -93,20 +98,20 @@ func NewBufferFromReader(r io.Reader, size int) *LockedBuffer {
 		d.Copy(b.Bytes()[:n])
 		d.Freeze()
 		b.Destroy()
-		return d
+		return d, err
 	}
 
 	// success
 	b.Freeze()
-	return b
+	return b, nil
 }
 
 /*
-NewBufferFromReaderUntil constructs an immutable buffer containing data sourced from a Reader object. It will continue reading until either an EOF is encountered or the provided delimiter value is encountered. The delimiter will not be included in the returned data.
+NewBufferFromReaderUntil constructs an immutable buffer containing data sourced from an io.Reader object.
 
-The number of bytes read can be inferred using the Size method. If no data was read, or if the first byte was the delimiter, a destroyed LockedBuffer with size zero is returned.
+If an error is encountered before the delimiter value, the error will be returned along with the data read up until that point.
 */
-func NewBufferFromReaderUntil(r io.Reader, delim byte) *LockedBuffer {
+func NewBufferFromReaderUntil(r io.Reader, delim byte) (*LockedBuffer, error) {
 	// Construct a buffer with a data page that fills an entire memory page.
 	b := NewBuffer(os.Getpagesize())
 
@@ -132,41 +137,96 @@ func NewBufferFromReaderUntil(r io.Reader, delim byte) *LockedBuffer {
 				i-- // try again
 				continue
 			}
+			// if instead there was an error, we're done early
 			if i == 0 { // no data read
 				b.Destroy()
-				return &LockedBuffer{new(core.Buffer), new(drop)}
+				return newNullBuffer(), err
 			}
-			// if there was an error, we're done early
 			d := NewBuffer(i)
 			d.Copy(b.Bytes()[:i])
 			d.Freeze()
 			b.Destroy()
-			return d
+			return d, err
 		}
 		// we managed to read a byte, check if it was the delimiter
+		// note that errors are ignored in this case where we got data
 		if b.Bytes()[i] == delim {
 			if i == 0 {
 				// if first byte was delimiter, there's no data to return
 				b.Destroy()
-				return &LockedBuffer{new(core.Buffer), new(drop)}
+				return newNullBuffer(), nil
 			}
 			d := NewBuffer(i)
 			d.Copy(b.Bytes()[:i])
 			d.Freeze()
 			b.Destroy()
-			return d
+			return d, nil
+		}
+	}
+}
+
+/*
+NewBufferFromEntireReader reads from an io.Reader into an immutable buffer. It will continue reading until EOF.
+
+A nil error is returned precisely when we managed to read all the way until EOF. Any data read is returned in either case.
+*/
+func NewBufferFromEntireReader(r io.Reader) (*LockedBuffer, error) {
+	// Create a buffer with a data region of one page size.
+	b := NewBuffer(os.Getpagesize())
+
+	for read := 0; ; {
+		// Attempt to read some data from the reader.
+		n, err := r.Read(b.Bytes()[read:])
+
+		// Nothing read but no error, try again.
+		if n == 0 && err == nil {
+			continue
+		}
+
+		// 1) so either have data and no error
+		// 2) or have error and no data
+		// 3) or both have data and have error
+
+		// Increment the read count by the number of bytes that we just read.
+		read += n
+
+		if err != nil {
+			// Suppress EOF error
+			if err == io.EOF {
+				err = nil
+			}
+			// We're done, return the data.
+			if read == 0 {
+				// No data read.
+				b.Destroy()
+				return newNullBuffer(), err
+			}
+			d := NewBuffer(read)
+			d.Copy(b.Bytes()[:read])
+			d.Freeze()
+			b.Destroy()
+			return d, err
+		}
+
+		// If we've filled this buffer, grow it by another page size.
+		if len(b.Bytes()[read:]) == 0 {
+			d := NewBuffer(b.Size() + os.Getpagesize())
+			d.Copy(b.Bytes())
+			b.Destroy()
+			b = d
 		}
 	}
 }
 
 /*
 NewBufferRandom constructs an immutable buffer filled with cryptographically-secure random bytes.
-
-The size must be strictly positive or the function will panic.
 */
 func NewBufferRandom(size int) *LockedBuffer {
 	// Construct a buffer of the specified size.
 	b := NewBuffer(size)
+	if b.Size() == 0 {
+		return b
+	}
 
 	// Fill the buffer with random bytes.
 	b.Scramble()
@@ -254,10 +314,7 @@ func (b *LockedBuffer) Scramble() {
 		return
 	}
 
-	b.Lock()
-	defer b.Unlock()
-
-	core.Scramble(b.Bytes())
+	b.Buffer.Scramble()
 }
 
 /*
@@ -292,14 +349,14 @@ func (b *LockedBuffer) Destroy() {
 IsAlive returns a boolean value indicating if a LockedBuffer is alive, i.e. that it has not been destroyed.
 */
 func (b *LockedBuffer) IsAlive() bool {
-	return core.GetBufferState(b.Buffer).IsAlive
+	return b.Buffer.Alive()
 }
 
 /*
 IsMutable returns a boolean value indicating if a LockedBuffer is mutable.
 */
 func (b *LockedBuffer) IsMutable() bool {
-	return core.GetBufferState(b.Buffer).IsMutable
+	return b.Buffer.Mutable()
 }
 
 /*
@@ -344,13 +401,14 @@ Uint16 returns a slice pointing to the protected region of memory with the data 
 If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Uint16() []uint16 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Compute size of new slice representation.
 	size := b.Size() / 2
@@ -375,13 +433,14 @@ Uint32 returns a slice pointing to the protected region of memory with the data 
 If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Uint32() []uint32 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Compute size of new slice representation.
 	size := b.Size() / 4
@@ -406,13 +465,14 @@ Uint64 returns a slice pointing to the protected region of memory with the data 
 If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Uint64() []uint64 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Compute size of new slice representation.
 	size := b.Size() / 8
@@ -435,13 +495,14 @@ func (b *LockedBuffer) Uint64() []uint64 {
 Int8 returns a slice pointing to the protected region of memory with the data represented as a sequence of signed 8 bit integers. If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Int8() []int8 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Construct the new slice representation.
 	var sl = struct {
@@ -460,13 +521,14 @@ Int16 returns a slice pointing to the protected region of memory with the data r
 If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Int16() []int16 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Compute size of new slice representation.
 	size := b.Size() / 2
@@ -491,13 +553,14 @@ Int32 returns a slice pointing to the protected region of memory with the data r
 If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Int32() []int32 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Compute size of new slice representation.
 	size := b.Size() / 4
@@ -522,13 +585,14 @@ Int64 returns a slice pointing to the protected region of memory with the data r
 If called on a destroyed LockedBuffer, a nil slice will be returned.
 */
 func (b *LockedBuffer) Int64() []int64 {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Compute size of new slice representation.
 	size := b.Size() / 8
@@ -553,13 +617,14 @@ ByteArray8 returns a pointer to some 8 byte array. Care must be taken not to der
 The length of the buffer must be at least 8 bytes in size and the LockedBuffer should not be destroyed. In either of these cases a nil value is returned.
 */
 func (b *LockedBuffer) ByteArray8() *[8]byte {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Check if the length is large enough.
 	if len(b.Bytes()) < 8 {
@@ -576,13 +641,14 @@ ByteArray16 returns a pointer to some 16 byte array. Care must be taken not to d
 The length of the buffer must be at least 16 bytes in size and the LockedBuffer should not be destroyed. In either of these cases a nil value is returned.
 */
 func (b *LockedBuffer) ByteArray16() *[16]byte {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Check if the length is large enough.
 	if len(b.Bytes()) < 16 {
@@ -599,13 +665,14 @@ ByteArray32 returns a pointer to some 32 byte array. Care must be taken not to d
 The length of the buffer must be at least 32 bytes in size and the LockedBuffer should not be destroyed. In either of these cases a nil value is returned.
 */
 func (b *LockedBuffer) ByteArray32() *[32]byte {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Check if the length is large enough.
 	if len(b.Bytes()) < 32 {
@@ -622,13 +689,14 @@ ByteArray64 returns a pointer to some 64 byte array. Care must be taken not to d
 The length of the buffer must be at least 64 bytes in size and the LockedBuffer should not be destroyed. In either of these cases a nil value is returned.
 */
 func (b *LockedBuffer) ByteArray64() *[64]byte {
-	b.RLock()
-	defer b.RUnlock()
 
 	// Check if still alive.
-	if !core.GetBufferState(b.Buffer).IsAlive {
+	if !b.Buffer.Alive() {
 		return nil
 	}
+
+	b.RLock()
+	defer b.RUnlock()
 
 	// Check if the length is large enough.
 	if len(b.Bytes()) < 64 {

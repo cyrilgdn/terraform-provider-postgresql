@@ -2,19 +2,17 @@ package memguard
 
 import (
 	"github.com/awnumar/memguard/core"
-	"github.com/awnumar/memguard/memcall"
 )
 
-func init() {
-	// Disable core dumps on unixesque systems. Does nothing on windows :(
-	memcall.DisableCoreDumps()
-}
+/* Enhancement: check for low memory locking limit and print warning?*/
 
 /*
 ScrambleBytes overwrites an arbitrary buffer with cryptographically-secure random bytes.
 */
 func ScrambleBytes(buf []byte) {
-	core.Scramble(buf)
+	if err := core.Scramble(buf); err != nil {
+		core.Panic(err)
+	}
 }
 
 /*

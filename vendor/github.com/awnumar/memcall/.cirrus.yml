@@ -11,8 +11,6 @@ linux_task:
     - go build -race -v ./...
   test_script:
     - go test -race -v ./...
-  bench_script:
-    - go test -run=XXX -bench=. ./...
 
 osx_task:
   osx_instance:
@@ -30,29 +28,26 @@ osx_task:
     - go build -race -v ./...
   test_script:
     - go test -race -v ./...
-  bench_script:
-    - go test -run=XXX -bench=. ./...
 
 windows_task:
   windows_container:
-    image: cirrusci/windowsservercore:2019
-    os_version: 2019
-  install_script: choco install -y golang
+    image: golang:windowsservercore-1803
+    os_version: 1803
+  env:
+    GO111MODULE: on
+    GOPATH: C:\golang
+    PATH: ${GOPATH}\bin:${PATH}
+    CIRRUS_WORKING_DIR: C:\golang\src\github.com\${CIRRUS_REPO_FULL_NAME}
   build_script:
-    - refreshenv
     - go version
     - go get ./...
     - go build -race -v ./...
   test_script:
-    - refreshenv
-    - go test -race -v -timeout 1h ./...
-  bench_script:
-    - refreshenv
-    - go test -run=XXX -bench=. ./...
+    - go test -race -v ./...
 
 freebsd_task:
   freebsd_instance:
-    image_family: freebsd-13-0-snap
+    image: freebsd-12-0-release-amd64
   env:
     GO111MODULE: on
     GOPATH: /tmp/go
@@ -66,5 +61,3 @@ freebsd_task:
     - go build -race -v ./...
   test_script:
     - go test -race -v ./...
-  bench_script:
-    - go test -run=XXX -bench=. ./...

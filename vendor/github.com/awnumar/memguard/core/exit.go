@@ -1,9 +1,10 @@
 package core
 
 import (
+	"fmt"
 	"os"
 
-	"github.com/awnumar/memguard/memcall"
+	"github.com/awnumar/memcall"
 )
 
 /*
@@ -14,23 +15,47 @@ The creation of new Enclave objects should wait for this function to return sinc
 This function should be called before the program terminates, or else the provided Exit or Panic functions should be used to terminate.
 */
 func Purge() {
-	// Generate a new encryption key, wiping the old.
-	err := key.Initialise()
-	if err != nil {
-		key.Destroy()
-		key = NewCoffer()
-	}
+	var opErr error
 
-	// Get a snapshot of existing Buffers.
-	snapshot := buffers.flush()
-	buffers.add(key.left, key.right, buf32)
+	func() {
+		// Halt the re-key cycle and prevent new enclaves.
+		key.Lock()
+		defer key.Unlock()
 
-	// Destroy them, performing the usual sanity checks.
-	for _, b := range snapshot {
-		// Don't destroy the key partitions.
-		if b != key.left && b != key.right && b != buf32 {
-			b.Destroy()
+		// Get a snapshot of existing Buffers.
+		snapshot := buffers.flush()
+
+		// Destroy them, performing the usual sanity checks.
+		for _, b := range snapshot {
+			if err := b.destroy(); err != nil {
+				if opErr == nil {
+					opErr = err
+				} else {
+					opErr = fmt.Errorf("%s; %s", opErr.Error(), err.Error())
+				}
+				// buffer destroy failed; wipe instead
+				b.Lock()
+				defer b.Unlock()
+				if !b.mutable {
+					if err := memcall.Protect(b.inner, memcall.ReadWrite()); err != nil {
+						// couldn't change it to mutable; we can't wipe it! (could this happen?)
+						// not sure what we can do at this point, just warn and move on
+						fmt.Fprintf(os.Stderr, "!WARNING: failed to wipe immutable data at address %p", &b.data)
+						continue
+					}
+				}
+				Wipe(b.data)
+			}
 		}
+	}()
+
+	// Destroy and recreate the key.
+	key.Destroy() // should be a no-op
+	key = NewCoffer()
+
+	// If we encountered an error, panic.
+	if opErr != nil {
+		panic(opErr)
 	}
 }
 
@@ -42,7 +67,7 @@ func Exit(c int) {
 	key.Destroy()
 
 	// Get a snapshot of existing Buffers.
-	snapshot := buffers.flush()
+	snapshot := buffers.copy() // copy ensures the buffers stay in the list until they are destroyed.
 
 	// Destroy them, performing the usual sanity checks.
 	for _, b := range snapshot {
@@ -54,21 +79,9 @@ func Exit(c int) {
 }
 
 /*
-Panic is identical to the builtin panic except it wipes all it can before calling panic.
+Panic is identical to the builtin panic except it purges the session before calling panic.
 */
 func Panic(v interface{}) {
-	// Wipe both halves of the Enclave encryption key.
-	Wipe(key.left.Data())
-	Wipe(key.right.Data())
-
-	// Wipe all of the currently active LockedBuffers.
-	for _, b := range buffers.list {
-		if !b.mutable {
-			memcall.Protect(b.inner, memcall.ReadWrite)
-		}
-		Wipe(b.Data())
-	}
-
-	// Panic.
+	Purge() // creates a new key so it is safe to recover from this panic
 	panic(v)
 }

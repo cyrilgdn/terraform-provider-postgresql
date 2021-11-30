@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/crypto/blake2b"
@@ -34,7 +35,9 @@ func Encrypt(plaintext, key []byte) ([]byte, error) {
 
 	// Allocate space for and generate a nonce value.
 	var nonce [24]byte
-	Scramble(nonce[:])
+	if err := Scramble(nonce[:]); err != nil {
+		Panic(err)
+	}
 
 	// Encrypt m and return the result.
 	return secretbox.Seal(nonce[:], plaintext, &nonce, k), nil
@@ -83,10 +86,14 @@ func Hash(b []byte) []byte {
 }
 
 // Scramble fills a given buffer with cryptographically-secure random bytes.
-func Scramble(buf []byte) {
+func Scramble(buf []byte) error {
 	if _, err := rand.Read(buf); err != nil {
-		Panic(err)
+		return err
 	}
+
+	// See Wipe
+	runtime.KeepAlive(buf)
+	return nil
 }
 
 // Wipe takes a buffer and wipes it with zeroes.
@@ -94,6 +101,11 @@ func Wipe(buf []byte) {
 	for i := range buf {
 		buf[i] = 0
 	}
+
+	// This should keep buf's backing array live and thus prevent dead store
+	// elimination, according to discussion at
+	// https://github.com/golang/go/issues/33325 .
+	runtime.KeepAlive(buf)
 }
 
 // Copy is identical to Go's builtin copy function except the copying is done in constant time. This is to mitigate against side-channel attacks.

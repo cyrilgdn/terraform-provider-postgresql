@@ -9,7 +9,9 @@ var (
 
 func init() {
 	// Initialize the key declared above with a random value.
-	key = NewCoffer()
+	if key == nil {
+		key = NewCoffer()
+	}
 }
 
 // ErrNullEnclave is returned when attempting to construct an enclave of size less than one.
@@ -59,24 +61,24 @@ func NewEnclave(buf []byte) (*Enclave, error) {
 Seal consumes a given Buffer object and returns its data secured and encrypted inside an Enclave. The given Buffer is destroyed after the Enclave is created.
 */
 func Seal(b *Buffer) (*Enclave, error) {
-	b.RLock()
-
 	// Check if the Buffer has been destroyed.
-	if !b.alive {
+	if !b.Alive() {
 		return nil, ErrBufferExpired
 	}
 
-	// Make the buffer mutable so that we can wipe it.
-	b.Melt()
+	b.Melt() // Make the buffer mutable so that we can wipe it.
 
 	// Construct the Enclave from the Buffer's data.
-	e, err := NewEnclave(b.Data())
+	e, err := func() (*Enclave, error) {
+		b.RLock() // Attain a read lock.
+		defer b.RUnlock()
+		return NewEnclave(b.Data())
+	}()
 	if err != nil {
 		return nil, err
 	}
 
 	// Destroy the Buffer object.
-	b.RUnlock()
 	b.Destroy()
 
 	// Return the newly created Enclave.
@@ -92,7 +94,7 @@ func Open(e *Enclave) (*Buffer, error) {
 	// Allocate a secure Buffer to hold the decrypted data.
 	b, err := NewBuffer(len(e.ciphertext) - Overhead)
 	if err != nil {
-		Panic(err) // ciphertext has invalid length
+		Panic("<memguard:core> ciphertext has invalid length") // ciphertext has invalid length
 	}
 
 	// Grab a view of the key.
@@ -112,4 +114,11 @@ func Open(e *Enclave) (*Buffer, error) {
 
 	// Return the contents of the Enclave inside a Buffer.
 	return b, nil
+}
+
+/*
+EnclaveSize returns the number of bytes of plaintext data stored inside an Enclave.
+*/
+func EnclaveSize(e *Enclave) int {
+	return len(e.ciphertext) - Overhead
 }

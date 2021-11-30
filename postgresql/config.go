@@ -14,7 +14,7 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
-	"github.com/davrodpin/mole/tunnel"
+	"github.com/cookielab/go-ssh-tunnel"
 	_ "github.com/lib/pq" //PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
