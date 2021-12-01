@@ -45,6 +45,8 @@ func TestConfigConnStr(t *testing.T) {
 		wantDbParams []string
 	}{
 		{&Config{Scheme: "postgres", Host: "localhost", Port: 5432, Username: "postgres_user", Password: "postgres_password", SSLMode: "disable"}, "postgres://postgres_user:postgres_password@localhost:5432/postgres", []string{"connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "postgres", Host: "example.com", Port: 5432, Username: "postgres_user", Password: "postgres_password", SSLMode: "disable"}, "postgres://postgres_user:postgres_password@example.com:5432/postgres", []string{"connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "postgres", Host: "example.com", Port: 5432, Username: "postgres_user", Password: "postgres_password", SSLMode: "disable", JumpHost: &JumpHostConfig{Host: "somehost", LocalPort: 15432}}, "postgres://postgres_user:postgres_password@localhost:15432/postgres", []string{"connect_timeout=0", "sslmode=disable"}},
 	}
 
 	for _, test := range tests {

@@ -2,6 +2,7 @@
 set -e
 
 log() {
+  echo
   echo "####################"
   echo "## ->  $1 "
   echo "####################"
@@ -12,8 +13,8 @@ setup() {
 }
 
 run() {
-  go test -count=1 ./postgresql -v -timeout 120m
-  
+  go test -count=1 ./postgresql -v -timeout 20m
+
   # keep the return value for the scripts to fail and clean properly
   return $?
 }
@@ -32,3 +33,4 @@ run_suite() {
 
 run_suite "superuser"
 run_suite "rds"
+run_suite "jumphost"

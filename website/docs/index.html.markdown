@@ -70,6 +70,23 @@ resource "postgresql_database" "my_db2" {
 }
 ```
 
+Configure access via jumphost can be configured.
+
+Example for settings like `ssh -L localhost:15432:postgres_server_ip:5432 tunnel@jump.example.com`. Expecting ssh-agent in place.
+
+```hcl
+provider "postgresql" {
+  host          = "postgres_server_ip"
+  username      = "postgres_user"
+  password      = "postgres_password"
+
+  jumphost {
+    host = "jump.example.com"
+    user = "tunnel"
+  }
+}
+```
+
 ## Argument Reference
 
 The following arguments are supported:
@@ -110,6 +127,12 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+* `jumphost` - (Optional) Jumphost configuration
+  * `host` - Jumphost hostname, turns on jumphost usage.
+  * `user` - (Optional) Jumphost remote user. Default: `root`.
+  * `port` - (Optional) Jumphost remote port. Default: `22`.
+  * `local_port` - (Optional) Local port of tunnel for connection. Default: `15432`.
+  * `private_key` - (Optional) Users ssh private key for tunnel connection. Default: `""`.
 
 ## GoCloud
 

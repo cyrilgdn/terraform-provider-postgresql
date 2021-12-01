@@ -38,27 +38,35 @@ func testSuperuserPreCheck(t *testing.T) {
 }
 
 func getTestConfig(t *testing.T) Config {
-	getEnv := func(key, fallback string) string {
-		value := os.Getenv(key)
-		if len(value) == 0 {
-			return fallback
-		}
-		return value
-	}
 
-	dbPort, err := strconv.Atoi(getEnv("PGPORT", "5432"))
-	if err != nil {
-		t.Fatalf("could not cast PGPORT value as integer: %v", err)
-	}
+	dbPort := getEnvInt("PGPORT", 5432)
+	jumpPort := getEnvInt("JUMPHOST_PORT", defaultJumpHostPort)
+	jumpLocalPort := getEnvInt("JUMPHOST_LOCALPORT", defaultJumpHostLocalPort)
+	jumpUser := getEnv("JUMPHOST_USER", defaultJumpHostUser)
+	jumpHost := getEnv("JUMPHOST", "")
+	dbHost := getEnv("PGHOST", "localhost")
 
-	return Config{
+	config := Config{
 		Scheme:   "postgres",
-		Host:     getEnv("PGHOST", "localhost"),
+		Host:     dbHost,
 		Port:     dbPort,
 		Username: getEnv("PGUSER", ""),
 		Password: getEnv("PGPASSWORD", ""),
 		SSLMode:  getEnv("PGSSLMODE", ""),
+		JumpHost: &JumpHostConfig{
+			Host:      jumpHost,
+			User:      jumpUser,
+			Port:      jumpPort,
+			LocalPort: jumpLocalPort,
+		},
 	}
+
+	client := testAccProvider.Meta().(*Client)
+	if client.config.shouldUseJumpHost() && sshTunnel == nil {
+		sshTunnel, _ = client.ConnectTunnel()
+	}
+
+	return config
 }
 
 func skipIfNotAcc(t *testing.T) {
