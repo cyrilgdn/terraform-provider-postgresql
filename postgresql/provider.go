@@ -1,11 +1,10 @@
 package postgresql
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"time"
-
-	"context"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"

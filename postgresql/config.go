@@ -254,7 +254,7 @@ func (c *Config) getCachedPassword() (string, error) {
 	passwordCacheLock.Lock()
 	defer passwordCacheLock.Unlock()
 
-	cacheKey := fmt.Sprintf("%s%s%s", c.Host, c.Port, c.Username)
+	cacheKey := fmt.Sprintf("%s%d%s", c.Host, c.Port, c.Username)
 	if password, ok := passwordCache[cacheKey]; ok {
 		return password, nil
 	}
@@ -299,7 +299,9 @@ func (c *Client) connect() (*DBConnection, error) {
 	conn, found := dbRegistry[dsn]
 	if found {
 		log.Printf("Reusing database connection")
-		if _, err := conn.Query("SELECT 1"); err != nil {
+		rows, err := conn.Query("SELECT 1")
+		defer rows.Close()
+		if err != nil {
 			delete(dbRegistry, dsn)
 			return nil, fmt.Errorf("failed to ping database %w", err)
 		}
@@ -321,7 +323,13 @@ func (c *Client) connect() (*DBConnection, error) {
 	// we don't keep opened connection in case of the db has to be dopped in the plan.
 	// TODO: For RDS usage this breaks the connection after a grant to rds_iam is used
 	// db.SetMaxIdleConns(0)
-	db.SetMaxOpenConns(c.config.MaxConns)
+	var maxConnections int
+	if c.config.MaxConns == 1 {
+		// This provider acquires a lock on pg_advisory_xact_lock using a separate connection
+		// so it is required to have at least 2 connections
+		maxConnections = 2
+	}
+	db.SetMaxOpenConns(maxConnections)
 
 	defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
 	version := &c.config.ExpectedVersion

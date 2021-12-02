@@ -419,6 +419,7 @@ func getTablesOwner(db QueryAble, schemaName string) ([]string, error) {
 		"SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = $1",
 		schemaName,
 	)
+	defer rows.Close()
 	if err != nil {
 		return nil, fmt.Errorf("error while looking for owners of tables in schema '%s': %w", schemaName, err)
 	}
