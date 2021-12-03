@@ -3,30 +3,49 @@ package postgresql
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
-var testAccProviders map[string]terraform.ResourceProvider
-var testAccProvider *schema.Provider
+var testProvidersLock = sync.Mutex{}
+var testProviders = make(map[string]map[string]terraform.ResourceProvider)
 
-func init() {
-	testAccProvider = Provider(context.TODO()).(*schema.Provider)
-	testAccProviders = map[string]terraform.ResourceProvider{
-		"postgresql": testAccProvider,
+func getTestProvider(t *testing.T) *schema.Provider {
+	return getTestProvidersForTest(t)["postgresql"].(*schema.Provider)
+}
+
+func getTestProvidersForTest(t *testing.T) map[string]terraform.ResourceProvider {
+	testProvidersLock.Lock()
+	defer testProvidersLock.Unlock()
+	providers, found := testProviders[t.Name()]
+	if !found {
+		resourceProvider := Provider(context.TODO())
+		providers := map[string]terraform.ResourceProvider{
+			"postgresql": resourceProvider.(*schema.Provider),
+		}
+		testProviders[t.Name()] = providers
+		t.Cleanup(func() {
+			err := resourceProvider.Stop()
+			if err != nil {
+				t.Errorf("failed to stop provider %v", err)
+			}
+		})
+		return providers
 	}
+	return providers
 }
 
 func TestProvider(t *testing.T) {
-	if err := Provider(context.TODO()).(*schema.Provider).InternalValidate(); err != nil {
+	if err := getTestProvider(t).InternalValidate(); err != nil {
 		t.Fatalf("err: %s", err)
 	}
 }
 
 func TestProvider_impl(t *testing.T) {
-	var _ terraform.ResourceProvider = Provider(context.TODO())
+	var _ = getTestProvider(t)
 }
 
 func testAccPreCheck(t *testing.T) {
@@ -38,7 +57,7 @@ func testAccPreCheck(t *testing.T) {
 		t.Fatal("PGUSER must be set for acceptance tests")
 	}
 
-	err := testAccProvider.Configure(terraform.NewResourceConfigRaw(nil))
+	err := getTestProvider(t).Configure(terraform.NewResourceConfigRaw(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

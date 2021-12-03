@@ -19,18 +19,18 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlRoleConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("myrole2", nil, nil),
+					testAccCheckPostgresqlRoleExists(t, "myrole2", nil, nil),
 					resource.TestCheckResourceAttr("postgresql_role.myrole2", "name", "myrole2"),
 					resource.TestCheckResourceAttr("postgresql_role.myrole2", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.myrole2", "roles.#", "0"),
 
-					testAccCheckPostgresqlRoleExists("role_default", nil, nil),
+					testAccCheckPostgresqlRoleExists(t, "role_default", nil, nil),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "name", "role_default"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "superuser", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "create_database", "false"),
@@ -50,11 +50,11 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "name", "role_with_create_database"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "create_database", "true"),
 
-					testAccCheckPostgresqlRoleExists("sub_role", []string{"myrole2", "role_simple"}, nil),
+					testAccCheckPostgresqlRoleExists(t, "sub_role", []string{"myrole2", "role_simple"}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "name", "sub_role"),
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.#", "2"),
 
-					testAccCheckPostgresqlRoleExists("role_with_search_path", nil, []string{"bar", "foo-with-hyphen"}),
+					testAccCheckPostgresqlRoleExists(t, "role_with_search_path", nil, []string{"bar", "foo-with-hyphen"}),
 
 					// The int part in the attr name is the schema.HashString of the value.
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.719783566", "myrole2"),
@@ -83,8 +83,8 @@ resource "postgresql_role" "role_with_superuser" {
 			// Need to a be a superuser to create a superuser
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: roleConfig,
@@ -129,13 +129,13 @@ resource "postgresql_role" "update_role" {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: configCreate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("update_role", []string{}, nil),
+					testAccCheckPostgresqlRoleExists(t, "update_role", []string{}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
@@ -151,7 +151,7 @@ resource "postgresql_role" "update_role" {
 			{
 				Config: configUpdate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("update_role2", []string{"group_role"}, nil),
+					testAccCheckPostgresqlRoleExists(t, "update_role2", []string{"group_role"}, nil),
 					resource.TestCheckResourceAttr(
 						"postgresql_role.update_role", "name", "update_role2",
 					),
@@ -176,7 +176,7 @@ resource "postgresql_role" "update_role" {
 			{
 				Config: configCreate,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("update_role", []string{}, nil),
+					testAccCheckPostgresqlRoleExists(t, "update_role", []string{}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "name", "update_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "login", "true"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "connection_limit", "-1"),
@@ -214,13 +214,13 @@ resource "postgresql_role" "test_role" {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: roleConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("test_role", []string{admin}, nil),
+					testAccCheckPostgresqlRoleExists(t, "test_role", []string{admin}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.test_role", "name", "test_role"),
 				),
 			},
@@ -228,31 +228,33 @@ resource "postgresql_role" "test_role" {
 	})
 }
 
-func testAccCheckPostgresqlRoleDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*Client)
+func testAccCheckPostgresqlRoleDestroy(t *testing.T) func(s *terraform.State) error {
+	return func(s *terraform.State) error {
+		client := getTestProvider(t).Meta().(*Client)
 
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "postgresql_role" {
-			continue
+		for _, rs := range s.RootModule().Resources {
+			if rs.Type != "postgresql_role" {
+				continue
+			}
+
+			exists, err := checkRoleExists(client, rs.Primary.ID)
+
+			if err != nil {
+				return fmt.Errorf("Error checking role %s", err)
+			}
+
+			if exists {
+				return fmt.Errorf("Role still exists after destroy")
+			}
 		}
 
-		exists, err := checkRoleExists(client, rs.Primary.ID)
-
-		if err != nil {
-			return fmt.Errorf("Error checking role %s", err)
-		}
-
-		if exists {
-			return fmt.Errorf("Role still exists after destroy")
-		}
+		return nil
 	}
-
-	return nil
 }
 
-func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string, searchPath []string) resource.TestCheckFunc {
+func testAccCheckPostgresqlRoleExists(t *testing.T, roleName string, grantedRoles []string, searchPath []string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		client := testAccProvider.Meta().(*Client)
+		client := getTestProvider(t).Meta().(*Client)
 
 		exists, err := checkRoleExists(client, roleName)
 		if err != nil {

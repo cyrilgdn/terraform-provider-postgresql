@@ -121,7 +121,7 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlGrantRoleResources,

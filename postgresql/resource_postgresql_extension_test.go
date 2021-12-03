@@ -18,13 +18,13 @@ func TestAccPostgresqlExtension_Basic(t *testing.T) {
 			// even it's not a real superuser
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlExtensionDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlExtensionConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlExtensionExists("postgresql_extension.myextension"),
+					testAccCheckPostgresqlExtensionExists(t, "postgresql_extension.myextension"),
 					resource.TestCheckResourceAttr(
 						"postgresql_extension.myextension", "name", "pg_trgm"),
 					resource.TestCheckResourceAttr(
@@ -40,39 +40,41 @@ func TestAccPostgresqlExtension_Basic(t *testing.T) {
 	})
 }
 
-func testAccCheckPostgresqlExtensionDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*Client)
+func testAccCheckPostgresqlExtensionDestroy(t *testing.T) func(s *terraform.State) error {
+	return func(s *terraform.State) error {
+		client := getTestProvider(t).Meta().(*Client)
 
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "postgresql_extension" {
-			continue
+		for _, rs := range s.RootModule().Resources {
+			if rs.Type != "postgresql_extension" {
+				continue
+			}
+
+			database, ok := rs.Primary.Attributes[extDatabaseAttr]
+			if !ok {
+				return fmt.Errorf("No Attribute for database is set")
+			}
+			txn, err := startTransaction(client, database)
+			if err != nil {
+				return err
+			}
+			defer deferredRollback(txn)
+
+			exists, err := checkExtensionExists(txn, getExtensionNameFromID(rs.Primary.ID))
+
+			if err != nil {
+				return fmt.Errorf("Error checking extension %s", err)
+			}
+
+			if exists {
+				return fmt.Errorf("Extension still exists after destroy")
+			}
 		}
 
-		database, ok := rs.Primary.Attributes[extDatabaseAttr]
-		if !ok {
-			return fmt.Errorf("No Attribute for database is set")
-		}
-		txn, err := startTransaction(client, database)
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
-
-		exists, err := checkExtensionExists(txn, getExtensionNameFromID(rs.Primary.ID))
-
-		if err != nil {
-			return fmt.Errorf("Error checking extension %s", err)
-		}
-
-		if exists {
-			return fmt.Errorf("Extension still exists after destroy")
-		}
+		return nil
 	}
-
-	return nil
 }
 
-func testAccCheckPostgresqlExtensionExists(n string) resource.TestCheckFunc {
+func testAccCheckPostgresqlExtensionExists(t *testing.T, n string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -93,7 +95,7 @@ func testAccCheckPostgresqlExtensionExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No Attribute for extension name is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := getTestProvider(t).Meta().(*Client)
 		txn, err := startTransaction(client, database)
 		if err != nil {
 			return err
@@ -121,13 +123,13 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlExtensionDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlExtensionSchemaChange1,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlExtensionExists("postgresql_extension.ext1trgm"),
+					testAccCheckPostgresqlExtensionExists(t, "postgresql_extension.ext1trgm"),
 					resource.TestCheckResourceAttr(
 						"postgresql_schema.ext1foo", "name", "foo"),
 					resource.TestCheckResourceAttr(
@@ -141,7 +143,7 @@ func TestAccPostgresqlExtension_SchemaRename(t *testing.T) {
 			{
 				Config: testAccPostgresqlExtensionSchemaChange2,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlExtensionExists("postgresql_extension.ext1trgm"),
+					testAccCheckPostgresqlExtensionExists(t, "postgresql_extension.ext1trgm"),
 					resource.TestCheckResourceAttr(
 						"postgresql_schema.ext1foo", "name", "bar"),
 					resource.TestCheckResourceAttr(
@@ -188,13 +190,13 @@ func TestAccPostgresqlExtension_Database(t *testing.T) {
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlExtensionDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlExtensionDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlExtensionExists("postgresql_extension.myextension"),
+					testAccCheckPostgresqlExtensionExists(t, "postgresql_extension.myextension"),
 					resource.TestCheckResourceAttr(
 						"postgresql_extension.myextension", "name", "pg_trgm"),
 					resource.TestCheckResourceAttr(
@@ -224,26 +226,26 @@ resource "postgresql_extension" "cascade" {
 			testCheckCompatibleVersion(t, featureExtension)
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlExtensionDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlExtensionDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlExtensionConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlExtensionExists("postgresql_extension.cascade"),
+					testAccCheckPostgresqlExtensionExists(t, "postgresql_extension.cascade"),
 					resource.TestCheckResourceAttr("postgresql_extension.cascade", "name", "pgcrypto"),
 					// This will create a dependency on the extension.
-					testAccCreateExtensionDependency("test_extension_cascade"),
+					testAccCreateExtensionDependency(t, "test_extension_cascade"),
 				),
 			},
 		},
 	})
 }
 
-func testAccCreateExtensionDependency(tableName string) resource.TestCheckFunc {
+func testAccCreateExtensionDependency(t *testing.T, tableName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 
-		client := testAccProvider.Meta().(*Client)
+		client := getTestProvider(t).Meta().(*Client)
 		db, err := client.Connect()
 		if err != nil {
 			return err
