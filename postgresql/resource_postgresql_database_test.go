@@ -14,13 +14,13 @@ import (
 func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgreSQLDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb"),
+					testAccCheckPostgresqlDatabaseExists(t, "postgresql_database.mydb"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.mydb", "name", "mydb"),
 					resource.TestCheckResourceAttr(
@@ -109,13 +109,13 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgreSQLDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb_default_owner"),
+					testAccCheckPostgresqlDatabaseExists(t, "postgresql_database.mydb_default_owner"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.mydb_default_owner", "name", "mydb_default_owner"),
 					resource.TestCheckResourceAttrSet(
@@ -138,7 +138,7 @@ func TestAccPostgresqlDatabase_Update(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 
-			client := testAccProvider.Meta().(*Client)
+			client := getTestProvider(t).Meta().(*Client)
 			db, err := client.Connect()
 			if err != nil {
 				t.Fatalf("could not connect to database: %v", err)
@@ -146,8 +146,8 @@ func TestAccPostgresqlDatabase_Update(t *testing.T) {
 			allowConnections = db.featureSupported(featureDBAllowConnections)
 
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: fmt.Sprintf(`
@@ -157,7 +157,7 @@ resource postgresql_database test_db {
 }
 `, allowConnections),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists(t, "postgresql_database.test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr(
@@ -175,7 +175,7 @@ resource postgresql_database test_db {
 }
 	`,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists(t, "postgresql_database.test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
 					resource.TestCheckResourceAttr(
@@ -206,13 +206,13 @@ resource postgresql_database "test_db" {
 `
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: stateConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists(t, "postgresql_database.test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
@@ -248,13 +248,13 @@ resource postgresql_database "test_db" {
 `
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: stateConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists(t, "postgresql_database.test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
@@ -306,29 +306,31 @@ func checkUserMembership(
 	}
 }
 
-func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*Client)
+func testAccCheckPostgresqlDatabaseDestroy(t *testing.T) func(s *terraform.State) error {
+	return func(s *terraform.State) error {
+		client := getTestProvider(t).Meta().(*Client)
 
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "postgresql_database" {
-			continue
+		for _, rs := range s.RootModule().Resources {
+			if rs.Type != "postgresql_database" {
+				continue
+			}
+
+			exists, err := checkDatabaseExists(client, rs.Primary.ID)
+
+			if err != nil {
+				return fmt.Errorf("Error checking db %s", err)
+			}
+
+			if exists {
+				return errors.New("Db still exists after destroy")
+			}
 		}
 
-		exists, err := checkDatabaseExists(client, rs.Primary.ID)
-
-		if err != nil {
-			return fmt.Errorf("Error checking db %s", err)
-		}
-
-		if exists {
-			return errors.New("Db still exists after destroy")
-		}
+		return nil
 	}
-
-	return nil
 }
 
-func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
+func testAccCheckPostgresqlDatabaseExists(t *testing.T, n string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -339,7 +341,7 @@ func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
 			return errors.New("No ID is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := getTestProvider(t).Meta().(*Client)
 		exists, err := checkDatabaseExists(client, rs.Primary.ID)
 
 		if err != nil {

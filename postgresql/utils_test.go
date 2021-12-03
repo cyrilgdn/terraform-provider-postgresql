@@ -19,7 +19,7 @@ const (
 
 // Can be used in a PreCheck function to disable test based on feature.
 func testCheckCompatibleVersion(t *testing.T, feature featureName) {
-	client := testAccProvider.Meta().(*Client)
+	client := getTestProvider(t).Meta().(*Client)
 	db, err := client.Connect()
 	if err != nil {
 		t.Fatalf("could connect to database: %v", err)
@@ -31,7 +31,7 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 
 // Some tests have to be run as a real superuser (not RDS like)
 func testSuperuserPreCheck(t *testing.T) {
-	client := testAccProvider.Meta().(*Client)
+	client := getTestProvider(t).Meta().(*Client)
 	if !client.config.Superuser {
 		t.Skip("Skip test: This test can be run only with a real superuser")
 	}
@@ -117,9 +117,20 @@ func setupTestDatabase(t *testing.T, createDB, createRole bool) (string, func())
 		dbExecute(t, dsn, fmt.Sprintf("GRANT usage ON SCHEMA dev_schema to %s", roleName))
 	}
 
-	return suffix, func() {
+	t.Cleanup(func() {
+		// Force the provider to close, at this points all tests were made and any idle connections
+		// Can interfere with tests trying to delete databases that are being used.
+		provider := getTestProvider(t)
+		if err := provider.Stop(); err != nil {
+			t.Fatalf("failed to stop provider %v", err)
+		}
+		<-provider.StopContext().Done()
 		dbExecute(t, postgresDsn, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
 		dbExecute(t, postgresDsn, fmt.Sprintf("DROP ROLE IF EXISTS %s", roleName))
+	})
+
+	return suffix, func() {
+
 	}
 }
 

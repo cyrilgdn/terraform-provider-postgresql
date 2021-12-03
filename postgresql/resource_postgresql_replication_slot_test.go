@@ -15,8 +15,8 @@ func TestAccPostgresqlReplicationSlot_Basic(t *testing.T) {
 			testAccPreCheck(t)
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlReplicationSlotDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlReplicationSlotDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: `
@@ -25,7 +25,7 @@ func TestAccPostgresqlReplicationSlot_Basic(t *testing.T) {
 					plugin = "test_decoding"
 				}`,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlReplicationSlotExists("postgresql_replication_slot.myslot"),
+					testAccCheckPostgresqlReplicationSlotExists(t, "postgresql_replication_slot.myslot"),
 					resource.TestCheckResourceAttr(
 						"postgresql_replication_slot.myslot", "name", "slot"),
 					resource.TestCheckResourceAttr(
@@ -36,39 +36,41 @@ func TestAccPostgresqlReplicationSlot_Basic(t *testing.T) {
 	})
 }
 
-func testAccCheckPostgresqlReplicationSlotDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*Client)
+func testAccCheckPostgresqlReplicationSlotDestroy(t *testing.T) func(s *terraform.State) error {
+	return func(s *terraform.State) error {
+		client := getTestProvider(t).Meta().(*Client)
 
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "postgresql_replication_slot" {
-			continue
+		for _, rs := range s.RootModule().Resources {
+			if rs.Type != "postgresql_replication_slot" {
+				continue
+			}
+
+			database, ok := rs.Primary.Attributes[extDatabaseAttr]
+			if !ok {
+				return fmt.Errorf("No Attribute for database is set")
+			}
+			txn, err := startTransaction(client, database)
+			if err != nil {
+				return err
+			}
+			defer deferredRollback(txn)
+
+			exists, err := checkReplicationSlotExists(txn, getReplicationSlotNameFromID(rs.Primary.ID))
+
+			if err != nil {
+				return fmt.Errorf("Error checking replication slot %s", err)
+			}
+
+			if exists {
+				return fmt.Errorf("ReplicationSlot still exists after destroy")
+			}
 		}
 
-		database, ok := rs.Primary.Attributes[extDatabaseAttr]
-		if !ok {
-			return fmt.Errorf("No Attribute for database is set")
-		}
-		txn, err := startTransaction(client, database)
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
-
-		exists, err := checkReplicationSlotExists(txn, getReplicationSlotNameFromID(rs.Primary.ID))
-
-		if err != nil {
-			return fmt.Errorf("Error checking replication slot %s", err)
-		}
-
-		if exists {
-			return fmt.Errorf("ReplicationSlot still exists after destroy")
-		}
+		return nil
 	}
-
-	return nil
 }
 
-func testAccCheckPostgresqlReplicationSlotExists(n string) resource.TestCheckFunc {
+func testAccCheckPostgresqlReplicationSlotExists(t *testing.T, n string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -89,7 +91,7 @@ func testAccCheckPostgresqlReplicationSlotExists(n string) resource.TestCheckFun
 			return fmt.Errorf("No Attribute for replication slot name is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := getTestProvider(t).Meta().(*Client)
 		txn, err := startTransaction(client, database)
 		if err != nil {
 			return err
@@ -131,13 +133,13 @@ func TestAccPostgresqlReplicationSlot_Database(t *testing.T) {
 			testAccPreCheck(t)
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlReplicationSlotDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlReplicationSlotDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlReplicationSlotDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlReplicationSlotExists("postgresql_replication_slot.myslot"),
+					testAccCheckPostgresqlReplicationSlotExists(t, "postgresql_replication_slot.myslot"),
 					resource.TestCheckResourceAttr(
 						"postgresql_replication_slot.myslot", "name", "slot"),
 					resource.TestCheckResourceAttr(

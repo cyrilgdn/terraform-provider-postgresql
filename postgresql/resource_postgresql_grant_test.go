@@ -197,7 +197,7 @@ func TestAccPostgresqlGrant(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
@@ -278,7 +278,7 @@ func TestAccPostgresqlGrantObjects(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: fmt.Sprintf(testGrant, `["test_table"]`),
@@ -352,7 +352,7 @@ func TestAccPostgresqlGrantObjectsError(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: `resource "postgresql_grant" "test" {
@@ -427,7 +427,7 @@ func TestAccPostgresqlGrantPublic(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
@@ -506,7 +506,7 @@ func TestAccPostgresqlGrantEmptyPrivileges(t *testing.T) {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: tfConfig,
@@ -566,7 +566,7 @@ resource postgresql_grant "test" {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
 				},
-				Providers: testAccProviders,
+				Providers: getTestProvidersForTest(t),
 				Steps: []resource.TestStep{
 					{
 						Config: tfConfig,
@@ -612,7 +612,7 @@ resource "postgresql_grant" "test" {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			// Not allowed to create
 			{
@@ -674,7 +674,7 @@ resource "postgresql_grant" "test" {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: fmt.Sprintf(config, `["USAGE"]`),

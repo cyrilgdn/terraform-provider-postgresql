@@ -12,13 +12,13 @@ import (
 func TestAccPostgresqlSchema_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlSchemaConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test1", "foo"),
+					testAccCheckPostgresqlSchemaExists(t, "postgresql_schema.test1", "foo"),
 					resource.TestCheckResourceAttr("postgresql_role.role_all_without_grant", "name", "role_all_without_grant"),
 					resource.TestCheckResourceAttr("postgresql_role.role_all_without_grant", "login", "true"),
 
@@ -60,13 +60,13 @@ func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
 			// because non-superuser fails to drop a role
 			testSuperuserPreCheck(t)
 		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlSchemaGrant1,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test4", "test4"),
+					testAccCheckPostgresqlSchemaExists(t, "postgresql_schema.test4", "test4"),
 
 					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_stay", "name", "all_without_grant_stay"),
 					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_drop", "name", "all_without_grant_drop"),
@@ -119,7 +119,7 @@ func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
 			{
 				Config: testAccPostgresqlSchemaGrant2,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test4", "test4"),
+					testAccCheckPostgresqlSchemaExists(t, "postgresql_schema.test4", "test4"),
 					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_stay", "name", "all_without_grant_stay"),
 					resource.TestCheckResourceAttr("postgresql_role.all_without_grant_drop", "name", "all_without_grant_drop"),
 					resource.TestCheckResourceAttr("postgresql_role.policy_compose", "name", "policy_compose"),
@@ -183,13 +183,13 @@ func TestAccPostgresqlSchema_Database(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlSchemaDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test_database", "test_database"),
+					testAccCheckPostgresqlSchemaExists(t, "postgresql_schema.test_database", "test_database"),
 					resource.TestCheckResourceAttr(
 						"postgresql_schema.test_database", "name", "test_database"),
 					resource.TestCheckResourceAttr(
@@ -217,17 +217,17 @@ resource "postgresql_schema" "test_cascade" {
 `, dbName)
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlSchemaConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.test_cascade", "foo"),
+					testAccCheckPostgresqlSchemaExists(t, "postgresql_schema.test_cascade", "foo"),
 					resource.TestCheckResourceAttr("postgresql_schema.test_cascade", "name", "foo"),
 
 					// This will create a table in the schema to check if the drop will work thanks to the cascade
-					testAccCreateSchemaTable(dbName, "foo"),
+					testAccCreateSchemaTable(t, dbName, "foo"),
 				),
 			},
 		},
@@ -253,54 +253,56 @@ resource "postgresql_schema" "public" {
 `, dbName, roleName)
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Providers:    getTestProvidersForTest(t),
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy(t),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPostgresqlSchemaConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlSchemaExists("postgresql_schema.public", "public"),
-					testAccCheckSchemaOwner(dbName, "public", roleName),
+					testAccCheckPostgresqlSchemaExists(t, "postgresql_schema.public", "public"),
+					testAccCheckSchemaOwner(t, dbName, "public", roleName),
 				),
 			},
 		},
 	})
 }
 
-func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*Client)
+func testAccCheckPostgresqlSchemaDestroy(t *testing.T) func(s *terraform.State) error {
+	return func(s *terraform.State) error {
+		client := getTestProvider(t).Meta().(*Client)
 
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "postgresql_schema" {
-			continue
+		for _, rs := range s.RootModule().Resources {
+			if rs.Type != "postgresql_schema" {
+				continue
+			}
+
+			database, ok := rs.Primary.Attributes[schemaDatabaseAttr]
+			if !ok {
+				return fmt.Errorf("No Attribute for database is set")
+			}
+
+			txn, err := startTransaction(client, database)
+			if err != nil {
+				return err
+			}
+			defer deferredRollback(txn)
+
+			exists, err := checkSchemaExists(txn, getExtensionNameFromID(rs.Primary.ID))
+
+			if err != nil {
+				return fmt.Errorf("Error checking schema %s", err)
+			}
+
+			if exists {
+				return fmt.Errorf("Schema still exists after destroy")
+			}
 		}
 
-		database, ok := rs.Primary.Attributes[schemaDatabaseAttr]
-		if !ok {
-			return fmt.Errorf("No Attribute for database is set")
-		}
-
-		txn, err := startTransaction(client, database)
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
-
-		exists, err := checkSchemaExists(txn, getExtensionNameFromID(rs.Primary.ID))
-
-		if err != nil {
-			return fmt.Errorf("Error checking schema %s", err)
-		}
-
-		if exists {
-			return fmt.Errorf("Schema still exists after destroy")
-		}
+		return nil
 	}
-
-	return nil
 }
 
-func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.TestCheckFunc {
+func testAccCheckPostgresqlSchemaExists(t *testing.T, n string, schemaName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -321,7 +323,7 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 			return fmt.Errorf("Wrong value for schema name expected %s got %s", schemaName, actualSchemaName)
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := getTestProvider(t).Meta().(*Client)
 		txn, err := startTransaction(client, database)
 		if err != nil {
 			return err
@@ -355,10 +357,10 @@ func checkSchemaExists(txn *sql.Tx, schemaName string) (bool, error) {
 	return true, nil
 }
 
-func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFunc {
+func testAccCreateSchemaTable(t *testing.T, database, schemaName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 
-		client := testAccProvider.Meta().(*Client).config.NewClient(database)
+		client := getTestProvider(t).Meta().(*Client).config.NewClient(database)
 		db, err := client.Connect()
 		if err != nil {
 			return err
@@ -372,9 +374,9 @@ func testAccCreateSchemaTable(database, schemaName string) resource.TestCheckFun
 	}
 }
 
-func testAccCheckSchemaOwner(database, schemaName, expectedOwner string) resource.TestCheckFunc {
+func testAccCheckSchemaOwner(t *testing.T, database, schemaName, expectedOwner string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		client := testAccProvider.Meta().(*Client).config.NewClient(database)
+		client := getTestProvider(t).Meta().(*Client).config.NewClient(database)
 		db, err := client.Connect()
 		if err != nil {
 			return err

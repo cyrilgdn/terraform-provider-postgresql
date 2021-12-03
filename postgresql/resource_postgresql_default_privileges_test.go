@@ -10,22 +10,22 @@ import (
 
 func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 	skipIfNotAcc(t)
-
-	// We have to create the database outside of resource.Test
-	// because we need to create a table to assert that grant are correctly applied
-	// and we don't have this resource yet
-	dbSuffix, teardown := setupTestDatabase(t, true, true)
-	defer teardown()
-
-	config := getTestConfig(t)
-	dbName, roleName := getTestDBNames(dbSuffix)
-
 	// Set default privileges to the test role then to public (i.e.: everyone)
-	for _, role := range []string{roleName, "public"} {
+	for _, role := range []string{"with-role-name", "public"} {
 		t.Run(role, func(t *testing.T) {
+			// We have to create the database outside of resource.Test
+			// because we need to create a table to assert that grant are correctly applied
+			// and we don't have this resource yet
+			dbSuffix, _ := setupTestDatabase(t, true, true)
+
+			config := getTestConfig(t)
+			dbName, roleName := getTestDBNames(dbSuffix)
+
 			withGrant := true
 			if role == "public" {
 				withGrant = false
+			} else {
+				role = roleName
 			}
 
 			// We set PGUSER as owner as he will create the test table
@@ -46,7 +46,7 @@ resource "postgresql_default_privileges" "test_ro" {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
 				},
-				Providers: testAccProviders,
+				Providers: getTestProvidersForTest(t),
 				Steps: []resource.TestStep{
 					{
 						Config: fmt.Sprintf(tfConfig, `["SELECT"]`),
@@ -126,7 +126,7 @@ resource "postgresql_default_privileges" "test_ro" {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
 		},
-		Providers: testAccProviders,
+		Providers: getTestProvidersForTest(t),
 		Steps: []resource.TestStep{
 			{
 				Config: stateConfig,
@@ -187,7 +187,7 @@ resource "postgresql_default_privileges" "test_ro" {
 					testAccPreCheck(t)
 					testCheckCompatibleVersion(t, featurePrivileges)
 				},
-				Providers: testAccProviders,
+				Providers: getTestProvidersForTest(t),
 				Steps: []resource.TestStep{
 					{
 						Config: fmt.Sprintf(tfConfig, `["SELECT"]`),

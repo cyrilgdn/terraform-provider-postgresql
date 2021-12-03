@@ -307,6 +307,8 @@ GROUP BY pg_class.relname
 		)
 	}
 
+	defer rows.Close()
+
 	// This returns, for the specified role (rolname),
 	// the list of all object of the specified type (relkind) in the specified schema (namespace)
 	// with the list of the currently applied privileges (aggregation of privilege_type)

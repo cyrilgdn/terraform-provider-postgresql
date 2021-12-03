@@ -1,11 +1,12 @@
 package postgresql
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"time"
 
-	"context"
+	"github.com/terraform-providers/terraform-provider-postgresql/postgresql/contexts"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -24,7 +25,7 @@ func init() {
 
 // Provider returns a terraform.ResourceProvider.
 func Provider(ctx context.Context) terraform.ResourceProvider {
-	return &schema.Provider{
+	provider := &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"scheme": {
 				Type:     schema.TypeString,
@@ -164,9 +165,11 @@ func Provider(ctx context.Context) terraform.ResourceProvider {
 			"postgresql_schema":             resourcePostgreSQLSchema(),
 			"postgresql_role":               resourcePostgreSQLRole(),
 		},
-
-		ConfigureFunc: func(d *schema.ResourceData) (interface{}, error) { return providerConfigure(ctx, d) },
 	}
+	provider.ConfigureFunc = func(d *schema.ResourceData) (interface{}, error) {
+		return providerConfigure(contexts.Merge(provider.StopContext(), ctx), d)
+	}
+	return provider
 }
 
 func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {

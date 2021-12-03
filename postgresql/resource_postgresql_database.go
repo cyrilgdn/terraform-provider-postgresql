@@ -153,6 +153,7 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	if v, ok := d.GetOk(createIfNotExistsAttr); ok && v.(bool) {
 		result, err := db.Query("SELECT 1 FROM pg_database WHERE datname = $1", dbName)
+		defer result.Close()
 		if err != nil {
 			return fmt.Errorf("failed to check if the database %s exists %w", dbName, err)
 		}

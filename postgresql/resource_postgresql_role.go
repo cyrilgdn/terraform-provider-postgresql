@@ -182,6 +182,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	if v, ok := d.GetOk(createIfNotExistsAttr); ok && v.(bool) {
 		log.Printf("[DEBUG] Creating role %s with IF NOT EXISTS", roleName)
 		result, err := db.Query("SELECT 1 FROM pg_roles WHERE rolname = $1", roleName)
+		defer result.Close()
 		if err != nil {
 			return fmt.Errorf("failed to check if the role %s exists %w", roleName, err)
 		}
