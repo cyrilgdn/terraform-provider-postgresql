@@ -36,9 +36,6 @@ const (
 )
 
 var (
-	dbRegistryLock sync.Mutex
-	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
-
 	passwordCacheLock sync.Mutex = sync.Mutex{}
 	passwordCache                = make(map[string]string)
 
@@ -152,14 +149,20 @@ type Client struct {
 	config Config
 
 	databaseName string
+
+	dbRegistryLock sync.Mutex
+	dbRegistry     map[string]*DBConnection
 }
 
 // NewClient returns client config for the specified database.
 func (c *Config) NewClient(database string) *Client {
-	return &Client{
+	client := &Client{
 		config:       *c,
 		databaseName: database,
+		dbRegistry:   map[string]*DBConnection{},
 	}
+	go client.connectionWatcher()
+	return client
 }
 
 // featureSupported returns true if a given feature is supported or not.  This
@@ -279,8 +282,8 @@ func (c *Config) getDatabaseUsername() string {
 func (c *Client) Connect() (*DBConnection, error) {
 	// Lock only the public method as the internal one calls it recursivelly when falling back
 	// to static password
-	dbRegistryLock.Lock()
-	defer dbRegistryLock.Unlock()
+	c.dbRegistryLock.Lock()
+	defer c.dbRegistryLock.Unlock()
 	if c.config.shouldUseJumpHost() {
 		err := connectToJumpHost(&c.config)
 		if err != nil {
@@ -296,13 +299,13 @@ func (c *Client) connect() (*DBConnection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection string %w", err)
 	}
-	conn, found := dbRegistry[dsn]
+	conn, found := c.dbRegistry[dsn]
 	if found {
 		log.Printf("Reusing database connection")
 		rows, err := conn.Query("SELECT 1")
 		defer rows.Close()
 		if err != nil {
-			delete(dbRegistry, dsn)
+			delete(c.dbRegistry, dsn)
 			return nil, fmt.Errorf("failed to ping database %w", err)
 		}
 		return conn, nil
@@ -347,7 +350,7 @@ func (c *Client) connect() (*DBConnection, error) {
 		c,
 		*version,
 	}
-	dbRegistry[dsn] = conn
+	c.dbRegistry[dsn] = conn
 
 	return conn, nil
 }
@@ -381,6 +384,24 @@ func (c *Client) tryConnectWithFallback() (*DBConnection, error) {
 	}
 
 	return nil, fmt.Errorf("%w", err)
+}
+
+func (c *Client) connectionWatcher() {
+	select {
+	case <-c.config.ctx.Done():
+		c.closeConnections()
+	}
+}
+
+func (c *Client) closeConnections() {
+	c.dbRegistryLock.Lock()
+	defer c.dbRegistryLock.Unlock()
+	for _, connection := range c.dbRegistry {
+		err := connection.Close()
+		if err != nil {
+			log.Printf("[ERROR] Failed to close database connection %v", err)
+		}
+	}
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
