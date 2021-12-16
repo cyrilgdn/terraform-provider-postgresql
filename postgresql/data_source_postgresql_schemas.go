@@ -36,22 +36,22 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 				Optional:    true,
 				Description: "Whether to include system schemas (pg_ prefix and information_schema)",
 			},
-			"like_pattern_expression": {
+			"like_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL LIKE operator",
 			},
-			"not_like_pattern_expression": {
+			"not_like_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL NOT LIKE operator",
 			},
-			"similar_to_pattern_expression": {
+			"similar_to_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL SIMILAR TO operator",
 			},
-			"not_similar_to_pattern_expression": {
+			"not_similar_to_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL NOT SIMILAR TO operator",
@@ -86,24 +86,24 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 	}
 	query = applyOptionalPatternMatchingToQuery(query, d)
 
-	var wildcardSchemas pq.ByteaArray
+	var schemas pq.ByteaArray
 	rows, err := txn.Query(query)
 
 	if err != nil {
 		return err
 	}
 
-	rows.Scan(&wildcardSchemas)
-	d.Set("schemas", pgArrayToSet(wildcardSchemas))
+	rows.Scan(&schemas)
+	d.Set("schemas", pgArrayToSet(schemas))
 
 	return nil
 }
 
 func applyOptionalPatternMatchingToQuery(query string, d *schema.ResourceData) string {
-	likePattern := d.Get("like_pattern_expression").(string)
-	notLikePattern := d.Get("not_like_pattern_expression").(string)
-	similarToPattern := d.Get("similar_to_pattern_expression").(string)
-	notSimilarToPattern := d.Get("not_similar_to_pattern_expression").(string)
+	likePattern := d.Get("like_pattern").(string)
+	notLikePattern := d.Get("not_like_pattern").(string)
+	similarToPattern := d.Get("similar_to_pattern").(string)
+	notSimilarToPattern := d.Get("not_similar_to_pattern").(string)
 
 	if likePattern != "" {
 		query = concatenateQueryWithPatternMatching(query, likePatternQuery, likePattern)
