@@ -1,7 +1,7 @@
 ---
 layout: "postgresql"
 page_title: "PostgreSQL: postgresql_schemas"
-sidebar_current: "docs-postgresql-data-postgresql_schemas"
+sidebar_current: "docs-postgresql-data-source-postgresql_schemas"
 description: |-
   Retrieves a list of schema names from a PostgreSQL database.
 ---

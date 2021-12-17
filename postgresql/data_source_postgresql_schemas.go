@@ -20,9 +20,9 @@ var schemaQueries = map[string]string{
 	`,
 }
 
-func dataPostgreSQLDatabaseSchemas() *schema.Resource {
+func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 	return &schema.Resource{
-		Read: PGResourceFunc(dataPostgreSQLSchemasRead),
+		Read: PGResourceFunc(dataSourcePostgreSQLSchemasRead),
 		Schema: map[string]*schema.Schema{
 			"database": {
 				Type:        schema.TypeString,
@@ -34,22 +34,22 @@ func dataPostgreSQLDatabaseSchemas() *schema.Resource {
 				Type:        schema.TypeBool,
 				Default:     false,
 				Optional:    true,
-				Description: "Determines to whether to include system schemas (pg_ prefix and information_schema)",
+				Description: "Determines whether to include system schemas (pg_ prefix and information_schema)",
 			},
 			"like_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL LIKE operator",
+				Description: "Expression which will be pattern matched in the query using the PostgreSQL LIKE operator",
 			},
 			"not_like_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL NOT LIKE operator",
+				Description: "Expression which will be pattern matched in the query using the PostgreSQL NOT LIKE operator",
 			},
 			"regex_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL ~ (regular expression match) operator",
+				Description: "Expression which will be pattern matched in the query using the PostgreSQL ~ (regular expression match) operator",
 			},
 			"schemas": {
 				Type:        schema.TypeList,
@@ -61,7 +61,7 @@ func dataPostgreSQLDatabaseSchemas() *schema.Resource {
 	}
 }
 
-func dataPostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) error {
+func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) error {
 	database := d.Get("database").(string)
 
 	d.SetId(database + " data block")
