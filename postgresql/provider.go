@@ -144,7 +144,10 @@ func Provider() *schema.Provider {
 			"postgresql_physical_replication_slot": resourcePostgreSQLPhysicalReplicationSlot(),
 			"postgresql_schema":                    resourcePostgreSQLSchema(),
 			"postgresql_role":                      resourcePostgreSQLRole(),
-			"postgresql_schemas_data_source":       dataSourcePostgreSQLDatabaseSchemas(),
+		},
+
+		DataSourcesMap: map[string]*schema.Resource{
+			"postgresql_schemas_data_source": dataSourcePostgreSQLDatabaseSchemas(),
 		},
 
 		ConfigureFunc: providerConfigure,
