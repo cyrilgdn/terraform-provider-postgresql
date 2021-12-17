@@ -3,7 +3,6 @@ package postgresql
 // Use Postgres as SQL driver
 import (
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -20,11 +19,6 @@ var schemaQueries = map[string]string{
 	AND s.schema_name <> 'information_schema'
 	`,
 }
-
-var likePatternQuery = "s.schema_name LIKE"
-var notLikePatternQuery = "s.schema_name NOT LIKE"
-var similarToPatternQuery = "s.schema SIMILAR TO"
-var notSimilarToPatternQuery = "s.schema NOT SIMILAR TO"
 
 func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 	return &schema.Resource{
@@ -52,15 +46,10 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 				Optional:    true,
 				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL NOT LIKE operator",
 			},
-			"similar_to_pattern": {
+			"regex_pattern": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL SIMILAR TO operator",
-			},
-			"not_similar_to_pattern": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL NOT SIMILAR TO operator",
+				Description: "Optional expression which will be pattern matched in the query using the PostgreSQL ~ (regular expression match) operator",
 			},
 			"schemas": {
 				Type:        schema.TypeList,
@@ -92,7 +81,8 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 		query = schemaQueries["query_exclude_system_schemas"]
 	}
 
-	//query = applyOptionalPatternMatchingToQuery(query, d)
+	query = applyOptionalPatternMatchingToQuery(query, !includeSystemSchemas, d)
+
 	rows, err := txn.Query(query)
 	if err != nil {
 		return err
@@ -124,34 +114,35 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 	return nil
 }
 
-func applyOptionalPatternMatchingToQuery(query string, d *schema.ResourceData) string {
-	likePattern := d.Get("like_pattern")
-	notLikePattern := d.Get("not_like_pattern")
-	similarToPattern := d.Get("similar_to_pattern")
-	notSimilarToPattern := d.Get("not_similar_to_pattern")
+func applyOptionalPatternMatchingToQuery(query string, queryContainsWhere bool, d *schema.ResourceData) string {
+	likePattern := d.Get("like_pattern").(string)
+	notLikePattern := d.Get("not_like_pattern").(string)
+	regexPattern := d.Get("regex_pattern").(string)
 
-	if likePattern != nil {
-		query = concatenateQueryWithPatternMatching(query, likePatternQuery, likePattern.(string))
+	var likePatternQuery = "s.schema_name LIKE"
+	var notLikePatternQuery = "s.schema_name NOT LIKE"
+	var regexPatternQuery = "s.schema_name ~"
+
+	if likePattern != "" {
+		query = concatenateQueryWithPatternMatching(query, likePatternQuery, likePattern, &queryContainsWhere)
 	}
-	if notLikePattern != nil {
-		query = concatenateQueryWithPatternMatching(query, notLikePatternQuery, notLikePattern.(string))
+	if notLikePattern != "" {
+		query = concatenateQueryWithPatternMatching(query, notLikePatternQuery, notLikePattern, &queryContainsWhere)
 	}
-	if similarToPattern != nil {
-		query = concatenateQueryWithPatternMatching(query, similarToPatternQuery, similarToPattern.(string))
-	}
-	if notSimilarToPattern != nil {
-		query = concatenateQueryWithPatternMatching(query, notSimilarToPatternQuery, notSimilarToPattern.(string))
+	if regexPattern != "" {
+		query = concatenateQueryWithPatternMatching(query, regexPatternQuery, regexPattern, &queryContainsWhere)
 	}
 
 	return query
 }
 
-func concatenateQueryWithPatternMatching(query string, additionalQuery string, pattern string) string {
+func concatenateQueryWithPatternMatching(query string, additionalQuery string, pattern string, queryContainsWhere *bool) string {
 	var keyword string
-	if strings.Contains(query, "WHERE") { //hacky and fragile use regex instead
-		keyword = "WHERE"
-	} else {
+	if *queryContainsWhere {
 		keyword = "AND"
+	} else {
+		keyword = "WHERE"
+		*queryContainsWhere = true
 	}
 
 	return fmt.Sprintf("%s %s %s '%s'", query, keyword, additionalQuery, pattern)
