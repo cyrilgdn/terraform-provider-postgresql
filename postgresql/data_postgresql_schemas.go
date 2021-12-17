@@ -20,21 +20,21 @@ var schemaQueries = map[string]string{
 	`,
 }
 
-func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
+func dataPostgreSQLDatabaseSchemas() *schema.Resource {
 	return &schema.Resource{
-		Read: PGResourceFunc(dataSourcePostgreSQLSchemasRead),
+		Read: PGResourceFunc(dataPostgreSQLSchemasRead),
 		Schema: map[string]*schema.Schema{
 			"database": {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "The database to grant privileges on for this role",
+				Description: "The PostgreSQL database which will be queried for schema names",
 			},
 			"include_system_schemas": {
 				Type:        schema.TypeBool,
 				Default:     false,
 				Optional:    true,
-				Description: "Whether to include system schemas (pg_ prefix and information_schema)",
+				Description: "Determines to whether to include system schemas (pg_ prefix and information_schema)",
 			},
 			"like_pattern": {
 				Type:        schema.TypeString,
@@ -61,10 +61,10 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 	}
 }
 
-func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) error {
+func dataPostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) error {
 	database := d.Get("database").(string)
 
-	d.SetId(database + " data block") //improve the Id
+	d.SetId(database + " data block")
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
@@ -101,16 +101,6 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 
 	d.Set("schemas", schemas)
 
-	// log.Println("something")
-	// log.Println(database)
-	// log.Println(query)
-
-	// for schemaIn := range schemas {
-	// 	log.Println(schemas[schemaIn])
-	// }
-
-	// log.Println("after loop")
-
 	return nil
 }
 
@@ -119,9 +109,9 @@ func applyOptionalPatternMatchingToQuery(query string, queryContainsWhere bool, 
 	notLikePattern := d.Get("not_like_pattern").(string)
 	regexPattern := d.Get("regex_pattern").(string)
 
-	var likePatternQuery = "s.schema_name LIKE"
-	var notLikePatternQuery = "s.schema_name NOT LIKE"
-	var regexPatternQuery = "s.schema_name ~"
+	likePatternQuery := "s.schema_name LIKE"
+	notLikePatternQuery := "s.schema_name NOT LIKE"
+	regexPatternQuery := "s.schema_name ~"
 
 	if likePattern != "" {
 		query = concatenateQueryWithPatternMatching(query, likePatternQuery, likePattern, &queryContainsWhere)

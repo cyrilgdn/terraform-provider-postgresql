@@ -147,7 +147,7 @@ func Provider() *schema.Provider {
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
-			"postgresql_schemas_data_source": dataSourcePostgreSQLDatabaseSchemas(),
+			"postgresql_schemas": dataPostgreSQLDatabaseSchemas(),
 		},
 
 		ConfigureFunc: providerConfigure,
