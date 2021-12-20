@@ -3,6 +3,8 @@ package postgresql
 // Use Postgres as SQL driver
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -64,8 +66,6 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) error {
 	database := d.Get("database").(string)
 
-	d.SetId(database + " data block")
-
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
@@ -100,6 +100,7 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 	}
 
 	d.Set("schemas", schemas)
+	d.SetId(generateDataSourceSchemasID(d, database))
 
 	return nil
 }
@@ -136,4 +137,11 @@ func concatenateQueryWithPatternMatching(query string, additionalQuery string, p
 	}
 
 	return fmt.Sprintf("%s %s %s '%s'", query, keyword, additionalQuery, pattern)
+}
+
+func generateDataSourceSchemasID(d *schema.ResourceData, databaseName string) string {
+	return strings.Join([]string{
+		databaseName, strconv.FormatBool(d.Get("include_system_schemas").(bool)),
+		d.Get("like_pattern").(string), d.Get("not_like_pattern").(string), d.Get("regex_pattern").(string),
+	}, "_")
 }
