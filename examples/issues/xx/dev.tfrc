@@ -1,0 +1,10 @@
+# See https://www.terraform.io/cli/config/config-file#development-overrides-for-provider-developers
+# Use `go build -o ./examples/issues/xx/postgresql/terraform-provider-postgresql` in the project root to build the provider.
+# Then run terraform in this example directory.
+
+provider_installation {
+  dev_overrides {
+    "cyrilgdn/postgresql" = "./postgresql"
+  }
+  direct {}
+}
