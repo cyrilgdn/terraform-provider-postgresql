@@ -1,6 +1,5 @@
 package postgresql
 
-// Use Postgres as SQL driver
 import (
 	"fmt"
 	"strconv"
@@ -37,7 +36,7 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 				Type:        schema.TypeBool,
 				Default:     false,
 				Optional:    true,
-				Description: "Determines whether to include system schemas (pg_ prefix and information_schema)",
+				Description: "Determines whether to include system schemas (pg_ prefix, public and information_schema)",
 			},
 			"like_pattern": {
 				Type:        schema.TypeString,
