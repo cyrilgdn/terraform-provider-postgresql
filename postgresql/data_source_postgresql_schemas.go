@@ -19,6 +19,7 @@ var schemaQueries = map[string]string{
 	FROM information_schema.schemata s
 	WHERE s.schema_name NOT LIKE 'pg_%'
 	AND s.schema_name <> 'information_schema'
+	AND s.schema_name <> 'public'
 	`,
 }
 
