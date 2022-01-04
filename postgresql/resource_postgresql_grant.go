@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -31,10 +30,6 @@ var objectTypes = map[string]string{
 	"type":     "T",
 	"schema":   "n",
 }
-
-// grantMutex is used to ensure we only apply a single grant/revoke at the same time.
-// doing so avoids the "tuple concurrently updated" postgres error
-var grantMutex sync.Mutex
 
 func resourcePostgreSQLGrant() *schema.Resource {
 	return &schema.Resource{
@@ -148,14 +143,16 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 
 	database := d.Get("database").(string)
 
-	grantMutex.Lock()
-	defer grantMutex.Unlock()
-
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
+
+	role := d.Get("role").(string)
+	if err := pgLockRole(txn, role); err != nil {
+		return err
+	}
 
 	owners, err := getRolesToGrant(txn, d)
 	if err != nil {
@@ -199,14 +196,16 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 		)
 	}
 
-	grantMutex.Lock()
-	defer grantMutex.Unlock()
-
 	txn, err := startTransaction(db.client, d.Get("database").(string))
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
+
+	role := d.Get("role").(string)
+	if err := pgLockRole(txn, role); err != nil {
+		return err
+	}
 
 	owners, err := getRolesToGrant(txn, d)
 	if err != nil {
