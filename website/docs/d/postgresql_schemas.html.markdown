@@ -23,10 +23,12 @@ data "postgresql_schemas" "my_schemas" {
 ## Argument Reference
 
 * `database` - (Required) The PostgreSQL database which will be queried for schema names.
-* `include_system_schemas` - (Optional) Determines to whether to include system schemas (pg_ prefix, public and information_schema). Defaults to ``false``.
+* `include_system_schemas` - (Optional) Determines whether to include system schemas (pg_ prefix and information_schema). 'public' will always be included. Defaults to ``false``.
 * `like_pattern` - (Optional) Expression which will be pattern matched in the query using the PostgreSQL ``LIKE`` operator. 
 * `not_like_pattern` - (Optional) Expression which will be pattern matched in the query using the PostgreSQL ``NOT LIKE`` operator. 
 * `regex_pattern` - (Optional) Expression which will be pattern matched in the query using the PostgreSQL ``~`` (regular expression match) operator.
+
+Note that all 4 optional arguments can be used in conjunction.
 
 ## Attributes Reference
 

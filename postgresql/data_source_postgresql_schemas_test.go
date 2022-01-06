@@ -16,7 +16,8 @@ func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
 	defer teardown()
 
 	//Note that the db will also include 'test_schema' and 'dev_schema' from setupTestDatabase along with these schemas.
-	//In addition, the db includes 4 reserved schemas: "information_schema", "pg_catalog", "pg_toast" and "public".
+	//In addition, the db includes 4 system schemas: 'information_schema', 'pg_catalog', 'pg_toast' and 'public'.
+	//'public' is always included in the output regardless of the 'include_system_schemas' setting.
 	schemas := []string{"test_schema1", "test_schema2", "test_exp", "exp_test", "test_pg"}
 	createTestSchemas(t, dbSuffix, schemas, "")
 
@@ -31,7 +32,7 @@ func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
 			{
 				Config: testAccPostgresqlDataSourceSchemasDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false", "schemas.#", "7"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false", "schemas.#", "8"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true", "schemas.#", "11"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.no_match", "schemas.#", "0"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_exp", "schemas.#", "2"),

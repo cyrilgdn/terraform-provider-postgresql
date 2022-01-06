@@ -18,7 +18,6 @@ var schemaQueries = map[string]string{
 	FROM information_schema.schemata s
 	WHERE s.schema_name NOT LIKE 'pg_%'
 	AND s.schema_name <> 'information_schema'
-	AND s.schema_name <> 'public'
 	`,
 }
 
@@ -36,7 +35,7 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 				Type:        schema.TypeBool,
 				Default:     false,
 				Optional:    true,
-				Description: "Determines whether to include system schemas (pg_ prefix, public and information_schema)",
+				Description: "Determines whether to include system schemas (pg_ prefix and information_schema). 'public' will always be included.",
 			},
 			"like_pattern": {
 				Type:        schema.TypeString,
