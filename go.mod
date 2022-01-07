@@ -1,6 +1,6 @@
 module github.com/terraform-providers/terraform-provider-postgresql
 
-go 1.17
+go 1.16
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
