@@ -118,27 +118,33 @@ func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) 
 
 func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	currentUser := db.client.config.getDatabaseUsername()
+	var currentRole string
+	if strings.Contains(currentUser, "@") {
+		currentRole = strings.Split(currentUser, "@")[0]
+	} else {
+		currentRole = currentUser
+	}
 	owner := d.Get(dbOwnerAttr).(string)
 
 	var err error
 	if owner != "" {
-		// Take a lock on db currentUser to avoid multiple database creation at the same time
+		// Take a lock on db currentRole to avoid multiple database creation at the same time
 		// It can fail if they grant the same owner to current at the same time as it's not done in transaction.
 		lockTxn, err := startTransaction(db.client, "")
-		if err := pgLockRole(lockTxn, currentUser); err != nil {
+		if err := pgLockRole(lockTxn, currentRole); err != nil {
 			return err
 		}
 		defer deferredRollback(lockTxn)
 
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
-		ownerGranted, err := grantRoleMembership(db, owner, currentUser)
+		ownerGranted, err := grantRoleMembership(db, owner, currentRole)
 		if err != nil {
 			return err
 		}
 		if ownerGranted {
 			defer func() {
-				_, err = revokeRoleMembership(db, owner, currentUser)
+				_, err = revokeRoleMembership(db, owner, currentRole)
 			}()
 		}
 	}
@@ -155,7 +161,7 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	default:
 		// No owner specified in the config, default to using
 		// the connecting username.
-		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(currentUser))
+		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(currentRole))
 	}
 
 	switch v, ok := d.GetOk(dbTemplateAttr); {
