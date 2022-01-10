@@ -16,7 +16,8 @@ func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
 	defer teardown()
 
 	//Note that the db will also include 'test_schema' and 'dev_schema' from setupTestDatabase along with these schemas.
-	//In addition, the db includes 4 system schemas: 'information_schema', 'pg_catalog', 'pg_toast' and 'public'.
+	//In addition, the db includes 4 system schemas: 'information_schema', 'pg_catalog', 'pg_toast' and 'public'
+	//along with a variable number of 'pg_temp_*' and 'pg_toast_temp_*' temporary system schemas.
 	//'public' is always included in the output regardless of the 'include_system_schemas' setting.
 	schemas := []string{"test_schema1", "test_schema2", "test_exp", "exp_test", "test_pg"}
 	createTestSchemas(t, dbSuffix, schemas, "")
