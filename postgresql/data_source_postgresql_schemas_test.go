@@ -33,14 +33,17 @@ func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
 				Config: testAccPostgresqlDataSourceSchemasDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false", "schemas.#", "8"),
-					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true", "schemas.#", "11"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.no_match", "schemas.#", "0"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_exp", "schemas.#", "2"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_exp", "schemas.0", "test_exp"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_exp", "schemas.1", "exp_test"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_exp", "schemas.#", "2"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.like_pg", "schemas.#", "0"),
-					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_pg", "schemas.#", "2"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_pg", "schemas.#", "0"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_pg_double_wildcard", "schemas.#", "1"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_pg_double_wildcard", "schemas.0", "test_pg"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_information_schema", "schemas.#", "1"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_information_schema", "schemas.0", "information_schema"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.like_test_schema", "schemas.#", "3"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.like_test_schema", "schemas.0", "test_schema"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.like_test_schema", "schemas.1", "test_schema1"),
@@ -50,9 +53,8 @@ func TestAccPostgresqlDataSourceSchemas(t *testing.T) {
 					resource.TestCheckResourceAttr("data.postgresql_schemas.regex_test_schema", "schemas.1", "test_schema1"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.regex_test_schema", "schemas.2", "test_schema2"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_not_like_pg", "schemas.#", "9"),
-					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_pg", "schemas.#", "0"),
-					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_pg_regex_pg_toast", "schemas.#", "1"),
-					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_pg_regex_pg_toast", "schemas.0", "pg_toast"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_pg_regex_pg_catalog", "schemas.#", "1"),
+					resource.TestCheckResourceAttr("data.postgresql_schemas.system_true_like_pg_regex_pg_catalog", "schemas.0", "pg_catalog"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_test_not_like_test_schema_regex_test_schema", "schemas.#", "2"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_test_not_like_test_schema_regex_test_schema", "schemas.0", "test_schema"),
 					resource.TestCheckResourceAttr("data.postgresql_schemas.system_false_like_test_not_like_test_schema_regex_test_schema", "schemas.1", "test_schema2"),
@@ -67,11 +69,6 @@ func generateDataSourceSchemasConfig(dbName string) string {
 	data "postgresql_schemas" "system_false" {
 		database = "%[1]s"
 		include_system_schemas = false
-	}
-
-	data "postgresql_schemas" "system_true" {
-		database = "%[1]s"
-		include_system_schemas = true
 	}
 
 	data "postgresql_schemas" "no_match" {
@@ -96,10 +93,22 @@ func generateDataSourceSchemasConfig(dbName string) string {
 		like_pattern = "pg_%%"
 	}
 
-	data "postgresql_schemas" "system_true_like_pg" {
+	data "postgresql_schemas" "system_false_like_pg" {
+		database = "%[1]s"
+		include_system_schemas = false
+		like_pattern = "pg_%%"
+	}
+
+	data "postgresql_schemas" "system_false_like_pg_double_wildcard" {
+		database = "%[1]s"
+		include_system_schemas = false
+		like_pattern = "%%pg%%"
+	}
+
+	data "postgresql_schemas" "system_true_like_information_schema" {
 		database = "%[1]s"
 		include_system_schemas = true
-		like_pattern = "pg_%%"
+		like_pattern = "information_schema%%"
 	}
 
 	data "postgresql_schemas" "like_test_schema" {
@@ -118,17 +127,11 @@ func generateDataSourceSchemasConfig(dbName string) string {
 		not_like_pattern = "pg_%%"
 	}
 
-	data "postgresql_schemas" "system_false_like_pg" {
-		database = "%[1]s"
-		include_system_schemas = false
-		like_pattern = "pg_%%"
-	}
-
-	data "postgresql_schemas" "system_true_like_pg_regex_pg_toast" {
+	data "postgresql_schemas" "system_true_like_pg_regex_pg_catalog" {
 		database = "%[1]s"
 		include_system_schemas = true
 		like_pattern = "pg_%%"
-		regex_pattern = "^pg_toast.*$"
+		regex_pattern = "^pg_catalog.*$"
 	}
 
 	data "postgresql_schemas" "system_false_like_test_not_like_test_schema_regex_test_schema" {
