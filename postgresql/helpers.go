@@ -282,6 +282,12 @@ func setToPgIdentList(schema string, idents *schema.Set) string {
 	return strings.Join(quotedIdents, ",")
 }
 
+// helper to connect on a new database
+func dbConnect(client *Client, database string) (*DBConnection, error) {
+	client = client.config.NewClient(database)
+	return client.Connect()
+}
+
 // startTransaction starts a new DB transaction on the specified database.
 // If the database is specified and different from the one configured in the provider,
 // it will create a new connection pool if needed.
@@ -294,6 +300,11 @@ func startTransaction(client *Client, database string) (*sql.Tx, error) {
 		return nil, err
 	}
 
+	dbStats := db.Stats()
+	log.Printf(
+		"starting transaction (db=%s, max_connections=%d, open_connections=%d, wait_count=%d)",
+		database, dbStats.MaxOpenConnections, dbStats.InUse, dbStats.WaitCount,
+	)
 	txn, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("could not start transaction: %w", err)
@@ -314,8 +325,8 @@ func dbExists(db QueryAble, dbname string) (bool, error) {
 	return true, nil
 }
 
-func roleExists(txn *sql.Tx, rolname string) (bool, error) {
-	err := txn.QueryRow("SELECT 1 FROM pg_roles WHERE rolname=$1", rolname).Scan(&rolname)
+func roleExists(db QueryAble, rolname string) (bool, error) {
+	err := db.QueryRow("SELECT 1 FROM pg_roles WHERE rolname=$1", rolname).Scan(&rolname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -326,8 +337,8 @@ func roleExists(txn *sql.Tx, rolname string) (bool, error) {
 	return true, nil
 }
 
-func schemaExists(txn *sql.Tx, schemaname string) (bool, error) {
-	err := txn.QueryRow("SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname).Scan(&schemaname)
+func schemaExists(db QueryAble, schemaname string) (bool, error) {
+	err := db.QueryRow("SELECT 1 FROM pg_namespace WHERE nspname=$1", schemaname).Scan(&schemaname)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -239,6 +240,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 	dsn := c.config.connStr(c.databaseName)
 	conn, found := dbRegistry[dsn]
 	if !found {
+		log.Printf("creating new sql.DB (database %s, user: %s)", c.config.getDatabaseUsername(), c.databaseName)
 
 		var db *sql.DB
 		var err error
