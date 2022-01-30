@@ -149,6 +149,11 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	}
 	defer deferredRollback(txn)
 
+	role := d.Get("role").(string)
+	if err := pgLockRole(txn, role); err != nil {
+		return err
+	}
+
 	owners, err := getRolesToGrant(txn, d)
 	if err != nil {
 		return err
@@ -196,6 +201,11 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 		return err
 	}
 	defer deferredRollback(txn)
+
+	role := d.Get("role").(string)
+	if err := pgLockRole(txn, role); err != nil {
+		return err
+	}
 
 	owners, err := getRolesToGrant(txn, d)
 	if err != nil {
