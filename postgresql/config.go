@@ -29,6 +29,8 @@ const (
 	featureReplication
 	featureExtension
 	featurePrivileges
+	featureProcedure
+	featureRoutine
 	featurePrivilegesOnSchemas
 	featureForceDropDatabase
 	featurePid
@@ -68,6 +70,11 @@ var (
 		// for Postgresql < 9.
 		featurePrivileges: semver.MustParseRange(">=9.0.0"),
 
+		// Object PROCEDURE support
+		featureProcedure: semver.MustParseRange(">=11.0.0"),
+
+		// Object ROUTINE support
+		featureRoutine: semver.MustParseRange(">=11.0.0"),
 		// ALTER DEFAULT PRIVILEGES has ON SCHEMAS support
 		// for Postgresql >= 10
 		featurePrivilegesOnSchemas: semver.MustParseRange(">=10.0.0"),
