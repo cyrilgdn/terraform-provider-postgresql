@@ -1,11 +1,16 @@
 package postgresql
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 )
 
 const (
@@ -58,6 +63,21 @@ func Provider() *schema.Provider {
 				Description: "Password to be used if the PostgreSQL server demands password authentication",
 				Sensitive:   true,
 			},
+
+			"aws_rds_iam_auth": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Description: "Use rds_iam instead of password authentication " +
+					"(see: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html)",
+			},
+
+			"aws_rds_iam_profile": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "AWS profile to use for IAM auth",
+			},
+
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -161,6 +181,28 @@ func validateExpectedVersion(v interface{}, key string) (warnings []string, erro
 	return
 }
 
+func getRDSAuthToken(profile string, username string, host string, port int) (string, error) {
+	endpoint := fmt.Sprintf("%s:%d", host, port)
+
+	ctx := context.Background()
+
+	var awscfg aws.Config
+	var err error
+
+	if profile != "" {
+		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithSharedConfigProfile(profile))
+	} else {
+		awscfg, err = awsConfig.LoadDefaultConfig(ctx)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	token, err := auth.BuildAuthToken(ctx, endpoint, awscfg.Region, username, awscfg.Credentials)
+
+	return token, err
+}
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -174,12 +216,28 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	versionStr := d.Get("expected_version").(string)
 	version, _ := semver.ParseTolerant(versionStr)
 
+	host := d.Get("host").(string)
+	port := d.Get("port").(int)
+	username := d.Get("username").(string)
+
+	var password string
+	if d.Get("aws_rds_iam_auth").(bool) {
+		profile := d.Get("aws_rds_iam_profile").(string)
+		var err error
+		password, err = getRDSAuthToken(profile, username, host, port)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		password = d.Get("password").(string)
+	}
+
 	config := Config{
 		Scheme:            d.Get("scheme").(string),
-		Host:              d.Get("host").(string),
-		Port:              d.Get("port").(int),
-		Username:          d.Get("username").(string),
-		Password:          d.Get("password").(string),
+		Host:              host,
+		Port:              port,
+		Username:          username,
+		Password:          password,
 		DatabaseUsername:  d.Get("database_username").(string),
 		Superuser:         d.Get("superuser").(bool),
 		SSLMode:           sslMode,
