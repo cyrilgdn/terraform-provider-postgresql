@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 func TestAccPostgresqlRole_Basic(t *testing.T) {
@@ -53,12 +53,10 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					testAccCheckPostgresqlRoleExists("sub_role", []string{"myrole2", "role_simple"}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "name", "sub_role"),
 					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.0", "myrole2"),
+					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.1", "role_simple"),
 
 					testAccCheckPostgresqlRoleExists("role_with_search_path", nil, []string{"bar", "foo-with-hyphen"}),
-
-					// The int part in the attr name is the schema.HashString of the value.
-					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.719783566", "myrole2"),
-					resource.TestCheckResourceAttr("postgresql_role.sub_role", "roles.1784536243", "role_simple"),
 				),
 			},
 		},
@@ -160,10 +158,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "password", "titi"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "valid_until", "infinity"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.#", "1"),
-					// The int part in the attr name is the schema.HashString of the value.
-					resource.TestCheckResourceAttr(
-						"postgresql_role.update_role", "roles.2117325082", "group_role",
-					),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "roles.0", "group_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.0", "mysearchpath"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "30000"),

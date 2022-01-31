@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
@@ -80,7 +80,7 @@ resource "postgresql_default_privileges" "test_ro" {
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "with_grant_option", fmt.Sprintf("%t", withGrant)),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 						),
 					},
 					{
@@ -96,8 +96,8 @@ resource "postgresql_default_privileges" "test_ro" {
 								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT", "UPDATE"})
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1759376126", "UPDATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1", "UPDATE"),
 						),
 					},
 					{
@@ -142,7 +142,7 @@ func TestAccPostgresqlDefaultPrivileges_GrantOwner(t *testing.T) {
 	var stateConfig = fmt.Sprintf(`
 
 resource postgresql_role "test_owner" {
-       name = "test_owner"
+    name = "test_owner"
 }
 
 resource "postgresql_default_privileges" "test_ro" {
@@ -151,7 +151,7 @@ resource "postgresql_default_privileges" "test_ro" {
 	role        = "%s"
 	schema      = "public"
 	object_type = "table"
-	privileges   = ["SELECT"]
+	privileges  = ["SELECT"]
 }
 	`, dbName, roleName)
 
@@ -176,7 +176,7 @@ resource "postgresql_default_privileges" "test_ro" {
 					},
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 
 					// check if connected user does not have test_owner granted anymore.
 					checkUserMembership(t, dsn, config.Username, "test_owner", false),
@@ -210,7 +210,7 @@ resource "postgresql_default_privileges" "test_ro" {
 	owner       = "%s"
 	role        = "%s"
 	object_type = "table"
-	privileges   = %%s
+	privileges  = %%s
 }
 `
 			// We set PGUSER as owner as he will create the test table
@@ -237,7 +237,7 @@ resource "postgresql_default_privileges" "test_ro" {
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "table"),
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 						),
 					},
 					{
@@ -253,8 +253,87 @@ resource "postgresql_default_privileges" "test_ro" {
 								return testCheckTablesPrivileges(t, dbName, roleName, tables, []string{"SELECT", "UPDATE"})
 							},
 							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.3138006342", "SELECT"),
-							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1759376126", "UPDATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1", "UPDATE"),
+						),
+					},
+				},
+			})
+		})
+	}
+}
+
+// Test defaults privileges on schemas
+func TestAccPostgresqlDefaultPrivilegesOnSchemas(t *testing.T) {
+	skipIfNotAcc(t)
+
+	// We have to create the database outside of resource.Test
+	// because we need to create schemas to assert that grant are correctly applied
+	// and we don't have this resource yet
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Set default privileges to the test role then to public (i.e.: everyone)
+	for _, role := range []string{roleName, "public"} {
+		t.Run(role, func(t *testing.T) {
+
+			hclText := `
+resource "postgresql_default_privileges" "test_ro" {
+	database    = "%s"
+	owner       = "%s"
+	role        = "%s"
+	object_type = "schema"
+	privileges  = %%s
+}
+`
+			// We set PGUSER as owner as he will create the test schemas
+			var tfConfig = fmt.Sprintf(hclText, dbName, config.Username, role)
+
+			resource.Test(t, resource.TestCase{
+				PreCheck: func() {
+					testAccPreCheck(t)
+					testCheckCompatibleVersion(t, featurePrivileges)
+					testCheckCompatibleVersion(t, featurePrivilegesOnSchemas)
+				},
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: fmt.Sprintf(tfConfig, `[]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								schemas := []string{"test_schema2", "dev_schema2"}
+								// To test default privileges, we need to create a schema
+								// after having apply the state.
+								dropFunc := createTestSchemas(t, dbSuffix, schemas, "")
+								defer dropFunc()
+
+								return testCheckSchemasPrivileges(t, dbName, roleName, schemas, []string{})
+							},
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "object_type", "schema"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "0"),
+						),
+					},
+					{
+						Config: fmt.Sprintf(tfConfig, `["CREATE", "USAGE"]`),
+						Check: resource.ComposeTestCheckFunc(
+							func(*terraform.State) error {
+								schemas := []string{"test_schema2", "dev_schema2"}
+								// To test default privileges, we need to create a schema
+								// after having apply the state.
+								dropFunc := createTestSchemas(t, dbSuffix, schemas, "")
+								defer dropFunc()
+
+								return testCheckSchemasPrivileges(t, dbName, roleName, schemas, []string{"CREATE", "USAGE"})
+							},
+							resource.TestCheckResourceAttr(
+								"postgresql_default_privileges.test_ro", "id", fmt.Sprintf("%s_%s_noschema_%s_schema", role, dbName, config.Username),
+							),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "2"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "CREATE"),
+							resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.1", "USAGE"),
 						),
 					},
 				},

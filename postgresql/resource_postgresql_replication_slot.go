@@ -6,7 +6,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func resourcePostgreSQLReplicationSlot() *schema.Resource {
@@ -16,7 +16,7 @@ func resourcePostgreSQLReplicationSlot() *schema.Resource {
 		Delete: PGResourceFunc(resourcePostgreSQLReplicationSlotDelete),
 		Exists: PGResourceExistsFunc(resourcePostgreSQLReplicationSlotExists),
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Schema: map[string]*schema.Schema{

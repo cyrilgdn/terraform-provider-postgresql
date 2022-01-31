@@ -1,5 +1,40 @@
 ## Unreleased
 
+## 1.14.0 (August 22, 2021)
+
+FEATURE/FIXE:
+
+* `postgresql_replication_slot`: Create resource to manage replication slots - @BarnabyShearer
+  [#70](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/70)
+
+* `postgresql_physical_replication_slot`: Create resource to manage physical replication slots - @nerzhul
+  [#107](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/107)
+
+* `postgresql_grant`: Add `objects` setting to manage individual objects - @alec-rabold
+  [#105](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/105)
+
+* Disable `statement_timeout` for connections that need locks - @cyrilgdn
+  [#123](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/123)
+
+* `postgresql_default_privileges`: Allow empty privileges list - @alec-rabold
+  [#118](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/118)
+
+* `postgresql_extension`: Support CREATE EXTENSION ... CASCADE - @kostiantyn-nemchenko
+  [#108](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/108)
+
+* `postgresql_grant`: add foreign data wrapper and server support - @kostiantyn-nemchenko
+  [#109](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/109)
+
+DEV IMPROVEMENTS:
+
+* Run golangci-lint in GH actions and fix errors - @cyrilgdn
+  [#122](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/122)
+
+DOCUMENTATION:
+
+* `postgresql_grant`: Add missing `with_grant_option` documentation - @ryancausey
+  [#64](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/64)
+
 ## 1.13.0 (May 21, 2021)
 
 FEATURE/FIXE:

@@ -31,6 +31,7 @@ const (
 	featurePrivileges
 	featureProcedure
 	featureRoutine
+	featurePrivilegesOnSchemas
 	featureForceDropDatabase
 	featurePid
 )
@@ -74,6 +75,9 @@ var (
 
 		// Object ROUTINE support
 		featureRoutine: semver.MustParseRange(">=11.0.0"),
+		// ALTER DEFAULT PRIVILEGES has ON SCHEMAS support
+		// for Postgresql >= 10
+		featurePrivilegesOnSchemas: semver.MustParseRange(">=10.0.0"),
 
 		// DROP DATABASE WITH FORCE
 		// for Postgresql >= 13

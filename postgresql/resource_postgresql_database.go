@@ -8,8 +8,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/lib/pq"
 )
 
@@ -34,7 +34,7 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 		Delete: PGResourceFunc(resourcePostgreSQLDatabaseDelete),
 		Exists: PGResourceExistsFunc(resourcePostgreSQLDatabaseExists),
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Schema: map[string]*schema.Schema{
