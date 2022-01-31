@@ -752,7 +752,7 @@ resource postgresql_grant "test" {
 						Check: resource.ComposeTestCheckFunc(
 							resource.TestCheckResourceAttr("postgresql_grant.test", "id", fmt.Sprintf("%s_postgres_test_schema_procedure", role)),
 							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3223776964", "EXECUTE"),
+							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "EXECUTE"),
 							resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
 							testCheckProcedureExecutable(t, "test_role", "test_schema.test"),
 						),
@@ -820,7 +820,7 @@ resource postgresql_grant "test" {
 						Check: resource.ComposeTestCheckFunc(
 							resource.TestCheckResourceAttr("postgresql_grant.test", "id", fmt.Sprintf("%s_postgres_test_schema_routine", role)),
 							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
-							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.3223776964", "EXECUTE"),
+							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "EXECUTE"),
 							resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
 							testCheckFunctionExecutable(t, "test_role", "test_schema.test_function"),
 							testCheckProcedureExecutable(t, "test_role", "test_schema.test_procedure"),
