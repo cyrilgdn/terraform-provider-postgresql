@@ -11,7 +11,7 @@ FEATURES:
   [#134](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/134)
 
 * `postgresql_grant`: Support for procedures and routines - @alec-rabold
-  [#169](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/169)
+  [#128](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/128)
 
 FIXES:
 
