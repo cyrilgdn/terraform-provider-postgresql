@@ -1,8 +1,39 @@
 ## Unreleased
 
+## 1.15.0 (February 4,  2022)
+
+FEATURES:
+
+* `postgresql_default_privileges`: Support default privileges for schema - @kostiantyn-nemchenko
+  [#126](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/126)
+
+* `provider`: Add support for RDS IAM credentials - @Jell
+  [#134](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/134)
+
+* `postgresql_grant`: Support for procedures and routines - @alec-rabold
+  [#169](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/169)
+
+FIXES:
+
+* `postgresql_grant`: fix `tuple concurrently updated` error - @boekkooi-lengoo
+  [#169](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/169)
+
+DEV IMPROVEMENTS:
+
+* Upgrade Terraform SDK to v2- @cyrilgdn
+  [#140](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/140)
+
+* Remove vendor directory - @cyrilgdn (and lint fixed by @Jell )
+  [#139](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/139)
+  [#146](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/146)
+
+* docker-compose: Use Docker healthcheck to wait for Postgres to be available - @boekkooi-lengoo
+  [#168](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/168)
+
+
 ## 1.14.0 (August 22, 2021)
 
-FEATURE/FIXE:
+FEATURES / FIXES:
 
 * `postgresql_replication_slot`: Create resource to manage replication slots - @BarnabyShearer
   [#70](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/70)
@@ -37,7 +68,7 @@ DOCUMENTATION:
 
 ## 1.13.0 (May 21, 2021)
 
-FEATURE/FIXE:
+FEATURES / FIXES:
 
 * Stop locking catalog for every resources - @cyrilgdn
   [#80](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/80)
