@@ -3,10 +3,12 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"golang.org/x/oauth2/google"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -199,6 +201,30 @@ func getRDSAuthToken(profile string, username string, host string, port int) (st
 	return token, err
 }
 
+func createGoogleCredsFileIfNeeded() error {
+	if _, err := google.FindDefaultCredentials(context.Background()); err == nil {
+		return nil
+	}
+
+	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
+	if rawGoogleCredentials == "" {
+		return nil
+	}
+
+	tmpFile, err := os.CreateTemp("", "")
+	if err != nil {
+		return err
+	}
+	defer tmpFile.Close()
+
+	_, err = tmpFile.WriteString(rawGoogleCredentials)
+	if err != nil {
+		return err
+	}
+
+	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
+}
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -250,6 +276,12 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 			}
+		}
+	}
+
+	if config.Scheme == "gcppostgres" {
+		if err := createGoogleCredsFileIfNeeded(); err != nil {
+			return nil, err
 		}
 	}
 
