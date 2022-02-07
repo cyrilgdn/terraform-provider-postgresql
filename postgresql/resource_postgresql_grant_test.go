@@ -425,6 +425,9 @@ func TestAccPostgresqlGrantColumns(t *testing.T) {
 					func(*terraform.State) error {
 						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{"SELECT"}, []string{"test_column_one", "test_column_two"})
 					},
+					func(*terraform.State) error {
+						return testCheckColumnPrivileges(t, dbName, roleName, []string{testTables[0]}, []string{""}, []string{"test_column_one", "var"})
+					},
 				),
 			},
 			{
