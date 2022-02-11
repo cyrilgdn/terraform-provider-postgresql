@@ -273,6 +273,14 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 	return schema.NewSet(schema.HashString, s)
 }
 
+func stringSliceToSet(slice []string) *schema.Set {
+	s := make([]interface{}, len(slice))
+	for i, v := range slice {
+		s[i] = v
+	}
+	return schema.NewSet(schema.HashString, s)
+}
+
 func setToPgIdentList(schema string, idents *schema.Set) string {
 	quotedIdents := make([]string, idents.Len())
 	for i, ident := range idents.List() {

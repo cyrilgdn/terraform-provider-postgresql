@@ -68,9 +68,10 @@ func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 				Description: "Expression which will be pattern matched in the query using the PostgreSQL ~ (regular expression match) operator",
 			},
 			"schemas": {
-				Type:        schema.TypeList,
+				Type:        schema.TypeSet,
 				Computed:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
+				Set:         schema.HashString,
 				Description: "The list of PostgreSQL schemas retrieved by this data source",
 			},
 		},
@@ -113,7 +114,7 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 		schemas = append(schemas, schema)
 	}
 
-	d.Set("schemas", schemas)
+	d.Set("schemas", stringSliceToSet(schemas))
 	d.SetId(generateDataSourceSchemasID(d, database))
 
 	return nil
