@@ -2,7 +2,6 @@ package postgresql
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -143,7 +142,6 @@ func applyOptionalPatternMatchingToQuery(query string, queryContainsWhere bool, 
 		query = concatenateQueryWithPatternMatching(query, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern), &queryContainsWhere)
 	}
 
-	log.Println(query)
 	return query
 }
 
@@ -152,7 +150,6 @@ func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string
 
 	for _, pattern := range patterns {
 		formattedPatterns = append(formattedPatterns, fmt.Sprintf("'%s'", pattern.(string)))
-		log.Println(pattern.(string))
 	}
 	return fmt.Sprintf("%s (array[%s])", queryArrayKeyword, strings.Join(formattedPatterns, ","))
 
