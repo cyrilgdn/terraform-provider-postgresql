@@ -1,5 +1,3 @@
-## Unreleased
-
 ## 0.1.0 + 1.15.0 (February 23, 2022)
 
 FEATURES:
@@ -7,7 +5,10 @@ FEATURES:
 * `postgresql_schemas`: Add support for schema data sources - @SpencerBinXia
   [#171](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/171)
   
-cyrildgn
+## cyrildgn Original Changelog Below:
+
+## Unreleased
+
 ## 1.15.0 (February 4,  2022)
 
 FEATURES:
