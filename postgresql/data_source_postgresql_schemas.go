@@ -11,18 +11,17 @@ import (
 var schemaQueries = map[string]string{
 	"query_include_system_schemas": `
 	SELECT schema_name
-	FROM information_schema.schemata s
+	FROM information_schema.schemata
 	`,
 	"query_exclude_system_schemas": `
 	SELECT schema_name
-	FROM information_schema.schemata s
-	WHERE s.schema_name NOT LIKE 'pg_%'
-	AND s.schema_name <> 'information_schema'
+	FROM information_schema.schemata
+	WHERE schema_name NOT LIKE 'pg_%'
+	AND schema_name <> 'information_schema'
 	`,
 }
 
-const queryArrayKeywordAny = "ANY"
-const queryArrayKeywordAll = "ALL"
+const schemaPatternMatchingTarget = "schema_name"
 
 func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 	return &schema.Resource{
@@ -89,13 +88,16 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 	includeSystemSchemas := d.Get("include_system_schemas").(bool)
 
 	var query string
+	var queryConcatKeyword string
 	if includeSystemSchemas {
 		query = schemaQueries["query_include_system_schemas"]
+		queryConcatKeyword = queryConcatKeywordWhere
 	} else {
 		query = schemaQueries["query_exclude_system_schemas"]
+		queryConcatKeyword = queryConcatKeywordAnd
 	}
 
-	query = applyOptionalPatternMatchingToQuery(query, !includeSystemSchemas, d)
+	query = applyOptionalPatternMatchingToQuery(query, schemaPatternMatchingTarget, &queryConcatKeyword, d)
 
 	rows, err := txn.Query(query)
 	if err != nil {
@@ -117,54 +119,6 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 	d.SetId(generateDataSourceSchemasID(d, database))
 
 	return nil
-}
-
-func applyOptionalPatternMatchingToQuery(query string, queryContainsWhere bool, d *schema.ResourceData) string {
-	likeAnyPatterns := d.Get("like_any_patterns").([]interface{})
-	likeAllPatterns := d.Get("like_all_patterns").([]interface{})
-	notLikeAllPatterns := d.Get("not_like_all_patterns").([]interface{})
-	regexPattern := d.Get("regex_pattern").(string)
-
-	likePatternQuery := "s.schema_name LIKE"
-	notLikePatternQuery := "s.schema_name NOT LIKE"
-	regexPatternQuery := "s.schema_name ~"
-
-	if len(likeAnyPatterns) > 0 {
-		query = concatenateQueryWithPatternMatching(query, likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny), &queryContainsWhere)
-	}
-	if len(likeAllPatterns) > 0 {
-		query = concatenateQueryWithPatternMatching(query, likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll), &queryContainsWhere)
-	}
-	if len(notLikeAllPatterns) > 0 {
-		query = concatenateQueryWithPatternMatching(query, notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll), &queryContainsWhere)
-	}
-	if regexPattern != "" {
-		query = concatenateQueryWithPatternMatching(query, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern), &queryContainsWhere)
-	}
-
-	return query
-}
-
-func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string) string {
-	formattedPatterns := []string{}
-
-	for _, pattern := range patterns {
-		formattedPatterns = append(formattedPatterns, fmt.Sprintf("'%s'", pattern.(string)))
-	}
-	return fmt.Sprintf("%s (array[%s])", queryArrayKeyword, strings.Join(formattedPatterns, ","))
-
-}
-
-func concatenateQueryWithPatternMatching(query string, additionalQuery string, pattern string, queryContainsWhere *bool) string {
-	var keyword string
-	if *queryContainsWhere {
-		keyword = "AND"
-	} else {
-		keyword = "WHERE"
-		*queryContainsWhere = true
-	}
-
-	return fmt.Sprintf("%s %s %s %s", query, keyword, additionalQuery, pattern)
 }
 
 func generateDataSourceSchemasID(d *schema.ResourceData, databaseName string) string {
