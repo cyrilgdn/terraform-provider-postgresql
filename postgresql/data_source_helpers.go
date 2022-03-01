@@ -48,6 +48,19 @@ func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string
 	return fmt.Sprintf("%s (array[%s])", queryArrayKeyword, strings.Join(formattedPatterns, ","))
 }
 
+func applySchemaAndTypeFilteringToQuery(query string, queryConcatKeyword *string, schemaKeyword string, typeKeyword string, schemas []interface{}, types []interface{}) string {
+	if len(schemas) > 0 {
+		query = fmt.Sprintf("%s %s %s = %s", query, *queryConcatKeyword, schemaKeyword, generatePatternArrayString(schemas, queryArrayKeywordAny))
+		*queryConcatKeyword = queryConcatKeywordAnd
+	}
+	if len(types) > 0 {
+		query = fmt.Sprintf("%s %s %s = %s", query, *queryConcatKeyword, typeKeyword, generatePatternArrayString(types, queryArrayKeywordAny))
+		*queryConcatKeyword = queryConcatKeywordAnd
+	}
+
+	return query
+}
+
 func finalizeQueryWithPatternMatching(query string, patternMatchingTarget string, additionalQuery string, pattern string, queryConcatKeyword *string) string {
 	finalizedQuery := fmt.Sprintf("%s %s %s %s %s", query, *queryConcatKeyword, patternMatchingTarget, additionalQuery, pattern)
 

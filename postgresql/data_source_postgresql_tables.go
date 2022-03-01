@@ -13,6 +13,8 @@ const (
 	FROM information_schema.tables
 	`
 	tablePatternMatchingTarget = "table_name"
+	tableSchemaKeyword         = "table_schema"
+	tableTypeKeyword           = "table_type"
 )
 
 func dataSourcePostgreSQLDatabaseTables() *schema.Resource {
@@ -88,7 +90,7 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 	query := tableQuery
 	queryConcatKeyword := queryConcatKeywordWhere
 
-	query = applySchemaAndTableTypeFilteringToQuery(query, &queryConcatKeyword, d)
+	query = applySchemaAndTypeFilteringToQuery(query, &queryConcatKeyword, tableSchemaKeyword, tableTypeKeyword, d.Get("schemas").([]interface{}), d.Get("table_types").([]interface{}))
 	query = applyOptionalPatternMatchingToQuery(query, tablePatternMatchingTarget, &queryConcatKeyword, d)
 
 	rows, err := txn.Query(query)
@@ -111,22 +113,6 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 	d.SetId(generateDataSourceTablesID(d, database))
 
 	return nil
-}
-
-func applySchemaAndTableTypeFilteringToQuery(query string, queryConcatKeyword *string, d *schema.ResourceData) string {
-	schemas := d.Get("schemas").([]interface{})
-	tableTypes := d.Get("table_types").([]interface{})
-
-	if len(schemas) > 0 {
-		query = fmt.Sprintf("%s %s table_schema = %s", query, *queryConcatKeyword, generatePatternArrayString(schemas, queryArrayKeywordAny))
-		*queryConcatKeyword = queryConcatKeywordAnd
-	}
-	if len(tableTypes) > 0 {
-		query = fmt.Sprintf("%s %s table_type = %s", query, *queryConcatKeyword, generatePatternArrayString(tableTypes, queryArrayKeywordAny))
-		*queryConcatKeyword = queryConcatKeywordAnd
-	}
-
-	return query
 }
 
 func generateDataSourceTablesID(d *schema.ResourceData, databaseName string) string {
