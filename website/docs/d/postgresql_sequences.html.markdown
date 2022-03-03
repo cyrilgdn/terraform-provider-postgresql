@@ -34,4 +34,13 @@ Note that all optional arguments can be used in conjunction.
 
 ## Attributes Reference
 
-* `sequences` - The list of PostgreSQL sequences retrieved by this data source. Note that this returns a set, so duplicate sequence names across different schemas will be consolidated.
+* `sequences` - A list of PostgreSQL sequences retrieved by this data source. Each sequence consists of the fields documented below.
+___
+
+The `sequence` block consists of: 
+
+* `object_name` - The sequence name.
+
+* `schema_name` - The parent schema.
+
+* `data_type` - The sequence's data type as defined in ``information_schema.sequences``.

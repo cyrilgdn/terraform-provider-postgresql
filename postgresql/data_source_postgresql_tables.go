@@ -9,7 +9,7 @@ import (
 
 const (
 	tableQuery = `
-	SELECT table_name
+	SELECT table_name, table_schema, table_type
 	FROM information_schema.tables
 	`
 	tablePatternMatchingTarget = "table_name"
@@ -68,10 +68,24 @@ func dataSourcePostgreSQLDatabaseTables() *schema.Resource {
 				Description: "Expression which will be pattern matched against table names in the query using the PostgreSQL ~ (regular expression match) operator",
 			},
 			"tables": {
-				Type:        schema.TypeSet,
-				Computed:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Set:         schema.HashString,
+				Type:     schema.TypeList,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"object_name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"schema_name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"table_type": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+					},
+				},
 				Description: "The list of PostgreSQL tables retrieved by this data source. Note that this returns a set, so duplicate table names across different schemas will be consolidated.",
 			},
 		},
@@ -99,17 +113,24 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 	}
 	defer rows.Close()
 
-	tables := []string{}
+	tables := make([]interface{}, 0)
 	for rows.Next() {
-		var table string
+		var object_name string
+		var schema_name string
+		var table_type string
 
-		if err = rows.Scan(&table); err != nil {
-			return fmt.Errorf("could not scan table name for database: %w", err)
+		if err = rows.Scan(&object_name, &schema_name, &table_type); err != nil {
+			return fmt.Errorf("could not scan table output for database: %w", err)
 		}
-		tables = append(tables, table)
+
+		result := make(map[string]interface{})
+		result["object_name"] = object_name
+		result["schema_name"] = schema_name
+		result["table_type"] = table_type
+		tables = append(tables, result)
 	}
 
-	d.Set("tables", stringSliceToSet(tables))
+	d.Set("tables", tables)
 	d.SetId(generateDataSourceTablesID(d, database))
 
 	return nil

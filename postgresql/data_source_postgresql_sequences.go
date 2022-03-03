@@ -9,7 +9,7 @@ import (
 
 const (
 	sequenceQuery = `
-	SELECT sequence_name
+	SELECT sequence_name, sequence_schema, data_type
 	FROM information_schema.sequences
 	`
 	sequencePatternMatchingTarget = "sequence_name"
@@ -68,10 +68,24 @@ func dataSourcePostgreSQLDatabaseSequences() *schema.Resource {
 				Description: "Expression which will be pattern matched against sequence names in the query using the PostgreSQL ~ (regular expression match) operator",
 			},
 			"sequences": {
-				Type:        schema.TypeSet,
-				Computed:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Set:         schema.HashString,
+				Type:     schema.TypeList,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"object_name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"schema_name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"data_type": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+					},
+				},
 				Description: "The list of PostgreSQL sequence names retrieved by this data source. Note that this returns a set, so duplicate table names across different schemas will be consolidated.",
 			},
 		},
@@ -99,17 +113,24 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 	}
 	defer rows.Close()
 
-	sequences := []string{}
+	sequences := make([]interface{}, 0)
 	for rows.Next() {
-		var sequence string
+		var object_name string
+		var schema_name string
+		var data_type string
 
-		if err = rows.Scan(&sequence); err != nil {
-			return fmt.Errorf("could not scan sequence name for database: %w", err)
+		if err = rows.Scan(&object_name, &schema_name, &data_type); err != nil {
+			return fmt.Errorf("could not scan sequence output for database: %w", err)
 		}
-		sequences = append(sequences, sequence)
+
+		result := make(map[string]interface{})
+		result["object_name"] = object_name
+		result["schema_name"] = schema_name
+		result["data_type"] = data_type
+		sequences = append(sequences, result)
 	}
 
-	d.Set("sequences", stringSliceToSet(sequences))
+	d.Set("sequences", sequences)
 	d.SetId(generateDataSourceSequencesID(d, database))
 
 	return nil

@@ -34,4 +34,14 @@ Note that all optional arguments can be used in conjunction.
 
 ## Attributes Reference
 
-* `tables` - The list of PostgreSQL tables retrieved by this data source. Note that this returns a set, so duplicate table names across different schemas will be consolidated.
+* `tables` - A list of PostgreSQL tables retrieved by this data source. Each table consists of the fields documented below.
+___
+
+The `tables` block consists of: 
+
+* `object_name` - The table name.
+
+* `schema_name` - The parent schema.
+
+* `table_type` - The table type as defined in ``information_schema.tables``.
+
