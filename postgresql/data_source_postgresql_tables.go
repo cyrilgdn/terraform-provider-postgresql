@@ -104,7 +104,8 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 	query := tableQuery
 	queryConcatKeyword := queryConcatKeywordWhere
 
-	query = applySchemaAndTypeFilteringToQuery(query, &queryConcatKeyword, tableSchemaKeyword, tableTypeKeyword, d.Get("schemas").([]interface{}), d.Get("table_types").([]interface{}))
+	query = applyEqualsAnyFilteringToQuery(query, &queryConcatKeyword, tableSchemaKeyword, d.Get("schemas").([]interface{}))
+	query = applyEqualsAnyFilteringToQuery(query, &queryConcatKeyword, tableTypeKeyword, d.Get("table_types").([]interface{}))
 	query = applyOptionalPatternMatchingToQuery(query, tablePatternMatchingTarget, &queryConcatKeyword, d)
 
 	rows, err := txn.Query(query)

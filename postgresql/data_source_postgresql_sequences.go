@@ -14,7 +14,6 @@ const (
 	`
 	sequencePatternMatchingTarget = "sequence_name"
 	sequenceSchemaKeyword         = "sequence_schema"
-	sequenceTypeKeyword           = "data_type"
 )
 
 func dataSourcePostgreSQLDatabaseSequences() *schema.Resource {
@@ -33,13 +32,6 @@ func dataSourcePostgreSQLDatabaseSequences() *schema.Resource {
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				MinItems:    0,
 				Description: "The PostgreSQL schema(s) which will be queried for sequence names. Queries all schemas in the database by default",
-			},
-			"data_types": {
-				Type:        schema.TypeList,
-				Optional:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				MinItems:    0,
-				Description: "The PostgreSQL sequence data types which will be queried for sequence names. Includes all sequence data types by default.",
 			},
 			"like_any_patterns": {
 				Type:        schema.TypeList,
@@ -104,7 +96,7 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 	query := sequenceQuery
 	queryConcatKeyword := queryConcatKeywordWhere
 
-	query = applySchemaAndTypeFilteringToQuery(query, &queryConcatKeyword, sequenceSchemaKeyword, sequenceTypeKeyword, d.Get("schemas").([]interface{}), d.Get("data_types").([]interface{}))
+	query = applyEqualsAnyFilteringToQuery(query, &queryConcatKeyword, sequenceSchemaKeyword, d.Get("schemas").([]interface{}))
 	query = applyOptionalPatternMatchingToQuery(query, sequencePatternMatchingTarget, &queryConcatKeyword, d)
 
 	rows, err := txn.Query(query)
@@ -140,7 +132,6 @@ func generateDataSourceSequencesID(d *schema.ResourceData, databaseName string) 
 	return strings.Join([]string{
 		databaseName,
 		generatePatternArrayString(d.Get("schemas").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("data_types").([]interface{}), queryArrayKeywordAny),
 		generatePatternArrayString(d.Get("like_any_patterns").([]interface{}), queryArrayKeywordAny),
 		generatePatternArrayString(d.Get("like_all_patterns").([]interface{}), queryArrayKeywordAll),
 		generatePatternArrayString(d.Get("not_like_all_patterns").([]interface{}), queryArrayKeywordAll),

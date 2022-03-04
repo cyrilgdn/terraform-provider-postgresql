@@ -24,7 +24,6 @@ data "postgresql_sequences" "my_sequences" {
 
 * `database` - (Required) The PostgreSQL database which will be queried for sequence names.
 * `schemas` - (Optional) List of PostgreSQL schema(s) which will be queried for sequence names. Queries all schemas in the database by default.
-* `data_types` - (Optional) List of PostgreSQL sequence data types which will be queried for sequence names. Includes all data types by default.
 * `like_any_patterns` - (Optional) List of expressions which will be pattern matched against sequence names in the query using the PostgreSQL ``LIKE ANY`` operators. 
 * `like_all_patterns` - (Optional) List of expressions which will be pattern matched against sequence names in the query using the PostgreSQL ``LIKE ALL`` operators. 
 * `not_like_all_patterns` - (Optional) List of expressions which will be pattern matched against sequence names in the query using the PostgreSQL ``NOT LIKE ALL`` operators. 
