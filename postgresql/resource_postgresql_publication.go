@@ -99,31 +99,41 @@ func resourcePostgreSQLPublication() *schema.Resource {
 }
 
 func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceData) error {
-	if err := setPubName(db, d); err != nil {
+	database := getDatabaseForExtension(d, db.client.databaseName)
+	txn, err := startTransaction(db.client, database)
+	if err != nil {
 		return err
 	}
 
-	if err := setPubOwner(db, d); err != nil {
+	defer deferredRollback(txn)
+
+	if err := setPubOwner(txn, d); err != nil {
 		return err
 	}
 
-	if err := setPubTables(db, d); err != nil {
+	if err := setPubTables(txn, d); err != nil {
 		return err
 	}
 
-	if err := setPubParams(db, d); err != nil {
+	if err := setPubParams(txn, d); err != nil {
 		return err
 	}
 
+	if err := setPubName(txn, d); err != nil {
+		return err
+	}
+
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf("Error updating publication: %w", err)
+	}
 	return resourcePostgreSQLDatabaseReadImpl(db, d)
 }
 
-func setPubName(db *DBConnection, d *schema.ResourceData) error {
-	if !d.HasChange(dbNameAttr) {
+func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(pubNameAttr) {
 		return nil
 	}
-
-	oraw, nraw := d.GetChange(dbNameAttr)
+	oraw, nraw := d.GetChange(pubNameAttr)
 	o := oraw.(string)
 	n := nraw.(string)
 	if n == "" {
@@ -131,13 +141,13 @@ func setPubName(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	sql := fmt.Sprintf("ALTER PUBLICATION %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
-	if _, err := db.Exec(sql); err != nil {
+	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating publication name: %w", err)
 	}
 	return nil
 }
 
-func setPubOwner(db *DBConnection, d *schema.ResourceData) error {
+func setPubOwner(txn *sql.Tx, d *schema.ResourceData) error {
 	if !d.HasChange(pubOwnerAttr) {
 		return nil
 	}
@@ -148,21 +158,21 @@ func setPubOwner(db *DBConnection, d *schema.ResourceData) error {
 		return errors.New("Error setting publication owner to an empty string")
 	}
 	pubName := d.Get(pubNameAttr).(string)
-	sql := fmt.Sprintf("ALTER PUBLICATION %s SET OWNER TO %s", pq.QuoteIdentifier(pubName), pq.QuoteIdentifier(n))
-	if _, err := db.Exec(sql); err != nil {
+
+	sql := fmt.Sprintf("ALTER PUBLICATION %s OWNER TO %s", pubName, n)
+	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating publication owner: %w", err)
 	}
 	return nil
 }
 
-func setPubTables(db *DBConnection, d *schema.ResourceData) error {
+func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	if !d.HasChange(pubTablesAttr) {
 		return nil
 	}
 
 	var queries []string
 	pubName := d.Get(pubNameAttr).(string)
-	databaseName := d.Get(dbNameAttr).(string)
 
 	oraw, nraw := d.GetChange(pubTablesAttr)
 	oldSet := oraw.(*schema.Set)
@@ -180,26 +190,16 @@ func setPubTables(db *DBConnection, d *schema.ResourceData) error {
 		queries = append(queries, fmt.Sprintf("%s %s", pubName, queryBody))
 	}
 
-	txn, err := startTransaction(db.client, databaseName)
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
 	for _, query := range queries {
 		if _, err := txn.Exec(query); err != nil {
 			return err
 		}
 	}
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error altering publication: %w", err)
-	}
 	return nil
 }
 
-func setPubParams(db *DBConnection, d *schema.ResourceData) error {
+func setPubParams(txn *sql.Tx, d *schema.ResourceData) error {
 	pubName := d.Get(pubNameAttr).(string)
-	databaseName := d.Get(dbNameAttr).(string)
 	param_alter_template := "ALTER PUBLICATION %s SET (%s = %s)"
 	if d.HasChange(pubPublishAttr) {
 		param_name := "publish"
@@ -210,13 +210,8 @@ func setPubParams(db *DBConnection, d *schema.ResourceData) error {
 			newSet = append(newSet, elem.(string))
 		}
 
-		txn, err := startTransaction(db.client, databaseName)
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
 		sql := fmt.Sprintf(param_alter_template, pubName, param_name, pqQuoteLiteral(strings.Join(newSet, ", ")))
-		if _, err := db.Exec(sql); err != nil {
+		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("Error updating publication paramter '%s': %w", param_name, err)
 		}
 
@@ -226,13 +221,8 @@ func setPubParams(db *DBConnection, d *schema.ResourceData) error {
 		param_name := "publish_via_partition_root"
 		_, nraw := d.GetChange(pubPublisViaPartitionRoothAttr)
 
-		txn, err := startTransaction(db.client, databaseName)
-		if err != nil {
-			return err
-		}
-		defer deferredRollback(txn)
 		sql := fmt.Sprintf(param_alter_template, pubName, param_name, nraw.(bool))
-		if _, err := db.Exec(sql); err != nil {
+		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("Error updating publication paramter '%s': %w", param_name, err)
 		}
 	}
@@ -263,6 +253,9 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 
 	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
+		return err
+	}
+	if err := setPubOwner(txn, d); err != nil {
 		return err
 	}
 

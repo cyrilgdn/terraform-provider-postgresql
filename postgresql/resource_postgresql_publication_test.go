@@ -122,6 +122,7 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 	resource "postgresql_publication" "test" {
 		name     = "publication"
 		database = "%s"
+		owner = "test"
 	}
 	`, dbName)
 
@@ -138,9 +139,9 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", "name", "slot"),
+						"postgresql_publication.test", "name", "publication"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", "plugin", "test_decoding"),
+						"postgresql_publication.test", "owner", "test"),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "database", dbName),
 				),
