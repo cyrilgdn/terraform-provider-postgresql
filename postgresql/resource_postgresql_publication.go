@@ -38,11 +38,12 @@ func resourcePostgreSQLPublication() *schema.Resource {
 			pubNameAttr: {
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 			pubDatabaseAttr: {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
+				Computed:    true,
 				ForceNew:    true,
 				Description: "Sets the database to add the publication for",
 			},
@@ -92,14 +93,14 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     false,
-				Description: "When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects",
+				Description: "When true, will also drop all the objects that depend on the publication, and in turn all objects that depend on those objects",
 			},
 		},
 	}
 }
 
 func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceData) error {
-	database := getDatabaseForExtension(d, db.client.databaseName)
+	database := getDatabaseForPublication(d, db.client.databaseName)
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
@@ -126,7 +127,7 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("Error updating publication: %w", err)
 	}
-	return resourcePostgreSQLDatabaseReadImpl(db, d)
+	return resourcePostgreSQLPublicationReadImpl(db, d)
 }
 
 func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
@@ -140,10 +141,15 @@ func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
 		return errors.New("Error setting publication name to an empty string")
 	}
 
+	database := d.Get(pubDatabaseAttr).(string)
 	sql := fmt.Sprintf("ALTER PUBLICATION %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating publication name: %w", err)
 	}
+	d.SetId(generatePublicationID(d, database))
+	fmt.Println("TEST")
+	fmt.Println(database)
+	fmt.Println(generatePublicationID(d, database))
 	return nil
 }
 
