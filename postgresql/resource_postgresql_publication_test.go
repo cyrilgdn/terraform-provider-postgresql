@@ -98,7 +98,7 @@ func testAccCheckPostgresqlPublicationExists(n string) resource.TestCheckFunc {
 		exists, err := checkPublicationExists(txn, pubName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking replication slot %s", err)
+			return fmt.Errorf("Error checking publication %s", err)
 		}
 
 		if !exists {

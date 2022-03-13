@@ -401,7 +401,7 @@ func resourcePostgreSQLPublicationDelete(db *DBConnection, d *schema.ResourceDat
 	}
 	defer deferredRollback(txn)
 	dropMode := "RESTRICT"
-	if d.Get(extDropCascadeAttr).(bool) {
+	if d.Get(pubDropCascadeAttr).(bool) {
 		dropMode = "CASCADE"
 	}
 
