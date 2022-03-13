@@ -61,7 +61,6 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				ForceNew:    false,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Sets the tables list to publish",
-				// ConflictsWith: []string{pubAllTablesAttr},
 			},
 			pubAllTablesAttr: {
 				Type:        schema.TypeBool,
@@ -69,7 +68,6 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Computed:    true,
 				ForceNew:    true,
 				Description: "Sets the tables list to publish to ALL tables",
-				// ConflictsWith: []string{pubTablesAttr},
 			},
 			pubPublishAttr: {
 				Type:        schema.TypeList,
@@ -439,7 +437,7 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 
 	if isAllOk {
 		if ok {
-			return tablesString, fmt.Errorf("Attribute %s cannot be used when %s is true", pubTablesAttr, pubAllTablesAttr)
+			return tablesString, fmt.Errorf("attribute `%s` cannot be used when `%s` is true", pubTablesAttr, pubAllTablesAttr)
 		}
 		if isAllTables.(bool) {
 			tablesString = "FOR ALL TABLES"
@@ -464,7 +462,7 @@ func getPublicationParameters(d *schema.ResourceData) (string, error) {
 		validation := []string{"insert", "update", "delete", "truncate"}
 		for _, attr := range v.([]string) {
 			if !sliceContainsStr(validation, attr) {
-				return parametersString, fmt.Errorf("Invalid value of %s: %s. Should be at least on of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
+				return parametersString, fmt.Errorf("invalid value of `%s`: %s. Should be at least on of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
 			}
 		}
 

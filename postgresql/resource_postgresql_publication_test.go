@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -477,6 +478,69 @@ resource "postgresql_publication" "test" {
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", pubPublisViaPartitionRoothAttr, "false"),
 				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlPublication_ConflictTables(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+	testAccPostgresqlPublicationBasicConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+	tables = ["test.table1","test.table2"]
+	all_tables = true
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccPostgresqlPublicationBasicConfig,
+				ExpectError: regexp.MustCompile("attribute `tables` cannot be used when `all_tables` is true"),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlPublication_CheckPublishParams(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+	testAccPostgresqlPublicationBasicConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+	publish_param = ["insert","wrong_param"]
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccPostgresqlPublicationBasicConfig,
+				ExpectError: regexp.MustCompile("invalid value of `publish_param`: wrong_param. Should be at least on of 'insert, update, delete, truncate'"),
 			},
 		},
 	})
