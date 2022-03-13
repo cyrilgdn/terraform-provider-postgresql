@@ -20,7 +20,7 @@ const (
 	pubTablesAttr                  = "tables"
 	pubDropCascadeAttr             = "drop_cascade"
 	pubPublishAttr                 = "publish_param"
-	pubPublisViaPartitionRoothAttr = "publis_via_partition_rooth_param"
+	pubPublisViaPartitionRoothAttr = "publish_via_partition_root_param"
 )
 
 func resourcePostgreSQLPublication() *schema.Resource {
@@ -181,13 +181,13 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	added := arrayDifference(newList, oldList)
 
 	for _, p := range added {
-		queryBody := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, p.(string))
-		queries = append(queries, fmt.Sprintf("%s %s", pubName, queryBody))
+		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, p.(string))
+		queries = append(queries, query)
 	}
 
 	for _, p := range dropped {
-		queryBody := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, p.(string))
-		queries = append(queries, fmt.Sprintf("%s %s", pubName, queryBody))
+		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, p.(string))
+		queries = append(queries, query)
 	}
 
 	for _, query := range queries {
@@ -200,13 +200,13 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 
 func setPubParams(txn *sql.Tx, d *schema.ResourceData) error {
 	pubName := d.Get(pubNameAttr).(string)
-	param_alter_template := "ALTER PUBLICATION %s SET (%s = %s)"
+	param_alter_template := "ALTER PUBLICATION %s SET (%s = '%s')"
 	if d.HasChange(pubPublishAttr) {
 		param_name := "publish"
 		_, nraw := d.GetChange(pubPublishAttr)
 		var newSet []string
 
-		for _, elem := range nraw.(*schema.Set).List() {
+		for _, elem := range nraw.([]interface{}) {
 			newSet = append(newSet, elem.(string))
 		}
 
@@ -370,7 +370,6 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	case err != nil:
 		return fmt.Errorf("Error reading Publication tables: %w", err)
 	}
-
 	if pubinsert {
 		publishParams = append(publishParams, "insert")
 	}
@@ -383,12 +382,12 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	if pubtruncate {
 		publishParams = append(publishParams, "truncate")
 	}
+
 	d.SetId(generatePublicationID(d, database))
 	d.Set(pubNameAttr, PublicationName)
 	d.Set(pubDatabaseAttr, database)
 	d.Set(pubOwnerAttr, pubowner)
 	d.Set(pubTablesAttr, tables)
-	fmt.Println(tables)
 	d.Set(pubAllTablesAttr, puballtables)
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
