@@ -460,8 +460,8 @@ func getPublicationParameters(d *schema.ResourceData) (string, error) {
 	var attrs []string
 	if v, ok := d.GetOk(pubPublishAttr); ok {
 		validation := []string{"insert", "update", "delete", "truncate"}
-		for _, attr := range v.([]string) {
-			if !sliceContainsStr(validation, attr) {
+		for _, attr := range v.([]interface{}) {
+			if !sliceContainsStr(validation, attr.(string)) {
 				return parametersString, fmt.Errorf("invalid value of `%s`: %s. Should be at least on of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
 			}
 		}
