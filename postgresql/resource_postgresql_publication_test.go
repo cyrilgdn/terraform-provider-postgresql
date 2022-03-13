@@ -78,7 +78,7 @@ func testAccCheckPostgresqlPublicationExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No ID is set")
 		}
 
-		database, ok := rs.Primary.Attributes[extDatabaseAttr]
+		database, ok := rs.Primary.Attributes[pubDatabaseAttr]
 		if !ok {
 			return fmt.Errorf("No Attribute for database is set")
 		}
