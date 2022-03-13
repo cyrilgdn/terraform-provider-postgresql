@@ -55,32 +55,28 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Description: "Sets the owner of the publication",
 			},
 			pubTablesAttr: {
-				Type:     schema.TypeSet,
-				Optional: true,
-				ForceNew: false,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-				Set:           schema.HashString,
-				Description:   "Sets the tables list to publish",
-				ConflictsWith: []string{pubAllTablesAttr},
+				Type:        schema.TypeList,
+				Optional:    true,
+				Computed:    true,
+				ForceNew:    false,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "Sets the tables list to publish",
+				// ConflictsWith: []string{pubAllTablesAttr},
 			},
 			pubAllTablesAttr: {
-				Type:          schema.TypeBool,
-				Optional:      true,
-				ForceNew:      true,
-				Description:   "Sets the tables list to publish to ALL tables",
-				ConflictsWith: []string{pubTablesAttr},
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Computed:    true,
+				ForceNew:    true,
+				Description: "Sets the tables list to publish to ALL tables",
+				// ConflictsWith: []string{pubTablesAttr},
 			},
 			pubPublishAttr: {
-				Type:     schema.TypeSet,
-				Optional: true,
-				Computed: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
+				Type:        schema.TypeList,
+				Optional:    true,
+				Computed:    true,
 				MinItems:    1,
-				Set:         schema.HashString,
+				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Sets which DML operations will be published",
 			},
 			pubPublisViaPartitionRoothAttr: {
@@ -147,9 +143,6 @@ func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
 		return fmt.Errorf("Error updating publication name: %w", err)
 	}
 	d.SetId(generatePublicationID(d, database))
-	fmt.Println("TEST")
-	fmt.Println(database)
-	fmt.Println(generatePublicationID(d, database))
 	return nil
 }
 
@@ -181,18 +174,19 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	pubName := d.Get(pubNameAttr).(string)
 
 	oraw, nraw := d.GetChange(pubTablesAttr)
-	oldSet := oraw.(*schema.Set)
-	newSet := nraw.(*schema.Set)
-	dropped := oldSet.Difference(newSet).List()
-	added := newSet.Difference(oldSet).List()
+	oldList := oraw.([]interface{})
+	newList := nraw.([]interface{})
+
+	dropped := arrayDifference(oldList, newList)
+	added := arrayDifference(newList, oldList)
 
 	for _, p := range added {
-		queryBody := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, p)
+		queryBody := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, p.(string))
 		queries = append(queries, fmt.Sprintf("%s %s", pubName, queryBody))
 	}
 
 	for _, p := range dropped {
-		queryBody := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, p)
+		queryBody := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, p.(string))
 		queries = append(queries, fmt.Sprintf("%s %s", pubName, queryBody))
 	}
 
@@ -323,7 +317,8 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	}
 	defer deferredRollback(txn)
 
-	var tableFullNames pq.ByteaArray
+	var tables []string
+	var publishParams []string
 	var puballtables, pubinsert, pubupdate, pubdelete, pubtruncate, pubviaroot bool
 	var pubowner string
 	columns := []string{"puballtables", "pubinsert", "pubupdate", "pubdelete", "pubtruncate", "r.rolname as pubownername"}
@@ -342,47 +337,59 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	}
 
 	query := fmt.Sprintf("SELECT %s FROM pg_catalog.pg_publication as p join pg_catalog.pg_roles as r on p.pubowner = r.oid WHERE pubname = $1", strings.Join(columns, ", "))
-	err = txn.QueryRow(query, PublicationName).Scan(values...)
+	err = txn.QueryRow(query, pqQuoteLiteral(PublicationName)).Scan(values...)
+
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL Publication (%s) not found for database %s", PublicationName, database)
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading publication: %w", err)
+		return fmt.Errorf("Error reading publication info: %w", err)
 	}
 
-	query = `SELECT schemaname, tablename ` +
+	query = `SELECT CONCAT(schemaname,'.',tablename) as fulltablename ` +
 		`FROM pg_catalog.pg_publication_tables ` +
 		`WHERE pubname = $1`
 
-	err = txn.QueryRow(query, pqQuoteLiteral(PublicationName)).Scan(&tableFullNames)
+	rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
+	defer rows.Close()
+
+	for rows.Next() {
+		var table string
+		err := rows.Scan(&table)
+		if err != nil {
+			return err
+		}
+		tables = append(tables, table)
+	}
+
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] No PostgreSQL tables found for Publication %s", PublicationName)
 	case err != nil:
-		return fmt.Errorf("Error reading Publication: %w", err)
+		return fmt.Errorf("Error reading Publication tables: %w", err)
 	}
 
-	tables := pgArrayToSet(tableFullNames)
-	publishParams := schema.NewSet(schema.HashString, make([]interface{}, 0))
 	if pubinsert {
-		publishParams.Add("insert")
+		publishParams = append(publishParams, "insert")
 	}
 	if pubupdate {
-		publishParams.Add("update")
+		publishParams = append(publishParams, "update")
 	}
 	if pubdelete {
-		publishParams.Add("delete")
+		publishParams = append(publishParams, "delete")
 	}
 	if pubtruncate {
-		publishParams.Add("truncate")
+		publishParams = append(publishParams, "truncate")
 	}
 	d.SetId(generatePublicationID(d, database))
 	d.Set(pubNameAttr, PublicationName)
 	d.Set(pubDatabaseAttr, database)
 	d.Set(pubOwnerAttr, pubowner)
 	d.Set(pubTablesAttr, tables)
+	fmt.Println(tables)
+	d.Set(pubAllTablesAttr, puballtables)
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
 		d.Set(pubPublisViaPartitionRoothAttr, pubviaroot)
@@ -428,19 +435,23 @@ func getDatabaseForPublication(d *schema.ResourceData, databaseName string) stri
 
 func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	var tablesString string
-	tables, ok := d.GetOk(pubAllTablesAttr)
+	tables, ok := d.GetOk(pubTablesAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 
 	if isAllOk {
 		if ok {
-			return tablesString, fmt.Errorf("Attribute %s cannot be used when %s is true", pubAllTablesAttr, pubAllTablesAttr)
+			return tablesString, fmt.Errorf("Attribute %s cannot be used when %s is true", pubTablesAttr, pubAllTablesAttr)
 		}
 		if isAllTables.(bool) {
 			tablesString = "FOR ALL TABLES"
 		}
 	} else {
 		if ok {
-			tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tables.([]string), ", "))
+			var tlist []string
+			for _, t := range tables.([]interface{}) {
+				tlist = append(tlist, t.(string))
+			}
+			tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
 		}
 	}
 

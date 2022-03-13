@@ -10,6 +10,7 @@ import (
 )
 
 func TestAccPostgresqlPublication_Basic(t *testing.T) {
+
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
@@ -143,6 +144,77 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 						"postgresql_publication.test", "owner", "test"),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "database", dbName),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlPublication_UpdateTables(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2", "test_schema.test_table_3"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	testAccPostgresqlPublicationBaseConfig := fmt.Sprintf(`
+	resource "postgresql_publication" "test" {
+		name     = "publication"
+		database = "%s"
+		tables = ["test_schema.test_table_1", "test_schema.test_table_2"]
+	}
+	`, dbName)
+
+	testAccPostgresqlPublicationUpdateTablesConfig := fmt.Sprintf(`
+	resource "postgresql_publication" "test" {
+		name     = "publication"
+		database = "%s"
+		tables = ["test_schema.test_table_1", "test_schema.test_table_3"]
+	}
+	`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:  testAccPostgresqlPublicationBaseConfig,
+				Destroy: false,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubAllTablesAttr, "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubTablesAttr), "test_schema.test_table_1"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubTablesAttr), "test_schema.test_table_2"),
+				),
+			},
+			{
+				Config: testAccPostgresqlPublicationUpdateTablesConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "database", dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubAllTablesAttr, "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubTablesAttr), "test_schema.test_table_1"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubTablesAttr), "test_schema.test_table_3"),
 				),
 			},
 		},
