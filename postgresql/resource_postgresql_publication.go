@@ -497,6 +497,7 @@ func validatedPublicationPublishParams(paramList []interface{}) ([]string, error
 
 func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (string, error) {
 	parmeterSQLTemplate := ""
+	returnValue := ""
 	pubParams := make(map[string]string, 2)
 	if d.IsNewResource() {
 		if v, ok := d.GetOk(pubPublisViaPartitionRoothAttr); ok {
@@ -545,10 +546,10 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 	for k, v := range pubParams {
 		paramsList = append(paramsList, fmt.Sprintf("%s = %s", k, v))
 	}
-	// if len(attrs) > 0 {
-	// 	parametersString = fmt.Sprintf("WITH (%s)", strings.Join(attrs, ", "))
-	// }
-	return fmt.Sprintf(parmeterSQLTemplate, strings.Join(paramsList, ",")), nil
+	if len(paramsList) > 0 {
+		returnValue = fmt.Sprintf(parmeterSQLTemplate, strings.Join(paramsList, ","))
+	}
+	return returnValue, nil
 }
 
 func generatePublicationID(d *schema.ResourceData, databaseName string) string {
