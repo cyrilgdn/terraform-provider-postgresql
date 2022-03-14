@@ -480,7 +480,7 @@ resource "postgresql_publication" "test" {
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", fmt.Sprintf("%s.2", pubPublishAttr), "delete"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", fmt.Sprintf("%s.2", pubPublishAttr), "truncate"),
+						"postgresql_publication.test", fmt.Sprintf("%s.3", pubPublishAttr), "truncate"),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", pubPublisViaPartitionRoothAttr, "false"),
 				),
