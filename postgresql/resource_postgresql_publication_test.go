@@ -103,6 +103,7 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -153,6 +154,7 @@ func TestAccPostgresqlPublication_UpdateTables(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -223,6 +225,7 @@ func TestAccPostgresqlPublication_UpdatePublishParams(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -300,6 +303,7 @@ func TestAccPostgresqlPublication_UpdateOwner(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -361,6 +365,7 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -440,6 +445,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -502,6 +508,7 @@ resource "postgresql_publication" "test" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -510,6 +517,73 @@ resource "postgresql_publication" "test" {
 			{
 				Config:      testAccPostgresqlPublicationBasicConfig,
 				ExpectError: regexp.MustCompile("attribute `tables` cannot be used when `all_tables` is true"),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlPublication_CheckPublishViaRoot(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+	testAccPostgresqlPublicationBasicConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+}
+`, dbName)
+
+	testAccPostgresqlPublicationBasicUpdateKeysWithPartitionRoot := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+	publish_param = ["update","delete"]
+	publish_via_partition_root_param = true
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
+			testCheckCompatibleVersion(t, featurePublishViaRoot)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlPublicationBasicConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s", pubPublisViaPartitionRoothAttr), "false"),
+				),
+			},
+			{
+				Config: testAccPostgresqlPublicationBasicUpdateKeysWithPartitionRoot,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.#", pubPublishAttr), "2"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubPublishAttr), "update"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubPublishAttr), "delete"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s", pubPublisViaPartitionRoothAttr), "true"),
+				),
 			},
 		},
 	})
@@ -549,13 +623,13 @@ resource "postgresql_publication" "test" {
 	name     = "publication"
 	database = "%s"
 	publish_param = ["update","delete"]
-	publish_via_partition_root_param = true
 }
 `, dbName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -589,8 +663,6 @@ resource "postgresql_publication" "test" {
 						"postgresql_publication.test", fmt.Sprintf("%s.0", pubPublishAttr), "update"),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", fmt.Sprintf("%s.1", pubPublishAttr), "delete"),
-					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", fmt.Sprintf("%s", pubPublisViaPartitionRoothAttr), "true"),
 				),
 			},
 			{
