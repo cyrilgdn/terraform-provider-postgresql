@@ -526,7 +526,30 @@ func TestAccPostgresqlPublication_CheckPublishParams(t *testing.T) {
 resource "postgresql_publication" "test" {
 	name     = "publication"
 	database = "%s"
+	publish_param = ["insert"]
+}
+`, dbName)
+	testAccPostgresqlPublicationWrongKeys := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
 	publish_param = ["insert","wrong_param"]
+}
+`, dbName)
+
+	testAccPostgresqlPublicationDuplicateKeys := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+	publish_param = ["insert","insert"]
+}
+`, dbName)
+	testAccPostgresqlPublicationBasicUpdateKeys := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+	publish_param = ["update","delete"]
+	publish_via_partition_root_param = true
 }
 `, dbName)
 
@@ -539,9 +562,44 @@ resource "postgresql_publication" "test" {
 		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config:      testAccPostgresqlPublicationBasicConfig,
+				Config: testAccPostgresqlPublicationBasicConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.#", pubPublishAttr), "1"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubPublishAttr), "insert"),
+				),
+			},
+			{
+				Config: testAccPostgresqlPublicationBasicUpdateKeys,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.#", pubPublishAttr), "2"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubPublishAttr), "update"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubPublishAttr), "delete"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s", pubPublisViaPartitionRoothAttr), "true"),
+				),
+			},
+			{
+				Config:      testAccPostgresqlPublicationWrongKeys,
 				ExpectError: regexp.MustCompile("invalid value of `publish_param`: wrong_param. Should be at least on of 'insert, update, delete, truncate'"),
 			},
+			{
+				Config:      testAccPostgresqlPublicationDuplicateKeys,
+				ExpectError: regexp.MustCompile("'insert' is duplicated for attribute `tables`")},
 		},
 	})
 }

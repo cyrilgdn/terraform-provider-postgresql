@@ -110,7 +110,7 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 		return err
 	}
 
-	if err := setPubParams(txn, d); err != nil {
+	if err := setPubParams(txn, d, db.version.Major); err != nil {
 		return err
 	}
 
@@ -174,7 +174,9 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	oraw, nraw := d.GetChange(pubTablesAttr)
 	oldList := oraw.([]interface{})
 	newList := nraw.([]interface{})
-
+	if elem, ok := isUniqueArr(newList); !ok {
+		return fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
+	}
 	dropped := arrayDifference(oldList, newList)
 	added := arrayDifference(newList, oldList)
 
@@ -196,35 +198,19 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setPubParams(txn *sql.Tx, d *schema.ResourceData) error {
+func setPubParams(txn *sql.Tx, d *schema.ResourceData, dbVersionMajor uint64) error {
 	pubName := d.Get(pubNameAttr).(string)
-	param_alter_template := "ALTER PUBLICATION %s SET (%s = '%s')"
-	if d.HasChange(pubPublishAttr) {
-		param_name := "publish"
-		_, nraw := d.GetChange(pubPublishAttr)
-		var newSet []string
-
-		for _, elem := range nraw.([]interface{}) {
-			newSet = append(newSet, elem.(string))
-		}
-
-		sql := fmt.Sprintf(param_alter_template, pubName, param_name, pqQuoteLiteral(strings.Join(newSet, ", ")))
-		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("Error updating publication paramter '%s': %w", param_name, err)
-		}
-
+	param_alter_template := "ALTER PUBLICATION %s %s"
+	publicationParametersString, err := getPublicationParameters(d, dbVersionMajor)
+	if err != nil {
+		return err
 	}
-
-	if d.HasChange(pubPublisViaPartitionRoothAttr) {
-		param_name := "publish_via_partition_root"
-		_, nraw := d.GetChange(pubPublisViaPartitionRoothAttr)
-
-		sql := fmt.Sprintf(param_alter_template, pubName, param_name, nraw.(bool))
+	if publicationParametersString != "" {
+		sql := fmt.Sprintf(param_alter_template, pubName, publicationParametersString)
 		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("Error updating publication paramter '%s': %w", param_name, err)
+			return fmt.Errorf("Error updating publication paramters: %w", err)
 		}
 	}
-
 	return nil
 }
 
@@ -236,7 +222,7 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	if err != nil {
 		return err
 	}
-	publicationParameters, err := getPublicationParameters(d)
+	publicationParameters, err := getPublicationParameters(d, db.version.Major)
 	if err != nil {
 		return err
 	}
@@ -445,6 +431,9 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	} else {
 		if ok {
 			var tlist []string
+			if elem, ok := isUniqueArr(tables.([]interface{})); !ok {
+				return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
+			}
 			for _, t := range tables.([]interface{}) {
 				tlist = append(tlist, t.(string))
 			}
@@ -455,26 +444,79 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	return tablesString, nil
 }
 
-func getPublicationParameters(d *schema.ResourceData) (string, error) {
-	parametersString := ""
+func validatedPublicationPublishParams(paramList []interface{}) ([]string, error) {
 	var attrs []string
-	if v, ok := d.GetOk(pubPublishAttr); ok {
-		validation := []string{"insert", "update", "delete", "truncate"}
-		for _, attr := range v.([]interface{}) {
-			if !sliceContainsStr(validation, attr.(string)) {
-				return parametersString, fmt.Errorf("invalid value of `%s`: %s. Should be at least on of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
+	if elem, ok := isUniqueArr(paramList); !ok {
+		return make([]string, 0), fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
+	}
+
+	validation := []string{"insert", "update", "delete", "truncate"}
+	for _, attr := range paramList {
+		if !sliceContainsStr(validation, attr.(string)) {
+			return make([]string, 0), fmt.Errorf("invalid value of `%s`: %s. Should be at least on of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
+		}
+		attrs = append(attrs, attr.(string))
+	}
+
+	// attrs = append(attrs, fmt.Sprintf("publish = '%s'", strings.Join(attrs, ", ")))
+
+	return attrs, nil
+}
+
+func getPublicationParameters(d *schema.ResourceData, dbVersionMajor uint64) (string, error) {
+	parmeterSQLTemplate := ""
+	pubParams := make(map[string]string, 2)
+	if d.IsNewResource() {
+		if v, ok := d.GetOk(pubPublisViaPartitionRoothAttr); ok {
+			if dbVersionMajor < 13 {
+				return "", fmt.Errorf(
+					"publish_via_partition_root attribute is supported only for postgres version 13 and above",
+				)
+			}
+			pubParams["publish_via_partition_root"] = fmt.Sprintf("%v", v.(bool))
+		}
+
+		if v, ok := d.GetOk(pubPublishAttr); ok {
+			if paramsList, err := validatedPublicationPublishParams(v.([]interface{})); err != nil {
+				return "", err
+			} else {
+				pubParams["publish"] = fmt.Sprintf("'%s'", strings.Join(paramsList, ", "))
 			}
 		}
 
-		attrs = append(attrs, fmt.Sprintf("publish = '%s'", strings.Join(v.([]string), ", ")))
+		parmeterSQLTemplate = "WITH (%s)"
+
+	} else {
+
+		if d.HasChange(pubPublisViaPartitionRoothAttr) {
+			if dbVersionMajor < 13 {
+				return "", fmt.Errorf(
+					"publish_via_partition_root attribute is supported only for postgres version 13 and above",
+				)
+			}
+			_, nraw := d.GetChange(pubPublisViaPartitionRoothAttr)
+			pubParams["publish_via_partition_root"] = fmt.Sprintf("%v", nraw.(bool))
+		}
+
+		if d.HasChange(pubPublishAttr) {
+			_, nraw := d.GetChange(pubPublishAttr)
+			if paramsList, err := validatedPublicationPublishParams(nraw.([]interface{})); err != nil {
+				return "", err
+			} else {
+				pubParams["publish"] = fmt.Sprintf("'%s'", strings.Join(paramsList, ", "))
+			}
+		}
+		parmeterSQLTemplate = "SET (%s)"
+
 	}
-	if v, ok := d.GetOk(pubPublisViaPartitionRoothAttr); ok {
-		attrs = append(attrs, fmt.Sprintf("publish_via_partition_root = %v", v.(bool)))
+	var paramsList []string
+	for k, v := range pubParams {
+		paramsList = append(paramsList, fmt.Sprintf("%s = %s", k, v))
 	}
-	if len(attrs) > 0 {
-		parametersString = fmt.Sprintf("WITH %s", strings.Join(attrs, ", "))
-	}
-	return parametersString, nil
+	// if len(attrs) > 0 {
+	// 	parametersString = fmt.Sprintf("WITH (%s)", strings.Join(attrs, ", "))
+	// }
+	return fmt.Sprintf(parmeterSQLTemplate, strings.Join(paramsList, ",")), nil
 }
 
 func generatePublicationID(d *schema.ResourceData, databaseName string) string {

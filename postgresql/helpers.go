@@ -491,3 +491,14 @@ func arrayDifference(a, b []interface{}) (diff []interface{}) {
 	}
 	return
 }
+
+func isUniqueArr(arr []interface{}) (interface{}, bool) {
+	keys := make(map[interface{}]bool, len(arr))
+	for _, entry := range arr {
+		if _, value := keys[entry]; value {
+			return entry, false
+		}
+		keys[entry] = true
+	}
+	return nil, true
+}
