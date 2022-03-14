@@ -94,6 +94,13 @@ func resourcePostgreSQLPublication() *schema.Resource {
 }
 
 func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf(
+			"postgresql_publication resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	database := getDatabaseForPublication(d, db.client.databaseName)
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
@@ -110,7 +117,7 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 		return err
 	}
 
-	if err := setPubParams(txn, d, db.version.Major); err != nil {
+	if err := setPubParams(txn, d, db.featureSupported(featurePublishViaRoot)); err != nil {
 		return err
 	}
 
@@ -198,10 +205,10 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setPubParams(txn *sql.Tx, d *schema.ResourceData, dbVersionMajor uint64) error {
+func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) error {
 	pubName := d.Get(pubNameAttr).(string)
 	param_alter_template := "ALTER PUBLICATION %s %s"
-	publicationParametersString, err := getPublicationParameters(d, dbVersionMajor)
+	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled)
 	if err != nil {
 		return err
 	}
@@ -215,6 +222,12 @@ func setPubParams(txn *sql.Tx, d *schema.ResourceData, dbVersionMajor uint64) er
 }
 
 func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf(
+			"postgresql_publication resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
 
 	name := d.Get(pubNameAttr).(string)
 	databaseName := getDatabaseForPublication(d, db.client.databaseName)
@@ -222,7 +235,7 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	if err != nil {
 		return err
 	}
-	publicationParameters, err := getPublicationParameters(d, db.version.Major)
+	publicationParameters, err := getPublicationParameters(d, db.featureSupported(featurePublishViaRoot))
 	if err != nil {
 		return err
 	}
@@ -253,6 +266,12 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 }
 
 func resourcePostgreSQLPublicationExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	if !db.featureSupported(featurePublication) {
+		return false, fmt.Errorf(
+			"postgresql_publication resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
 
 	var PublicationName string
 
@@ -290,6 +309,13 @@ func resourcePostgreSQLPublicationRead(db *DBConnection, d *schema.ResourceData)
 }
 
 func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf(
+			"postgresql_publication resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	database, PublicationName, err := getDBPublicationName(d, db.client)
 	if err != nil {
 		return err
@@ -315,7 +341,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		&pubowner,
 	}
 
-	if db.version.Major > 13 {
+	if db.featureSupported(featurePublishViaRoot) {
 		columns = append(columns, "pubviaroot")
 		values = append(values, &pubviaroot)
 	}
@@ -381,6 +407,12 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 }
 
 func resourcePostgreSQLPublicationDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featurePublication) {
+		return fmt.Errorf(
+			"postgresql_publication resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
 
 	PublicationName := d.Get(pubNameAttr).(string)
 	database := getDatabaseForPublication(d, db.client.databaseName)
@@ -463,12 +495,12 @@ func validatedPublicationPublishParams(paramList []interface{}) ([]string, error
 	return attrs, nil
 }
 
-func getPublicationParameters(d *schema.ResourceData, dbVersionMajor uint64) (string, error) {
+func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (string, error) {
 	parmeterSQLTemplate := ""
 	pubParams := make(map[string]string, 2)
 	if d.IsNewResource() {
 		if v, ok := d.GetOk(pubPublisViaPartitionRoothAttr); ok {
-			if dbVersionMajor < 13 {
+			if !pubViaRootEnabled {
 				return "", fmt.Errorf(
 					"publish_via_partition_root attribute is supported only for postgres version 13 and above",
 				)
@@ -489,7 +521,7 @@ func getPublicationParameters(d *schema.ResourceData, dbVersionMajor uint64) (st
 	} else {
 
 		if d.HasChange(pubPublisViaPartitionRoothAttr) {
-			if dbVersionMajor < 13 {
+			if !pubViaRootEnabled {
 				return "", fmt.Errorf(
 					"publish_via_partition_root attribute is supported only for postgres version 13 and above",
 				)
