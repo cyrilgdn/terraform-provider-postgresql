@@ -666,13 +666,26 @@ func createRevokeQuery(d *schema.ResourceData) string {
 		}
 	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
 		objects := d.Get("objects").(*schema.Set)
+		privileges := d.Get("privileges").(*schema.Set)
 		if objects.Len() > 0 {
-			query = fmt.Sprintf(
-				"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
-				strings.ToUpper(d.Get("object_type").(string)),
-				setToPgIdentList(d.Get("schema").(string), objects),
-				pq.QuoteIdentifier(d.Get("role").(string)),
-			)
+			if privileges.Len() > 0 {
+				// Revoking specific privileges instead of all privileges
+				// to avoid messing with column level grants
+				query = fmt.Sprintf(
+					"REVOKE %s ON %s %s FROM %s",
+					setToPgIdentSimpleList(privileges),
+					strings.ToUpper(d.Get("object_type").(string)),
+					setToPgIdentList(d.Get("schema").(string), objects),
+					pq.QuoteIdentifier(d.Get("role").(string)),
+				)
+			} else {
+				query = fmt.Sprintf(
+					"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
+					strings.ToUpper(d.Get("object_type").(string)),
+					setToPgIdentList(d.Get("schema").(string), objects),
+					pq.QuoteIdentifier(d.Get("role").(string)),
+				)
+			}
 		} else {
 			query = fmt.Sprintf(
 				"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
@@ -705,6 +718,10 @@ func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	query := createRevokeQuery(d)
+	if len(query) == 0 {
+		// Query is empty, don't run anything
+		return nil
+	}
 	if _, err := txn.Exec(query); err != nil {
 		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
