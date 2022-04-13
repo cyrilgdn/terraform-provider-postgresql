@@ -99,7 +99,7 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 	resource "postgresql_publication" "test" {
 		name     = "publication"
 		database = "%s"
-		owner = "test"
+		owner = postgresql_role.test.name
 	}
 	`, dbName)
 
