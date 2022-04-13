@@ -331,19 +331,22 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	var publishParams []string
 	var puballtables, pubinsert, pubupdate, pubdelete, pubtruncate, pubviaroot bool
 	var pubowner string
-	columns := []string{"puballtables", "pubinsert", "pubupdate", "pubdelete", "pubtruncate", "r.rolname as pubownername"}
+	columns := []string{"puballtables", "pubinsert", "pubupdate", "pubdelete", "r.rolname as pubownername"}
 	values := []interface{}{
 		&puballtables,
 		&pubinsert,
 		&pubupdate,
 		&pubdelete,
-		&pubtruncate,
 		&pubowner,
 	}
 
 	if db.featureSupported(featurePublishViaRoot) {
 		columns = append(columns, "pubviaroot")
 		values = append(values, &pubviaroot)
+	}
+	if db.featureSupported(featurePubTruncate) {
+		columns = append(columns, "pubtruncate")
+		values = append(values, &pubtruncate)
 	}
 
 	query := fmt.Sprintf("SELECT %s FROM pg_catalog.pg_publication as p join pg_catalog.pg_roles as r on p.pubowner = r.oid WHERE pubname = $1", strings.Join(columns, ", "))

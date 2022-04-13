@@ -93,6 +93,9 @@ func TestAccPostgresqlPublication_Database(t *testing.T) {
 	dbName, _ := getTestDBNames(dbSuffix)
 
 	testAccPostgresqlPublicationDatabaseConfig := fmt.Sprintf(`
+	resource "postgresql_role" "test" {
+		name = "test"
+	}
 	resource "postgresql_publication" "test" {
 		name     = "publication"
 		database = "%s"

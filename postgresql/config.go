@@ -35,6 +35,7 @@ const (
 	featureForceDropDatabase
 	featurePid
 	featurePublishViaRoot
+	featurePubTruncate
 	featurePublication
 )
 
@@ -91,6 +92,9 @@ var (
 
 		// attribute publish_via_partition_root for partition is supported
 		featurePublishViaRoot: semver.MustParseRange(">=13.0.0"),
+
+		// attribute pubtruncate for publications is supported
+		featurePubTruncate: semver.MustParseRange(">=11.0.0"),
 
 		// publication is Supported
 		featurePublication: semver.MustParseRange(">=10.0.0"),
