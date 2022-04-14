@@ -19,6 +19,7 @@ any stand-by cluster to replicate physically data.
 resource "postgresql_physical_replication_slot" "my_slot" {
   name  = "my_slot"
 }
+```
 
 ## Argument Reference
 

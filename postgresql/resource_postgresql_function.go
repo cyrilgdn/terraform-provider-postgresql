@@ -14,6 +14,7 @@ const (
 	funcSchemaAttr      = "schema"
 	funcBodyAttr        = "body"
 	funcArgsAttr        = "args"
+	funcReturnsAttr     = "returns"
 	funcDropCascadeAttr = "drop_cascade"
 
 	funcArgTypeAttr    = "type"
@@ -38,6 +39,7 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Computed:    true,
+				ForceNew:    true,
 				Description: "Schema where the function is located. If not specified, the provider default schema is used.",
 			},
 			funcNameAttr: {
@@ -60,12 +62,14 @@ func resourcePostgreSQLFunction() *schema.Resource {
 							Type:        schema.TypeString,
 							Description: "The argument name. The name may be required for some languages or depending on the argument mode.",
 							Optional:    true,
+							ForceNew:    true,
 						},
 						funcArgModeAttr: {
 							Type:        schema.TypeString,
 							Description: "The argument mode. One of: IN, OUT, INOUT, or VARIADIC",
 							Optional:    true,
 							Default:     "IN",
+							ForceNew:    true,
 						},
 						funcArgDefaultAttr: {
 							Type:        schema.TypeString,
@@ -77,6 +81,12 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Optional:    true,
 				ForceNew:    true,
 				Description: "Function argument definitions.",
+			},
+			funcReturnsAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				ForceNew:    true,
+				Description: "Function return type.",
 			},
 			funcBodyAttr: {
 				Type:        schema.TypeString,
@@ -233,7 +243,13 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 		}
 	}
 
-	fmt.Fprint(b, ")\n", d.Get(funcBodyAttr).(string))
+	b.WriteString(")")
+
+	if v, ok := d.GetOk(funcReturnsAttr); ok {
+		fmt.Fprint(b, " RETURNS ", v.(string))
+	}
+
+	fmt.Fprint(b, "\n", d.Get(funcBodyAttr).(string))
 
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
