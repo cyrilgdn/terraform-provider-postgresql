@@ -13,7 +13,7 @@ const (
 	funcNameAttr        = "name"
 	funcSchemaAttr      = "schema"
 	funcBodyAttr        = "body"
-	funcArgsAttr        = "args"
+	funcArgAttr         = "arg"
 	funcReturnsAttr     = "returns"
 	funcDropCascadeAttr = "drop_cascade"
 
@@ -48,7 +48,7 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				ForceNew:    true,
 				Description: "Name of the function.",
 			},
-			funcArgsAttr: {
+			funcArgAttr: {
 				Type: schema.TypeList,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -210,7 +210,7 @@ func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) 
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting extension: %w", err)
+		return fmt.Errorf("Error deleting function: %w", err)
 	}
 
 	d.SetId("")
@@ -248,10 +248,12 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 
 	fmt.Fprint(b, pq.QuoteIdentifier(d.Get(funcNameAttr).(string)), " (")
 
-	if args, ok := d.GetOk(funcArgsAttr); ok {
-		args := args.([]map[string]interface{})
+	if args, ok := d.GetOk(funcArgAttr); ok {
+		args := args.([]interface{})
 
 		for i, arg := range args {
+			arg := arg.(map[string]interface{})
+
 			if i > 0 {
 				b.WriteRune(',')
 			}
@@ -269,7 +271,11 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 			b.WriteString(arg[funcArgTypeAttr].(string))
 
 			if v, ok := arg[funcArgDefaultAttr]; ok {
-				fmt.Fprint(b, " DEFAULT ", v.(string))
+				v := v.(string)
+
+				if len(v) > 0 {
+					fmt.Fprint(b, " DEFAULT ", v)
+				}
 			}
 		}
 
@@ -298,7 +304,7 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating extension: %w", err)
+		return fmt.Errorf("Error creating function: %w", err)
 	}
 
 	return nil
@@ -313,10 +319,12 @@ func getFunctionSignature(d *schema.ResourceData) string {
 
 	fmt.Fprint(b, pq.QuoteIdentifier(d.Get(funcNameAttr).(string)), "(")
 
-	if args, ok := d.GetOk(funcArgsAttr); ok {
+	if args, ok := d.GetOk(funcArgAttr); ok {
 		argCount := 0
 
-		for _, arg := range args.([]map[string]interface{}) {
+		for _, arg := range args.([]interface{}) {
+			arg := arg.(map[string]interface{})
+
 			mode := "IN"
 
 			if v, ok := arg[funcArgModeAttr]; ok {
