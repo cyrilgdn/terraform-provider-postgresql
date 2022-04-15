@@ -50,4 +50,4 @@ resource "postgresql_function" "increment" {
   This should be everything after the return type in the function definition.
 
 * `drop_cascade` - (Optional) True to automatically drop objects that depend on the function (such as 
-  operators or triggers), and in turn all objects that depend on those objects.
+  operators or triggers), and in turn all objects that depend on those objects. Default is false.
