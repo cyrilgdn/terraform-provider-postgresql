@@ -104,6 +104,13 @@ func resourcePostgreSQLFunction() *schema.Resource {
 }
 
 func resourcePostgreSQLFunctionCreate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_function resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	if err := createFunction(db, d, false); err != nil {
 		return err
 	}
@@ -112,6 +119,13 @@ func resourcePostgreSQLFunctionCreate(db *DBConnection, d *schema.ResourceData) 
 }
 
 func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	if !db.featureSupported(featureFunction) {
+		return false, fmt.Errorf(
+			"postgresql_function resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	signature := getFunctionSignature(d)
 	functionExists := false
 
@@ -127,6 +141,13 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 }
 
 func resourcePostgreSQLFunctionRead(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_function resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	return resourcePostgreSQLFunctionReadImpl(db, d)
 }
 
@@ -163,6 +184,13 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 }
 
 func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_function resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	signature := getFunctionSignature(d)
 
 	txn, err := startTransaction(db.client, "")
@@ -191,6 +219,13 @@ func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) 
 }
 
 func resourcePostgreSQLFunctionUpdate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_function resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	if err := createFunction(db, d, true); err != nil {
 		return err
 	}
