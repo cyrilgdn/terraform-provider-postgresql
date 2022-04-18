@@ -102,7 +102,7 @@ The following arguments are supported:
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
 * `max_connections` - (Optional) Set the maximum number of open connections to
-  the database. The default is `4`.  Zero means unlimited open connections.
+  the database. The default is `20`.  Zero means unlimited open connections.
 * `expected_version` - (Optional) Specify a hint to Terraform regarding the
   expected version that the provider will be talking with.  This is a required
   hint in order for Terraform to talk with an ancient version of PostgreSQL.
