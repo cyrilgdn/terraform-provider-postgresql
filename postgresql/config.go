@@ -250,7 +250,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var db *sql.DB
 		var err error
 		if c.config.Scheme == "postgres" {
-			db, err = sql.Open("postgres", dsn)
+			db, err = sql.Open(proxyDriverName, dsn)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}

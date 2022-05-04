@@ -194,4 +194,10 @@ resource postgresql_database "test_db" {
 }
 ```
 
+### SOCKS5 Proxy Support
+
+The provider supports connecting via a SOCKS5 proxy, but when the `postgres` scheme is used. It can be configured by setting the `ALL_PROXY` or `all_proxy` environment variable to a value like `socks5://127.0.0.1:1080`.
+
+The `NO_PROXY` or `no_proxy` environment can also be set to opt out of proxying for specific hostnames or ports.
+
 [libpq]: https://pkg.go.dev/github.com/lib/pq
