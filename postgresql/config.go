@@ -12,9 +12,11 @@ import (
 
 	"github.com/blang/semver"
 	_ "github.com/lib/pq" //PostgreSQL db
+	"gocloud.dev/gcp"
+	"gocloud.dev/gcp/cloudsql"
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
-	_ "gocloud.dev/postgres/gcppostgres"
+	"gocloud.dev/postgres/gcppostgres"
 )
 
 type featureName uint
@@ -145,6 +147,7 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+	GCPIPAddrTypeOpts []string
 }
 
 // Client struct holding connection string
@@ -251,6 +254,8 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var err error
 		if c.config.Scheme == "postgres" {
 			db, err = sql.Open("postgres", dsn)
+		} else if c.config.Scheme == "gcppostgres" {
+			db, err = c.gcpPostgresOpen(context.Background(), dsn)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
@@ -310,4 +315,37 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	}
 
 	return &version, nil
+}
+
+// Decorator to avoid complexity on connect() func
+func (c *Client) gcpPostgresOpen(ctx context.Context, dsn string) (*sql.DB, error) {
+
+	creds, err := gcp.DefaultCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), creds.TokenSource)
+	if err != nil {
+		return nil, err
+	}
+
+	certSource := cloudsql.NewCertSource(client)
+
+	// Override defaults with provider's configs
+	if c.config.GCPIPAddrTypeOpts != nil {
+		certSource.IPAddrTypes = c.config.GCPIPAddrTypeOpts
+	}
+
+	gcpOpener := gcppostgres.URLOpener{
+		CertSource: certSource,
+	}
+
+	// Parse URL
+	dsnUrl, err := url.Parse(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	return gcpOpener.OpenPostgresURL(ctx, dsnUrl)
 }

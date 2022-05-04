@@ -152,6 +152,15 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"gcp_ip_addr_type_opts": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				MaxItems: 2,
+				MinItems: 1,
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -250,6 +259,24 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 			}
+		}
+	}
+
+	if data, ok := d.GetOk("gcp_ip_addr_type_opts"); ok {
+		ipAddrTypes := []string{}
+
+		if list, ok := data.([]interface{}); ok {
+			for _, valueRaw := range list {
+				if value, ok := valueRaw.(string); ok {
+					ipAddrTypes = append(ipAddrTypes, value)
+				}
+			}
+		}
+
+		if len(ipAddrTypes) > 0 {
+			config.GCPIPAddrTypeOpts = append(config.GCPIPAddrTypeOpts, ipAddrTypes...)
+		} else {
+			config.GCPIPAddrTypeOpts = nil
 		}
 	}
 
