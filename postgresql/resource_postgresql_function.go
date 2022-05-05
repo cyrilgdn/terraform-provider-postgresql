@@ -129,14 +129,8 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 	signature := getFunctionSignature(d)
 	functionExists := false
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
 	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL", signature)
-	err = txn.QueryRow(query).Scan(&functionExists)
+	err := db.QueryRow(query).Scan(&functionExists)
 	return functionExists, err
 }
 
@@ -154,19 +148,13 @@ func resourcePostgreSQLFunctionRead(db *DBConnection, d *schema.ResourceData) er
 func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	signature := getFunctionSignature(d)
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
 	var funcSchema, funcName string
 
 	query := `SELECT n.nspname, p.proname ` +
 		`FROM pg_proc p ` +
 		`LEFT JOIN pg_namespace n ON p.pronamespace = n.oid ` +
 		`WHERE p.oid = to_regprocedure($1)`
-	err = txn.QueryRow(query, signature).Scan(&funcSchema, &funcName)
+	err := db.QueryRow(query, signature).Scan(&funcSchema, &funcName)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL function: %s", signature)
@@ -193,24 +181,14 @@ func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) 
 
 	signature := getFunctionSignature(d)
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
 	dropMode := "RESTRICT"
 	if v, ok := d.GetOk(funcDropCascadeAttr); ok && v.(bool) {
 		dropMode = "CASCADE"
 	}
 
 	sql := fmt.Sprintf("DROP FUNCTION IF EXISTS %s %s", signature, dropMode)
-	if _, err := txn.Exec(sql); err != nil {
+	if _, err := db.Exec(sql); err != nil {
 		return err
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting function: %w", err)
 	}
 
 	d.SetId("")
@@ -292,19 +270,9 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 
 	fmt.Fprint(b, "\n", d.Get(funcBodyAttr).(string))
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
 	sql := b.String()
-	if _, err := txn.Exec(sql); err != nil {
+	if _, err := db.Exec(sql); err != nil {
 		return err
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating function: %w", err)
 	}
 
 	return nil
