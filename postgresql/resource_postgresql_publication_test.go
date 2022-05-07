@@ -658,7 +658,7 @@ resource "postgresql_publication" "test" {
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPostgresqlPublicationBasicConfig,
-				ExpectError: regexp.MustCompile("attribute `tables` cannot be used when `all_tables` is true"),
+				ExpectError: regexp.MustCompile("Conflicting configuration arguments.*"),
 			},
 		},
 	})
@@ -706,7 +706,7 @@ resource "postgresql_publication" "test" {
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", pubDatabaseAttr, dbName),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", fmt.Sprintf("%s", pubPublisViaPartitionRoothAttr), "false"),
+						"postgresql_publication.test", pubPublisViaPartitionRoothAttr, "false"),
 				),
 			},
 			{
@@ -724,7 +724,7 @@ resource "postgresql_publication" "test" {
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", fmt.Sprintf("%s.1", pubPublishAttr), "delete"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", fmt.Sprintf("%s", pubPublisViaPartitionRoothAttr), "true"),
+						"postgresql_publication.test", pubPublisViaPartitionRoothAttr, "true"),
 				),
 			},
 		},
@@ -809,7 +809,7 @@ resource "postgresql_publication" "test" {
 			},
 			{
 				Config:      testAccPostgresqlPublicationWrongKeys,
-				ExpectError: regexp.MustCompile("invalid value of `publish_param`: wrong_param. Should be at least on of 'insert, update, delete, truncate'"),
+				ExpectError: regexp.MustCompile("could not update publication tables: Error getting publication paramters: invalid value of `publish_param`: wrong_param. Should be at least one of 'insert, update, delete, truncate'"),
 			},
 			{
 				Config:      testAccPostgresqlPublicationDuplicateKeys,

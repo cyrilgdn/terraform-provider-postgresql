@@ -1,14 +1,13 @@
 package postgresql
 
 import (
-	"bytes"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/lib/pq"
 )
 
@@ -36,9 +35,10 @@ func resourcePostgreSQLPublication() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			pubNameAttr: {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: false,
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     false,
+				ValidateFunc: validation.StringIsNotEmpty,
 			},
 			pubDatabaseAttr: {
 				Type:        schema.TypeString,
@@ -48,19 +48,21 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Description: "Sets the database to add the publication for",
 			},
 			pubOwnerAttr: {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Computed:    true,
-				ForceNew:    false,
-				Description: "Sets the owner of the publication",
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				ForceNew:     false,
+				Description:  "Sets the owner of the publication",
+				ValidateFunc: validation.StringIsNotEmpty,
 			},
 			pubTablesAttr: {
-				Type:        schema.TypeList,
-				Optional:    true,
-				Computed:    true,
-				ForceNew:    false,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Description: "Sets the tables list to publish",
+				Type:          schema.TypeList,
+				Optional:      true,
+				Computed:      true,
+				ForceNew:      false,
+				Elem:          &schema.Schema{Type: schema.TypeString},
+				Description:   "Sets the tables list to publish",
+				ConflictsWith: []string{pubAllTablesAttr},
 			},
 			pubAllTablesAttr: {
 				Type:        schema.TypeBool,
@@ -104,25 +106,25 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 	database := getDatabaseForPublication(d, db.client.databaseName)
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not start transaction: %w", err)
 	}
 
 	defer deferredRollback(txn)
 
 	if err := setPubOwner(txn, d); err != nil {
-		return err
+		return fmt.Errorf("could not update publication owner: %w", err)
 	}
 
 	if err := setPubTables(txn, d); err != nil {
-		return err
+		return fmt.Errorf("could not update publication tables: %w", err)
 	}
 
 	if err := setPubParams(txn, d, db.featureSupported(featurePublishViaRoot)); err != nil {
-		return err
+		return fmt.Errorf("could not update publication tables: %w", err)
 	}
 
 	if err := setPubName(txn, d); err != nil {
-		return err
+		return fmt.Errorf("could not update publication name: %w", err)
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -138,10 +140,6 @@ func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
 	oraw, nraw := d.GetChange(pubNameAttr)
 	o := oraw.(string)
 	n := nraw.(string)
-	if n == "" {
-		return errors.New("Error setting publication name to an empty string")
-	}
-
 	database := d.Get(pubDatabaseAttr).(string)
 	sql := fmt.Sprintf("ALTER PUBLICATION %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
@@ -158,9 +156,6 @@ func setPubOwner(txn *sql.Tx, d *schema.ResourceData) error {
 
 	_, nraw := d.GetChange(pubOwnerAttr)
 	n := nraw.(string)
-	if n == "" {
-		return errors.New("Error setting publication owner to an empty string")
-	}
 	pubName := d.Get(pubNameAttr).(string)
 
 	sql := fmt.Sprintf("ALTER PUBLICATION %s OWNER TO %s", pubName, n)
@@ -199,7 +194,7 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 
 	for _, query := range queries {
 		if _, err := txn.Exec(query); err != nil {
-			return err
+			return fmt.Errorf("could not alter publication table: %w", err)
 		}
 	}
 	return nil
@@ -207,13 +202,13 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 
 func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) error {
 	pubName := d.Get(pubNameAttr).(string)
-	param_alter_template := "ALTER PUBLICATION %s %s"
+	paramAlterTemplate := "ALTER PUBLICATION %s %s"
 	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error getting publication paramters: %w", err)
 	}
 	if publicationParametersString != "" {
-		sql := fmt.Sprintf(param_alter_template, pubName, publicationParametersString)
+		sql := fmt.Sprintf(paramAlterTemplate, pubName, publicationParametersString)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("Error updating publication paramters: %w", err)
 		}
@@ -233,27 +228,25 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	databaseName := getDatabaseForPublication(d, db.client.databaseName)
 	tables, err := getTablesForPublication(d)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not get tables for publication: %w", err)
 	}
 	publicationParameters, err := getPublicationParameters(d, db.featureSupported(featurePublishViaRoot))
 	if err != nil {
-		return err
+		return fmt.Errorf("could not get publication parameters: %w", err)
 	}
 	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not start transaction: %w", err)
 	}
 	defer deferredRollback(txn)
 
-	b := bytes.NewBufferString("CREATE PUBLICATION ")
-	fmt.Fprint(b, name, " ", tables, " ", publicationParameters)
+	sql := fmt.Sprintf("CREATE PUBLICATION %s %s %s", name, tables, publicationParameters)
 
-	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
-		return err
+		return fmt.Errorf("Error creating Publication: %w", err)
 	}
 	if err := setPubOwner(txn, d); err != nil {
-		return err
+		return fmt.Errorf("could not set publication owner during creation: %w", err)
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -318,12 +311,12 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 
 	database, PublicationName, err := getDBPublicationName(d, db.client)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not get publication name: %w", err)
 	}
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not start transaction: %w", err)
 	}
 	defer deferredRollback(txn)
 
@@ -366,13 +359,16 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		`WHERE pubname = $1`
 
 	rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
+	if err != nil {
+		return fmt.Errorf("could not get publication tables: %w", err)
+	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var table string
 		err := rows.Scan(&table)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not get tables: %w", err)
 		}
 		tables = append(tables, table)
 	}
@@ -417,12 +413,12 @@ func resourcePostgreSQLPublicationDelete(db *DBConnection, d *schema.ResourceDat
 		)
 	}
 
-	PublicationName := d.Get(pubNameAttr).(string)
+	publicationName := d.Get(pubNameAttr).(string)
 	database := getDatabaseForPublication(d, db.client.databaseName)
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not start transaction: %w", err)
 	}
 	defer deferredRollback(txn)
 	dropMode := "RESTRICT"
@@ -430,9 +426,9 @@ func resourcePostgreSQLPublicationDelete(db *DBConnection, d *schema.ResourceDat
 		dropMode = "CASCADE"
 	}
 
-	sql := fmt.Sprintf("DROP PUBLICATION %s %s", pq.QuoteIdentifier(PublicationName), dropMode)
+	sql := fmt.Sprintf("DROP PUBLICATION %s %s", pq.QuoteIdentifier(publicationName), dropMode)
 	if _, err := txn.Exec(sql); err != nil {
-		return err
+		return fmt.Errorf("could not execute sql: %w", err)
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -488,7 +484,7 @@ func validatedPublicationPublishParams(paramList []interface{}) ([]string, error
 	validation := []string{"insert", "update", "delete", "truncate"}
 	for _, attr := range paramList {
 		if !sliceContainsStr(validation, attr.(string)) {
-			return make([]string, 0), fmt.Errorf("invalid value of `%s`: %s. Should be at least on of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
+			return make([]string, 0), fmt.Errorf("invalid value of `%s`: %s. Should be at least one of '%s'", pubPublishAttr, attr, strings.Join(validation, ", "))
 		}
 		attrs = append(attrs, attr.(string))
 	}
