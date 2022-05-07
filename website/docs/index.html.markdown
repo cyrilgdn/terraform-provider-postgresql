@@ -102,7 +102,7 @@ The following arguments are supported:
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
 * `max_connections` - (Optional) Set the maximum number of open connections to
-  the database. The default is `4`.  Zero means unlimited open connections.
+  the database. The default is `20`.  Zero means unlimited open connections.
 * `expected_version` - (Optional) Specify a hint to Terraform regarding the
   expected version that the provider will be talking with.  This is a required
   hint in order for Terraform to talk with an ancient version of PostgreSQL.
@@ -193,5 +193,11 @@ resource postgresql_database "test_db" {
   name = "test_db"
 }
 ```
+
+### SOCKS5 Proxy Support
+
+The provider supports connecting via a SOCKS5 proxy, but when the `postgres` scheme is used. It can be configured by setting the `ALL_PROXY` or `all_proxy` environment variable to a value like `socks5://127.0.0.1:1080`.
+
+The `NO_PROXY` or `no_proxy` environment can also be set to opt out of proxying for specific hostnames or ports.
 
 [libpq]: https://pkg.go.dev/github.com/lib/pq
