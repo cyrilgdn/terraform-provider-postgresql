@@ -38,6 +38,7 @@ const (
 	featurePubTruncate
 	featurePublication
 	featurePubWithoutTruncate
+	featureFunction
 )
 
 var (
@@ -102,6 +103,8 @@ var (
 
 		// publication is Supported
 		featurePublication: semver.MustParseRange(">=10.0.0"),
+		// We do not support CREATE FUNCTION for Postgresql < 8.4
+		featureFunction: semver.MustParseRange(">=8.4.0"),
 	}
 )
 
@@ -266,7 +269,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var db *sql.DB
 		var err error
 		if c.config.Scheme == "postgres" {
-			db, err = sql.Open("postgres", dsn)
+			db, err = sql.Open(proxyDriverName, dsn)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
