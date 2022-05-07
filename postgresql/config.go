@@ -34,6 +34,7 @@ const (
 	featurePrivilegesOnSchemas
 	featureForceDropDatabase
 	featurePid
+	featureFunction
 )
 
 var (
@@ -86,6 +87,9 @@ var (
 		// Column procpid was replaced by pid in pg_stat_activity
 		// for Postgresql >= 9.2 and above
 		featurePid: semver.MustParseRange(">=9.2.0"),
+
+		// We do not support CREATE FUNCTION for Postgresql < 8.4
+		featureFunction: semver.MustParseRange(">=8.4.0"),
 	}
 )
 
