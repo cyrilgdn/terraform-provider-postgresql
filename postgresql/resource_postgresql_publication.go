@@ -489,8 +489,6 @@ func validatedPublicationPublishParams(paramList []interface{}) ([]string, error
 		attrs = append(attrs, attr.(string))
 	}
 
-	// attrs = append(attrs, fmt.Sprintf("publish = '%s'", strings.Join(attrs, ", ")))
-
 	return attrs, nil
 }
 
