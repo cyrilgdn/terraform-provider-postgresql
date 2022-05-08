@@ -484,3 +484,29 @@ func pgLockRole(txn *sql.Tx, role string) error {
 
 	return nil
 }
+
+func arrayDifference(a, b []interface{}) (diff []interface{}) {
+	m := make(map[interface{}]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return
+}
+
+func isUniqueArr(arr []interface{}) (interface{}, bool) {
+	keys := make(map[interface{}]bool, len(arr))
+	for _, entry := range arr {
+		if _, value := keys[entry]; value {
+			return entry, false
+		}
+		keys[entry] = true
+	}
+	return nil, true
+}
