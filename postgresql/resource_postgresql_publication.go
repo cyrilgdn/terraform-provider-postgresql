@@ -453,23 +453,19 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 
 	if isAllOk {
-		if ok {
-			return tablesString, fmt.Errorf("attribute `%s` cannot be used when `%s` is true", pubTablesAttr, pubAllTablesAttr)
-		}
 		if isAllTables.(bool) {
 			tablesString = "FOR ALL TABLES"
 		}
-	} else {
-		if ok {
-			var tlist []string
-			if elem, ok := isUniqueArr(tables.([]interface{})); !ok {
-				return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
-			}
-			for _, t := range tables.([]interface{}) {
-				tlist = append(tlist, t.(string))
-			}
-			tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
+	}
+	if ok {
+		var tlist []string
+		if elem, ok := isUniqueArr(tables.([]interface{})); !ok {
+			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
+		for _, t := range tables.([]interface{}) {
+			tlist = append(tlist, t.(string))
+		}
+		tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
 	}
 
 	return tablesString, nil
