@@ -96,8 +96,10 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 	query := sequenceQuery
 	queryConcatKeyword := queryConcatKeywordWhere
 
-	query = applyEqualsAnyFilteringToQuery(query, &queryConcatKeyword, sequenceSchemaKeyword, d.Get("schemas").([]interface{}))
-	query = applyOptionalPatternMatchingToQuery(query, sequencePatternMatchingTarget, &queryConcatKeyword, d)
+	filters := []string{}
+	filters = append(filters, addTypeFilterToQuery(sequenceSchemaKeyword, d.Get("schemas").([]interface{})))
+	filters = append(filters, applyOptionalPatternMatchingToQuery(sequencePatternMatchingTarget, d)...)
+	query = finalizeQueryWithFilters(query, queryConcatKeyword, filters)
 
 	rows, err := txn.Query(query)
 	if err != nil {

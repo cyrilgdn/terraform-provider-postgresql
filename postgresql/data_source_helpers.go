@@ -17,26 +17,42 @@ const (
 	regexPatternQuery       = "~"
 )
 
-func applyOptionalPatternMatchingToQuery(query string, patternMatchingTarget string, queryConcatKeyword *string, d *schema.ResourceData) string {
+func applyOptionalPatternMatchingToQuery(patternMatchingTarget string, d *schema.ResourceData) []string {
 	likeAnyPatterns := d.Get("like_any_patterns").([]interface{})
 	likeAllPatterns := d.Get("like_all_patterns").([]interface{})
 	notLikeAllPatterns := d.Get("not_like_all_patterns").([]interface{})
 	regexPattern := d.Get("regex_pattern").(string)
 
+	filters := []string{}
 	if len(likeAnyPatterns) > 0 {
-		query = finalizeQueryWithPatternMatching(query, patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny), queryConcatKeyword)
+		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny)))
 	}
 	if len(likeAllPatterns) > 0 {
-		query = finalizeQueryWithPatternMatching(query, patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll), queryConcatKeyword)
+		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll)))
 	}
 	if len(notLikeAllPatterns) > 0 {
-		query = finalizeQueryWithPatternMatching(query, patternMatchingTarget, notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll), queryConcatKeyword)
+		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll)))
 	}
 	if regexPattern != "" {
-		query = finalizeQueryWithPatternMatching(query, patternMatchingTarget, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern), queryConcatKeyword)
+		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern)))
 	}
 
-	return query
+	return filters
+}
+
+func addPatternMatchingFilterToQuery(patternMatchingTarget string, additionalQuery string, pattern string) string {
+	patternMatchingFilter := fmt.Sprintf("%s %s %s", patternMatchingTarget, additionalQuery, pattern)
+
+	return patternMatchingFilter
+}
+
+func addTypeFilterToQuery(objectKeyword string, objects []interface{}) string {
+	var typeFilter string
+	if len(objects) > 0 {
+		typeFilter = fmt.Sprintf("%s = %s", objectKeyword, generatePatternArrayString(objects, queryArrayKeywordAny))
+	}
+
+	return typeFilter
 }
 
 func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string) string {
@@ -48,20 +64,10 @@ func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string
 	return fmt.Sprintf("%s (array[%s])", queryArrayKeyword, strings.Join(formattedPatterns, ","))
 }
 
-func applyEqualsAnyFilteringToQuery(query string, queryConcatKeyword *string, objectKeyword string, objects []interface{}) string {
-	if len(objects) > 0 {
-		query = fmt.Sprintf("%s %s %s = %s", query, *queryConcatKeyword, objectKeyword, generatePatternArrayString(objects, queryArrayKeywordAny))
-		*queryConcatKeyword = queryConcatKeywordAnd
+func finalizeQueryWithFilters(query string, queryConcatKeyword string, filters []string) string {
+	if len(filters) > 0 {
+		query = fmt.Sprintf("%s %s %s", query, queryConcatKeyword, strings.Join(filters, " AND "))
 	}
 
 	return query
-}
-
-func finalizeQueryWithPatternMatching(query string, patternMatchingTarget string, additionalQuery string, pattern string, queryConcatKeyword *string) string {
-	finalizedQuery := fmt.Sprintf("%s %s %s %s %s", query, *queryConcatKeyword, patternMatchingTarget, additionalQuery, pattern)
-
-	//Set the query concatenation keyword from WHERE to AND if it has already been used.
-	*queryConcatKeyword = queryConcatKeywordAnd
-
-	return finalizedQuery
 }

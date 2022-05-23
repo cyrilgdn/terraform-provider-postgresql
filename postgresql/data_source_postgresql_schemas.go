@@ -97,7 +97,9 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 		queryConcatKeyword = queryConcatKeywordAnd
 	}
 
-	query = applyOptionalPatternMatchingToQuery(query, schemaPatternMatchingTarget, &queryConcatKeyword, d)
+	filters := []string{}
+	filters = append(filters, applyOptionalPatternMatchingToQuery(schemaPatternMatchingTarget, d)...)
+	query = finalizeQueryWithFilters(query, queryConcatKeyword, filters)
 
 	rows, err := txn.Query(query)
 	if err != nil {
