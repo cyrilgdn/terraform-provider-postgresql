@@ -16,6 +16,27 @@ FEATURES:
 
 ## Unreleased
 
+## 1.16.0 (May 8, 2022)
+
+FEATURES:
+
+* Add SOCKS proxy support - @Tenzer
+  [#195](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/195)
+
+* New resource: `postgresql_function` - @dump247
+  [#200](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/200)
+
+* New resource: `postgresql_publication` - @chromko
+  [#192](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/192)
+
+DEV IMPROVEMENTS:
+
+* Update gocloud to v0.25 - @alethenorio
+  [#204](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/204)
+
+* Update terraform-plugin-sdk to v2.15 - @cyrilgdn
+  [#205](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/205)
+
 ## 1.15.0 (February 4,  2022)
 
 FEATURES:

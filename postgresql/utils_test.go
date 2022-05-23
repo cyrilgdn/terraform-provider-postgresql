@@ -62,10 +62,10 @@ func getTestConfig(t *testing.T) Config {
 }
 
 func skipIfNotAcc(t *testing.T) {
-	if os.Getenv(resource.TestEnvVar) == "" {
+	if os.Getenv(resource.EnvTfAcc) == "" {
 		t.Skip(fmt.Sprintf(
 			"Acceptance tests skipped unless env '%s' set",
-			resource.TestEnvVar))
+			resource.EnvTfAcc))
 	}
 }
 

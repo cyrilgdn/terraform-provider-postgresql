@@ -161,9 +161,11 @@ func Provider() *schema.Provider {
 			"postgresql_grant":                     resourcePostgreSQLGrant(),
 			"postgresql_grant_role":                resourcePostgreSQLGrantRole(),
 			"postgresql_replication_slot":          resourcePostgreSQLReplicationSlot(),
+			"postgresql_publication":               resourcePostgreSQLPublication(),
 			"postgresql_physical_replication_slot": resourcePostgreSQLPhysicalReplicationSlot(),
 			"postgresql_schema":                    resourcePostgreSQLSchema(),
 			"postgresql_role":                      resourcePostgreSQLRole(),
+			"postgresql_function":                  resourcePostgreSQLFunction(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{

@@ -76,7 +76,7 @@ In order to manually run some Acceptance test locally, run the following command
 make testacc_setup 
 
 # Load the needed environment variables for the tests
-source tests/env.sh
+source tests/switch_superuser.sh
 
 # Run the test(s) that you're working on as often as you want
 TF_LOG=INFO go test -v ./postgresql -run ^TestAccPostgresqlRole_Basic$
