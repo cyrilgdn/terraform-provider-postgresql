@@ -1,19 +1,3 @@
-## 1.15.0-1.0.0(February 23, 2022)
-
-FEATURES:
-
-* `postgresql_tables`: Add support for table data sources - @SpencerBinXia
-* `postgresql_sequences`: Add support for sequence data sources - @SpencerBinXia
-  [#2](https://github.com/SpencerBinXia/terraform-provider-postgresql/pull/2)
-## 1.15.0-0.1.0(February 23, 2022)
-
-FEATURES:
-
-* `postgresql_schemas`: Add support for schema data sources - @SpencerBinXia
-  [#171](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/171)
-  
-## cyrildgn Original Changelog Below:
-
 ## Unreleased
 
 ## 1.16.0 (May 8, 2022)
