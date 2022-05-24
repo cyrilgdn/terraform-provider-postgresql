@@ -21,9 +21,6 @@ var schemaQueries = map[string]string{
 	`,
 }
 
-const queryArrayKeywordAny = "ANY"
-const queryArrayKeywordAll = "ALL"
-
 func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 	return &schema.Resource{
 		Read: PGResourceFunc(dataSourcePostgreSQLSchemasRead),
@@ -129,17 +126,26 @@ func applyOptionalPatternMatchingToQuery(query string, queryContainsWhere bool, 
 	notLikePatternQuery := "s.schema_name NOT LIKE"
 	regexPatternQuery := "s.schema_name ~"
 
+	filters := []string{}
 	if len(likeAnyPatterns) > 0 {
-		query = concatenateQueryWithPatternMatching(query, likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny), &queryContainsWhere)
+		filters = append(filters, concatenateQueryWithPatternMatching(likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny)))
 	}
 	if len(likeAllPatterns) > 0 {
-		query = concatenateQueryWithPatternMatching(query, likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll), &queryContainsWhere)
+		filters = append(filters, concatenateQueryWithPatternMatching(likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll)))
 	}
 	if len(notLikeAllPatterns) > 0 {
-		query = concatenateQueryWithPatternMatching(query, notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll), &queryContainsWhere)
+		filters = append(filters, concatenateQueryWithPatternMatching(notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll)))
 	}
 	if regexPattern != "" {
-		query = concatenateQueryWithPatternMatching(query, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern), &queryContainsWhere)
+		filters = append(filters, concatenateQueryWithPatternMatching(regexPatternQuery, fmt.Sprintf("'%s'", regexPattern)))
+	}
+
+	if len(filters) > 0 {
+		queryConcatKeyword := "WHERE"
+		if queryContainsWhere {
+			queryConcatKeyword = "AND"
+		}
+		query = fmt.Sprintf("%s %s %s", query, queryConcatKeyword, strings.Join(filters, " AND "))
 	}
 
 	return query
@@ -155,16 +161,8 @@ func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string
 
 }
 
-func concatenateQueryWithPatternMatching(query string, additionalQuery string, pattern string, queryContainsWhere *bool) string {
-	var keyword string
-	if *queryContainsWhere {
-		keyword = "AND"
-	} else {
-		keyword = "WHERE"
-		*queryContainsWhere = true
-	}
-
-	return fmt.Sprintf("%s %s %s %s", query, keyword, additionalQuery, pattern)
+func concatenateQueryWithPatternMatching(additionalQuery string, pattern string) string {
+	return fmt.Sprintf("%s %s", additionalQuery, pattern)
 }
 
 func generateDataSourceSchemasID(d *schema.ResourceData, databaseName string) string {
