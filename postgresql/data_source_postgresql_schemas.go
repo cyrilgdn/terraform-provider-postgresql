@@ -21,6 +21,11 @@ var schemaQueries = map[string]string{
 	`,
 }
 
+const (
+	queryArrayKeywordAny = "ANY"
+	queryArrayKeywordAll = "ALL"
+)
+
 func dataSourcePostgreSQLDatabaseSchemas() *schema.Resource {
 	return &schema.Resource{
 		Read: PGResourceFunc(dataSourcePostgreSQLSchemasRead),
