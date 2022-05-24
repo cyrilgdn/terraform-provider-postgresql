@@ -96,10 +96,7 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 	query := sequenceQuery
 	queryConcatKeyword := queryConcatKeywordWhere
 
-	filters := []string{}
-	filters = append(filters, addTypeFilterToQuery(sequenceSchemaKeyword, d.Get("schemas").([]interface{})))
-	filters = append(filters, applyOptionalPatternMatchingToQuery(sequencePatternMatchingTarget, d)...)
-	query = finalizeQueryWithFilters(query, queryConcatKeyword, filters)
+	query = applySequenceDataSourceQueryFilters(query, queryConcatKeyword, d)
 
 	rows, err := txn.Query(query)
 	if err != nil {
@@ -139,4 +136,15 @@ func generateDataSourceSequencesID(d *schema.ResourceData, databaseName string) 
 		generatePatternArrayString(d.Get("not_like_all_patterns").([]interface{}), queryArrayKeywordAll),
 		d.Get("regex_pattern").(string),
 	}, "_")
+}
+
+func applySequenceDataSourceQueryFilters(query string, queryConcatKeyword string, d *schema.ResourceData) string {
+	filters := []string{}
+	schemasTypeFilter := applyTypeMatchingToQuery(sequenceSchemaKeyword, d.Get("schemas").([]interface{}))
+	if len(schemasTypeFilter) > 0 {
+		filters = append(filters, schemasTypeFilter)
+	}
+	filters = append(filters, applyPatternMatchingToQuery(sequencePatternMatchingTarget, d)...)
+
+	return finalizeQueryWithFilters(query, queryConcatKeyword, filters)
 }

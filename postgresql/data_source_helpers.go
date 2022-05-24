@@ -17,7 +17,7 @@ const (
 	regexPatternQuery       = "~"
 )
 
-func applyOptionalPatternMatchingToQuery(patternMatchingTarget string, d *schema.ResourceData) []string {
+func applyPatternMatchingToQuery(patternMatchingTarget string, d *schema.ResourceData) []string {
 	likeAnyPatterns := d.Get("like_any_patterns").([]interface{})
 	likeAllPatterns := d.Get("like_all_patterns").([]interface{})
 	notLikeAllPatterns := d.Get("not_like_all_patterns").([]interface{})
@@ -25,28 +25,28 @@ func applyOptionalPatternMatchingToQuery(patternMatchingTarget string, d *schema
 
 	filters := []string{}
 	if len(likeAnyPatterns) > 0 {
-		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny)))
+		filters = append(filters, generatePatternMatchingString(patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAnyPatterns, queryArrayKeywordAny)))
 	}
 	if len(likeAllPatterns) > 0 {
-		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll)))
+		filters = append(filters, generatePatternMatchingString(patternMatchingTarget, likePatternQuery, generatePatternArrayString(likeAllPatterns, queryArrayKeywordAll)))
 	}
 	if len(notLikeAllPatterns) > 0 {
-		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll)))
+		filters = append(filters, generatePatternMatchingString(patternMatchingTarget, notLikePatternQuery, generatePatternArrayString(notLikeAllPatterns, queryArrayKeywordAll)))
 	}
 	if regexPattern != "" {
-		filters = append(filters, addPatternMatchingFilterToQuery(patternMatchingTarget, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern)))
+		filters = append(filters, generatePatternMatchingString(patternMatchingTarget, regexPatternQuery, fmt.Sprintf("'%s'", regexPattern)))
 	}
 
 	return filters
 }
 
-func addPatternMatchingFilterToQuery(patternMatchingTarget string, additionalQuery string, pattern string) string {
-	patternMatchingFilter := fmt.Sprintf("%s %s %s", patternMatchingTarget, additionalQuery, pattern)
+func generatePatternMatchingString(patternMatchingTarget string, additionalQueryKeyword string, pattern string) string {
+	patternMatchingFilter := fmt.Sprintf("%s %s %s", patternMatchingTarget, additionalQueryKeyword, pattern)
 
 	return patternMatchingFilter
 }
 
-func addTypeFilterToQuery(objectKeyword string, objects []interface{}) string {
+func applyTypeMatchingToQuery(objectKeyword string, objects []interface{}) string {
 	var typeFilter string
 	if len(objects) > 0 {
 		typeFilter = fmt.Sprintf("%s = %s", objectKeyword, generatePatternArrayString(objects, queryArrayKeywordAny))

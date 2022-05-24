@@ -97,9 +97,7 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 		queryConcatKeyword = queryConcatKeywordAnd
 	}
 
-	filters := []string{}
-	filters = append(filters, applyOptionalPatternMatchingToQuery(schemaPatternMatchingTarget, d)...)
-	query = finalizeQueryWithFilters(query, queryConcatKeyword, filters)
+	query = applySchemaDataSourceQueryFilters(query, queryConcatKeyword, d)
 
 	rows, err := txn.Query(query)
 	if err != nil {
@@ -131,4 +129,11 @@ func generateDataSourceSchemasID(d *schema.ResourceData, databaseName string) st
 		generatePatternArrayString(d.Get("not_like_all_patterns").([]interface{}), queryArrayKeywordAll),
 		d.Get("regex_pattern").(string),
 	}, "_")
+}
+
+func applySchemaDataSourceQueryFilters(query string, queryConcatKeyword string, d *schema.ResourceData) string {
+	filters := []string{}
+	filters = append(filters, applyPatternMatchingToQuery(schemaPatternMatchingTarget, d)...)
+
+	return finalizeQueryWithFilters(query, queryConcatKeyword, filters)
 }
