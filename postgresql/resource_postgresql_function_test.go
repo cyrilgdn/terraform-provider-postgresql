@@ -47,6 +47,8 @@ resource "postgresql_function" "basic_function" {
 }
 
 func TestAccPostgresqlFunction_SpecificDatabase(t *testing.T) {
+	skipIfNotAcc(t)
+
 	dbSuffix, teardown := setupTestDatabase(t, true, true)
 	defer teardown()
 
