@@ -356,7 +356,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 
 	query = `SELECT CONCAT(schemaname,'.',tablename) as fulltablename ` +
 		`FROM pg_catalog.pg_publication_tables ` +
-		`WHERE pubname = $1` +
+		`WHERE pubname = $1 ` +
 		`ORDER BY fulltablename ASC`
 
 	rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
