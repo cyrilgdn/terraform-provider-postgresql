@@ -158,12 +158,6 @@ func resourcePostgreSQLServerExists(db *DBConnection, d *schema.ResourceData) (b
 
 	serverName := d.Get(serverNameAttr).(string)
 
-	// Check if the database exists
-	exists, err := foreignServerExists(db, serverName)
-	if err != nil || !exists {
-		return false, err
-	}
-
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return false, err
@@ -327,7 +321,7 @@ func setServerVersionOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error
 				operation = "SET"
 				delete(toRemove, k)
 			}
-			fmt.Fprint(b, " ", operation, " ", pq.QuoteIdentifier(k), " ", pq.QuoteLiteral(v.(string)))
+			fmt.Fprintf(b, " %s %s %s ", operation, pq.QuoteIdentifier(k), pq.QuoteLiteral(v.(string)))
 			if cnt < len-1 {
 				fmt.Fprint(b, ", ")
 			}
@@ -338,7 +332,7 @@ func setServerVersionOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error
 			if cnt != 0 { // starting with 0 means to drop all the options. Cannot start with comma
 				fmt.Fprint(b, " , ")
 			}
-			fmt.Fprint(b, " DROP ", pq.QuoteIdentifier(k))
+			fmt.Fprintf(b, " DROP %s ", pq.QuoteIdentifier(k))
 			cnt++
 		}
 

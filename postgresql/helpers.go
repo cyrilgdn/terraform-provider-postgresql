@@ -340,18 +340,6 @@ func schemaExists(txn *sql.Tx, schemaname string) (bool, error) {
 	return true, nil
 }
 
-func foreignServerExists(db QueryAble, serverName string) (bool, error) {
-	err := db.QueryRow("SELECT 1 FROM pg_foreign_server WHERE srvname=$1", serverName).Scan(&serverName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("could not check if foreign server exists: %w", err)
-	}
-
-	return true, nil
-}
-
 func getCurrentUser(db QueryAble) (string, error) {
 	var currentUser string
 	err := db.QueryRow("SELECT CURRENT_USER").Scan(&currentUser)
