@@ -300,7 +300,7 @@ resource "postgresql_server" "myserver_postgres" {
 resource "postgresql_server" "myserver_file" {
   server_name = "myserver_file"
   fdw_name    = "file_fdw"  
-  depends_on = [postgresql_extension.ext_postgres_fdw]
+  depends_on = [postgresql_extension.ext_file_fdw]
 }
 
 resource "postgresql_role" "owner" {
