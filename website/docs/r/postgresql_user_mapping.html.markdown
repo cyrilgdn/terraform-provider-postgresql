@@ -6,7 +6,7 @@ description: |-
   Creates and manages a user mapping on a PostgreSQL server.
 ---
 
-# postgresql\_server
+# postgresql\_user\_mapping
 
 The ``postgresql_user_mapping`` resource creates and manages a user mapping on a PostgreSQL server.
 
