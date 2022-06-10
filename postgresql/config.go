@@ -39,6 +39,7 @@ const (
 	featurePublication
 	featurePubWithoutTruncate
 	featureFunction
+	featureServer
 )
 
 var (
@@ -105,6 +106,8 @@ var (
 		featurePublication: semver.MustParseRange(">=10.0.0"),
 		// We do not support CREATE FUNCTION for Postgresql < 8.4
 		featureFunction: semver.MustParseRange(">=8.4.0"),
+		// CREATE SERVER support
+		featureServer: semver.MustParseRange(">=10.0.0"),
 	}
 )
 
