@@ -68,7 +68,7 @@ func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceDat
 	fmt.Fprint(b, " FOR ", pq.QuoteIdentifier(username))
 	fmt.Fprint(b, " SERVER ", pq.QuoteIdentifier(serverName))
 
-	if options, ok := d.GetOk(serverOptionsAttr); ok {
+	if options, ok := d.GetOk(userMappingOptionsAttr); ok {
 		fmt.Fprint(b, " OPTIONS ( ")
 		cnt := 0
 		len := len(options.(map[string]interface{}))
@@ -172,7 +172,7 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 
 	d.Set(userMappingUserNameAttr, username)
 	d.Set(userMappingServerNameAttr, serverName)
-	d.Set(serverOptionsAttr, mappedOptions)
+	d.Set(userMappingOptionsAttr, mappedOptions)
 	d.SetId(generateUserMappingID(d))
 
 	return nil
@@ -245,7 +245,7 @@ func setUserMappingOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error {
 	b := bytes.NewBufferString("ALTER USER MAPPING ")
 	fmt.Fprintf(b, " FOR %s SERVER %s ", pq.QuoteIdentifier(username), pq.QuoteIdentifier(serverName))
 
-	oldOptions, newOptions := d.GetChange(serverOptionsAttr)
+	oldOptions, newOptions := d.GetChange(userMappingOptionsAttr)
 	fmt.Fprint(b, " OPTIONS ( ")
 	cnt := 0
 	len := len(newOptions.(map[string]interface{}))
