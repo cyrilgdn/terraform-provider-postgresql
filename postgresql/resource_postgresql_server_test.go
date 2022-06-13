@@ -14,6 +14,7 @@ func TestAccPostgresqlServer_Basic(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureServer)
+			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlServerDestroy,
@@ -125,6 +126,7 @@ func TestAccPostgresqlServer_Update(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureServer)
+			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlServerDestroy,
@@ -214,6 +216,7 @@ func checkServerExists(txn *sql.Tx, serverName string) (bool, error) {
 
 func TestAccPostgresqlServer_DropCascade(t *testing.T) {
 	skipIfNotAcc(t)
+	testSuperuserPreCheck(t)
 
 	var testAccPostgresqlServerConfig = `
 resource "postgresql_extension" "ext_postgres_fdw" {
