@@ -18,7 +18,7 @@ resource "postgresql_extension" "ext_postgres_fdw" {
   name = "postgres_fdw"
 }
 
-resource "postgresql_user_mapping" "myserver_postgres" {
+resource "postgresql_server" "myserver_postgres" {
   server_name = "myserver_postgres"
   fdw_name    = "postgres_fdw"
   options = {
