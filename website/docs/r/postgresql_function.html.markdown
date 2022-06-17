@@ -38,6 +38,9 @@ resource "postgresql_function" "increment" {
 * `schema` - (Optional) The schema where the function is located.
   If not specified, the function is created in the current schema.
 
+* `database` - (Optional) The database where the function is located.
+  If not specified, the function is created in the current database.
+
 * `arg` - (Optional) List of arguments for the function.
   * `type` - (Required) The type of the argument.
   * `name` - (Optional) The name of the argument.
