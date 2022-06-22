@@ -376,12 +376,6 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		return fmt.Errorf("Got rows.Err: %w", err)
 	}
 
-	switch {
-	case err == sql.ErrNoRows:
-		log.Printf("[WARN] No PostgreSQL tables found for Publication %s", PublicationName)
-	case err != nil:
-		return fmt.Errorf("Error reading Publication tables: %w", err)
-	}
 	if pubinsert {
 		publishParams = append(publishParams, "insert")
 	}
