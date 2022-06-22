@@ -56,7 +56,7 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				ValidateFunc: validation.StringIsNotEmpty,
 			},
 			pubTablesAttr: {
-				Type:          schema.TypeList,
+				Type:          schema.TypeSet,
 				Optional:      true,
 				Computed:      true,
 				ForceNew:      false,
@@ -174,8 +174,8 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	pubName := d.Get(pubNameAttr).(string)
 
 	oraw, nraw := d.GetChange(pubTablesAttr)
-	oldList := oraw.([]interface{})
-	newList := nraw.([]interface{})
+	oldList := oraw.(*schema.Set).List()
+	newList := nraw.(*schema.Set).List()
 	if elem, ok := isUniqueArr(newList); !ok {
 		return fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 	}
@@ -356,8 +356,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 
 	query = `SELECT CONCAT(schemaname,'.',tablename) as fulltablename ` +
 		`FROM pg_catalog.pg_publication_tables ` +
-		`WHERE pubname = $1 ` +
-		`ORDER BY fulltablename ASC`
+		`WHERE pubname = $1`
 
 	rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
 	if err != nil {
@@ -372,6 +371,9 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 			return fmt.Errorf("could not get tables: %w", err)
 		}
 		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Got rows.Err: %w", err)
 	}
 
 	switch {
@@ -450,7 +452,7 @@ func getDatabaseForPublication(d *schema.ResourceData, databaseName string) stri
 
 func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	var tablesString string
-	tables, ok := d.GetOk(pubTablesAttr)
+	setTables, ok := d.GetOk(pubTablesAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 
 	if isAllOk {
@@ -459,11 +461,12 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 		}
 	}
 	if ok {
+		tables := setTables.(*schema.Set).List()
 		var tlist []string
-		if elem, ok := isUniqueArr(tables.([]interface{})); !ok {
+		if elem, ok := isUniqueArr(tables); !ok {
 			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
-		for _, t := range tables.([]interface{}) {
+		for _, t := range tables {
 			tlist = append(tlist, t.(string))
 		}
 		tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
