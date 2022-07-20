@@ -755,7 +755,7 @@ resource postgresql_grant "test" {
 							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
 							resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.0", "EXECUTE"),
 							resource.TestCheckResourceAttr("postgresql_grant.test", "with_grant_option", "false"),
-							testCheckFunctionWithArgsExecutable(t, "test_role", "test_schema.test", []string{"value 1", "value 2"}),
+							testCheckFunctionWithArgsExecutable(t, "test_role", "test_schema.test", []string{pq.QuoteIdentifier("value 1"), pq.QuoteIdentifier("value 2")}),
 						),
 					},
 				},
