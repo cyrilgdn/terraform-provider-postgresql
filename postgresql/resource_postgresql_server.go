@@ -27,7 +27,6 @@ func resourcePostgreSQLServer() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLServerRead),
 		Update: PGResourceFunc(resourcePostgreSQLServerUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLServerDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLServerExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -146,34 +145,6 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 	d.SetId(d.Get(serverNameAttr).(string))
 
 	return resourcePostgreSQLServerReadImpl(db, d)
-}
-
-func resourcePostgreSQLServerExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featureServer) {
-		return false, fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
-	}
-
-	serverName := d.Get(serverNameAttr).(string)
-
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT srvname FROM pg_foreign_server WHERE srvname = $1"
-	err = txn.QueryRow(query, serverName).Scan(&serverName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
 }
 
 func resourcePostgreSQLServerRead(db *DBConnection, d *schema.ResourceData) error {

@@ -23,7 +23,6 @@ func resourcePostgreSQLUserMapping() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLUserMappingRead),
 		Update: PGResourceFunc(resourcePostgreSQLUserMappingUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLUserMappingDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLUserMappingExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -82,53 +81,13 @@ func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceDat
 		fmt.Fprint(b, " ) ")
 	}
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	sql := b.String()
-	if _, err := txn.Exec(sql); err != nil {
-		return err
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating user mapping: %w", err)
+	if _, err := db.Exec(b.String()); err != nil {
+		return fmt.Errorf("Could not create user mapping: %w", err)
 	}
 
 	d.SetId(generateUserMappingID(d))
 
 	return resourcePostgreSQLUserMappingReadImpl(db, d)
-}
-
-func resourcePostgreSQLUserMappingExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featureServer) {
-		return false, fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
-	}
-
-	username := d.Get(userMappingUserNameAttr).(string)
-	serverName := d.Get(userMappingServerNameAttr).(string)
-
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT usename FROM pg_user_mappings WHERE usename = $1 AND srvname = $2" // yes, it is usename
-	err = txn.QueryRow(query, username, serverName).Scan(&username)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
 }
 
 func resourcePostgreSQLUserMappingRead(db *DBConnection, d *schema.ResourceData) error {
@@ -217,24 +176,14 @@ func resourcePostgreSQLUserMappingUpdate(db *DBConnection, d *schema.ResourceDat
 		)
 	}
 
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
+	if err := setUserMappingOptionsIfChanged(db, d); err != nil {
 		return err
-	}
-	defer deferredRollback(txn)
-
-	if err := setUserMappingOptionsIfChanged(txn, d); err != nil {
-		return err
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error updating user mapping: %w", err)
 	}
 
 	return resourcePostgreSQLUserMappingReadImpl(db, d)
 }
 
-func setUserMappingOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error {
+func setUserMappingOptionsIfChanged(db *DBConnection, d *schema.ResourceData) error {
 	if !d.HasChange(userMappingOptionsAttr) {
 		return nil
 	}
@@ -273,8 +222,7 @@ func setUserMappingOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error {
 
 	fmt.Fprint(b, " ) ")
 
-	sql := b.String()
-	if _, err := txn.Exec(sql); err != nil {
+	if _, err := db.Exec(b.String()); err != nil {
 		return fmt.Errorf("Error updating user mapping options: %w", err)
 	}
 
