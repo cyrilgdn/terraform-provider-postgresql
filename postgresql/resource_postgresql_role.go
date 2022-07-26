@@ -35,6 +35,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleEnableLogsAttr                      = "enable_logs"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +174,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleEnableLogsAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Enables lobs when creating a role.  Keep disabled to preent passwords from leaking into the logs.",
+			},
 		},
 	}
 }
@@ -286,6 +293,15 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		}
 	}
 
+	areLogsEnabled := d.Get(roleEnableLogsAttr).(bool)
+	if areLogsEnabled {
+		sql := "SET log_statement TO 'none'; SET log_min_duration_statement TO -1; SET log_min_error_statement TO 'log'; SET pg_stat_statements.track_utility = 'off';"
+
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not disable logs for %s: %w", roleName, err)
+		}
+	}
+
 	sql := fmt.Sprintf("CREATE ROLE %s%s", pq.QuoteIdentifier(roleName), createStr)
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error creating role %s: %w", roleName, err)
@@ -381,7 +397,7 @@ func resourcePostgreSQLRoleRead(db *DBConnection, d *schema.ResourceData) error 
 }
 
 func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) error {
-	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
+	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS, roleEnableLogs bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
 	var roleRoles, roleConfig pq.ByteaArray
@@ -457,6 +473,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
+	d.Set(roleEnableLogsAttr, roleEnableLogs)
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
