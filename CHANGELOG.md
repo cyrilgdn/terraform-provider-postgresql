@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 1.17.1 (August 19, 2022)
+
+FIX:
+
+* `provider`: Fix segfault on bad credentials when `expected_version` is defined - @cyrilgdn
+  [#242](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/242)
+
 ## 1.17.0 (August 19, 2022)
 
 FEATURES
