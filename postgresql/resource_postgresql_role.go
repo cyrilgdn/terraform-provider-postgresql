@@ -178,7 +178,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     false,
-				Description: "Enables lobs when creating a role.  Keep disabled to preent passwords from leaking into the logs.",
+				Description: "Enables logs when creating a role.  Keep disabled to prevent passwords from leaking into the logs.",
 			},
 		},
 	}
