@@ -92,6 +92,7 @@ func TestAccPostgresqlAlterRole(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testSuperuserPreCheck(t)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
