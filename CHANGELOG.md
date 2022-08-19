@@ -1,5 +1,20 @@
 ## Unreleased
 
+## 1.17.0 (August 19, 2022)
+
+FEATURES
+
+* `postgresql_function`: Add `database` parameter - @LucasBoisserie
+  [#216](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/216)
+
+* `postgresql_role`: Support of ALTER ROLE ... SET ROLE- @kostiantyn-nemchenko
+  [#209](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/209)
+
+FIX:
+
+* `postgresql_publication`: Fix unordered tables - @nguyenhoaibao
+  [#219](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/219)
+
 ## 1.16.0 (May 8, 2022)
 
 FEATURES:
