@@ -32,7 +32,7 @@ resource "postgresql_default_privileges" "read_only_tables" {
 * `database` - (Required) The database to grant default privileges for this role.
 * `owner` - (Required) Role for which apply default privileges (You can change default privileges only for objects that will be created by yourself or by roles that you are a member of).
 * `schema` - (Optional) The database schema to set default privileges for this role.
-* `object_type` - (Required) The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type).
+* `object_type` - (Required) The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type, schema).
 * `privileges` - (Required) The list of privileges to apply as default privileges. An empty list could be provided to revoke all default privileges for this role.
 
 
