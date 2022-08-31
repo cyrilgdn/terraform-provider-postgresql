@@ -39,7 +39,7 @@ func resourcePostgreSQLGrant() *schema.Resource {
 		Create: PGResourceFunc(resourcePostgreSQLGrantCreate),
 		// Since all of this resource's arguments force a recreation
 		// there's no need for an Update function
-		//Update:
+		// Update:
 		Read:   PGResourceFunc(resourcePostgreSQLGrantRead),
 		Delete: PGResourceFunc(resourcePostgreSQLGrantDelete),
 
@@ -339,52 +339,27 @@ func readColumnRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	missingColumns := d.Get("columns").(*schema.Set) // Getting columns from state.
 	// If the query returns a column, it is a removed from the missingColumns.
 
-	roleOID, err := getRoleOID(txn, d.Get("role").(string))
-	if err != nil {
-		return err
-	}
-
 	var rows *sql.Rows
 
-	// The following query is made up of 3 parts
-	// The first one simply aggregates all privileges on one column in one table into one line.
-	// The second part fetches all permissions on all columns for a given user & a given table in a give schema.
-	// The third part fetches all table-level permissions for the aforementioned table.
-	// Subtracting the third part from the second part allows us
-	// to get column-level privileges without those created by table-level privileges.
+	// The attacl column of pg_attribute contains information only about explicit column grants
 	query := `
-SELECT table_name, column_name, array_agg(privilege_type) AS column_privileges
-FROM (
-  SELECT table_name, column_name, privilege_type
-  FROM information_schema.column_privileges
-    WHERE
-      grantee = $1
-    AND
-      table_schema = $2
-    AND
-      table_name = $3
-    AND
-      privilege_type = $6
-  EXCEPT
-  SELECT pg_class.relname, pg_attribute.attname, privilege_type AS table_grant
-  FROM pg_class
-  JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-  LEFT JOIN (
-    SELECT acls.*
-    FROM
-      (SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c) as acls
-    WHERE grantee=$4
-    ) privs
-  USING (relname, relnamespace, relkind)
-  LEFT JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
-  WHERE nspname = $2 AND relkind = $5
-  )
-AS col_privs_without_table_privs
-GROUP BY col_privs_without_table_privs.table_name, col_privs_without_table_privs.column_name, col_privs_without_table_privs.privilege_type
-ORDER BY col_privs_without_table_privs.column_name
+SELECT relname AS table_name, attname AS column_name, array_agg(privilege_type) AS column_privileges
+FROM (SELECT relname, attname, (aclexplode(attacl)).*
+      FROM pg_class
+               JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
+               JOIN pg_attribute ON pg_class.oid = attrelid
+      WHERE nspname = $2
+        AND relname = $3
+        AND relkind = $4)
+         AS col_privs
+         JOIN pg_roles ON pg_roles.oid = col_privs.grantee
+WHERE rolname = $1
+  AND privilege_type = $5
+GROUP BY col_privs.relname, col_privs.attname, col_privs.privilege_type
+ORDER BY col_privs.attname
 ;`
-	rows, err = txn.Query(
-		query, d.Get("role").(string), d.Get("schema"), objects.List()[0], roleOID, objectTypes["table"], d.Get("privileges").(*schema.Set).List()[0],
+	rows, err := txn.Query(
+		query, d.Get("role").(string), d.Get("schema"), objects.List()[0], objectTypes["table"], d.Get("privileges").(*schema.Set).List()[0],
 	)
 
 	if err != nil {
