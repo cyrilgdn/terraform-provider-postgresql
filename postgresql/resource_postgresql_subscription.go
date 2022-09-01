@@ -81,6 +81,9 @@ func resourcePostgreSQLSubscriptionCreate(db *DBConnection, d *schema.ResourceDa
 		return fmt.Errorf("could not get publications: %w", err)
 	}
 	connInfo, err := getConnInfoForSubscription(d)
+	if err != nil {
+		return fmt.Errorf("could not get conninfo: %w", err)
+	}
 
 	optionalParams := getOptionalParameters(d)
 
@@ -131,23 +134,41 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	var connInfo string
 	var slotName string
 
-	query := "SELECT subconninfo, subpublications, subslotname FROM pg_catalog.pg_subscription WHERE subname = $1"
-	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&connInfo, pq.Array(&publications), &slotName)
+	var subExists bool
+	queryExists := "SELECT TRUE FROM pg_catalog.pg_stat_subscription WHERE subname = $1"
+	err = txn.QueryRow(queryExists, pqQuoteLiteral(subName)).Scan(&subExists)
 
-	switch {
-	case err == sql.ErrNoRows:
+	if !subExists {
 		log.Printf("[WARN] PostgreSQL Subscription (%s) not found for database %s", subName, databaseName)
 		d.SetId("")
 		return nil
-	case err != nil:
-		return fmt.Errorf("Error reading subscription info: %w", err)
 	}
 
-	d.SetId(generateSubscriptionID(d, databaseName))
+	// pg_subscription requires superuser permissions, it is okay to fail here
+	query := "SELECT subconninfo, subpublications, subslotname FROM pg_catalog.pg_subscription WHERE subname = $1"
+	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&connInfo, pq.Array(&publications), &slotName)
+
+	if err != nil {
+		// we already checked that the subscription exists
+		connInfo, err := getConnInfoForSubscription(d)
+		if err != nil {
+			return fmt.Errorf("could not get conninfo: %w", err)
+		}
+		d.Set("conninfo", connInfo)
+
+		setPublications, ok := d.GetOk("publications")
+		if !ok {
+			return fmt.Errorf("Attribute publications is not set")
+		}
+		publications := setPublications.(*schema.Set).List()
+		d.Set("publications", publications)
+	} else {
+		d.Set("conninfo", connInfo)
+		d.Set("publications", publications)
+	}
 	d.Set("name", subName)
-	d.Set(pubDatabaseAttr, databaseName)
-	d.Set("conninfo", connInfo)
-	d.Set("publications", publications)
+	d.Set("database", databaseName)
+	d.SetId(generateSubscriptionID(d, databaseName))
 
 	createSlot, okCreate := d.GetOkExists("create_slot")
 	if okCreate {
@@ -227,7 +248,7 @@ func resourcePostgreSQLSubscriptionExists(db *DBConnection, d *schema.ResourceDa
 	}
 	defer deferredRollback(txn)
 
-	query := "SELECT subname FROM pg_catalog.pg_subscription WHERE subname = $1"
+	query := "SELECT subname from pg_catalog.pg_stat_subscription WHERE subname = $1"
 	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&subName)
 
 	switch {
