@@ -137,6 +137,9 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	var subExists bool
 	queryExists := "SELECT TRUE FROM pg_catalog.pg_stat_subscription WHERE subname = $1"
 	err = txn.QueryRow(queryExists, pqQuoteLiteral(subName)).Scan(&subExists)
+	if err != nil {
+		return fmt.Errorf("Failed to check subscription: %w", err)
+	}
 
 	if !subExists {
 		log.Printf("[WARN] PostgreSQL Subscription (%s) not found for database %s", subName, databaseName)
@@ -170,7 +173,7 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	d.Set("database", databaseName)
 	d.SetId(generateSubscriptionID(d, databaseName))
 
-	createSlot, okCreate := d.GetOkExists("create_slot")
+	createSlot, okCreate := d.GetOkExists("create_slot") //nolint:staticcheck
 	if okCreate {
 		d.Set("create_slot", createSlot.(bool))
 	}
@@ -285,7 +288,7 @@ func getPublicationsForSubscription(d *schema.ResourceData) (string, error) {
 		return publicationsString, fmt.Errorf("'%s' is duplicated for attribute publications", elem.(string))
 	}
 	for _, p := range publications {
-		plist = append(plist, fmt.Sprintf(pq.QuoteIdentifier(p.(string))))
+		plist = append(plist, pq.QuoteIdentifier(p.(string)))
 	}
 
 	return strings.Join(plist, ", "), nil
@@ -337,8 +340,8 @@ func getOptionalParameters(d *schema.ResourceData) string {
 	parameterSQLTemplate := "WITH (%s)"
 	returnValue := ""
 
-	createSlot, okCreate := d.GetOkExists("create_slot")
-	slotName, okName := d.GetOkExists("slot_name")
+	createSlot, okCreate := d.GetOkExists("create_slot") //nolint:staticcheck
+	slotName, okName := d.GetOk("slot_name")
 
 	if !okCreate && !okName {
 		// use default behavior, no WITH statement
