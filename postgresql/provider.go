@@ -215,13 +215,13 @@ func createGoogleCredsFileIfNeeded() error {
 
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create temporary file: %w", err)
 	}
 	defer tmpFile.Close()
 
 	_, err = tmpFile.WriteString(rawGoogleCredentials)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not write in temporary file: %w", err)
 	}
 
 	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
