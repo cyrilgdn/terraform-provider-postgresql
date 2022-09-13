@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -201,6 +202,26 @@ func getRDSAuthToken(profile string, username string, host string, port int) (st
 	return token, err
 }
 
+func createGoogleCredsFileIfNeeded() error {
+	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
+	if rawGoogleCredentials == "" {
+		return nil
+	}
+
+	tmpFile, err := os.CreateTemp("", "")
+	if err != nil {
+		return fmt.Errorf("could not create temporary file: %w", err)
+	}
+	defer tmpFile.Close()
+
+	_, err = tmpFile.WriteString(rawGoogleCredentials)
+	if err != nil {
+		return fmt.Errorf("could not write in temporary file: %w", err)
+	}
+
+	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
+}
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -252,6 +273,12 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 			}
+		}
+	}
+
+	if config.Scheme == "gcppostgres" {
+		if err := createGoogleCredsFileIfNeeded(); err != nil {
+			return nil, err
 		}
 	}
 
