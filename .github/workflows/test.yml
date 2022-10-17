@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        pgversion: ["latest", 12, 11, 10, 9]
+        pgversion: [9, 10, 11, 12, 13, 14]
 
     env:
       PGVERSION: ${{ matrix.pgversion }}
