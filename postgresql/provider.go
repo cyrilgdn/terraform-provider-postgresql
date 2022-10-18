@@ -78,6 +78,13 @@ func Provider() *schema.Provider {
 				Description: "AWS profile to use for IAM auth",
 			},
 
+			"aws_rds_iam_region": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "AWS region to use for IAM auth",
+			},
+
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -179,7 +186,7 @@ func validateExpectedVersion(v interface{}, key string) (warnings []string, erro
 	return
 }
 
-func getRDSAuthToken(profile string, username string, host string, port int) (string, error) {
+func getRDSAuthToken(region string, profile string, username string, host string, port int) (string, error) {
 	endpoint := fmt.Sprintf("%s:%d", host, port)
 
 	ctx := context.Background()
@@ -189,6 +196,8 @@ func getRDSAuthToken(profile string, username string, host string, port int) (st
 
 	if profile != "" {
 		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithSharedConfigProfile(profile))
+	} else if region != "" {
+		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(region))
 	} else {
 		awscfg, err = awsConfig.LoadDefaultConfig(ctx)
 	}
@@ -221,8 +230,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var password string
 	if d.Get("aws_rds_iam_auth").(bool) {
 		profile := d.Get("aws_rds_iam_profile").(string)
+		region := d.Get("aws_rds_iam_region").(string)
 		var err error
-		password, err = getRDSAuthToken(profile, username, host, port)
+		password, err = getRDSAuthToken(region, profile, username, host, port)
 		if err != nil {
 			return nil, err
 		}
