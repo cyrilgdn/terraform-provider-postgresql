@@ -175,6 +175,10 @@ func Provider() *schema.Provider {
 			"postgresql_function":                  resourcePostgreSQLFunction(),
 		},
 
+		DataSourcesMap: map[string]*schema.Resource{
+			"postgresql_password": dataSourcePostgrePassword(),
+		},
+
 		ConfigureFunc: providerConfigure,
 	}
 }
