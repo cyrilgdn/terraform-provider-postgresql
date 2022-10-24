@@ -3,7 +3,7 @@ name: test
 on:
   push:
     branches:
-    - master
+      - master
   pull_request:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        pgversion: ["latest", 12, 11, 10, 9]
+        pgversion: [14, 13, 12, 11, 10, 9]
 
     env:
       PGVERSION: ${{ matrix.pgversion }}
