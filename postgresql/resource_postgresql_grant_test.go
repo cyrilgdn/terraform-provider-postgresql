@@ -125,7 +125,7 @@ func TestCreateGrantQuery(t *testing.T) {
 				"role":        roleName,
 			}),
 			privileges: []string{"SELECT"},
-			expected:   fmt.Sprintf(`GRANT SELECT (col2,col1) ON TABLE %[1]s."o1" TO %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+			expected:   fmt.Sprintf(`GRANT SELECT (%[2]s,%[3]s) ON TABLE %[1]s."o1" TO %[4]s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier("col2"), pq.QuoteIdentifier("col1"), pq.QuoteIdentifier(roleName)),
 		},
 		{
 			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
@@ -270,7 +270,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 				"role":        roleName,
 				"privileges":  []interface{}{"SELECT"},
 			}),
-			expected: fmt.Sprintf(`REVOKE SELECT (col2,col1) ON TABLE %[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
+			expected: fmt.Sprintf(`REVOKE SELECT ("col2","col1") ON TABLE %[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
 			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{

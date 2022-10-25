@@ -554,14 +554,10 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 		)
 	case "COLUMN":
 		objects := d.Get("objects").(*schema.Set)
-		columns := []string{}
-		for _, col := range d.Get("columns").(*schema.Set).List() {
-			columns = append(columns, col.(string))
-		}
 		query = fmt.Sprintf(
 			"GRANT %s (%s) ON TABLE %s TO %s",
 			strings.Join(privileges, ","),
-			strings.Join(columns, ","),
+			setToPgIdentListWithoutSchema(d.Get("columns").(*schema.Set)),
 			setToPgIdentList(d.Get("schema").(string), objects),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
@@ -634,7 +630,7 @@ func createRevokeQuery(d *schema.ResourceData) string {
 			query = fmt.Sprintf(
 				"REVOKE %s (%s) ON TABLE %s FROM %s",
 				setToPgIdentSimpleList(privileges),
-				setToPgIdentSimpleList(columns),
+				setToPgIdentListWithoutSchema(columns),
 				setToPgIdentList(d.Get("schema").(string), objects),
 				pq.QuoteIdentifier(d.Get("role").(string)),
 			)
