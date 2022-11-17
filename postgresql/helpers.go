@@ -235,7 +235,7 @@ func sliceContainsStr(haystack []string, needle string) bool {
 // allowedPrivileges is the list of privileges allowed per object types in Postgres.
 // see: https://www.postgresql.org/docs/current/sql-grant.html
 var allowedPrivileges = map[string][]string{
-	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY", "TEMP"},
+	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY"},
 	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
 	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE"},
 	"schema":               {"ALL", "CREATE", "USAGE"},
@@ -472,6 +472,19 @@ func pgLockRole(txn *sql.Tx, role string) error {
 		role,
 	); err != nil {
 		return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
+	}
+
+	return nil
+}
+
+// Lock a database and all his members to avoid concurrent updates on some resources
+func pgLockDatabase(txn *sql.Tx, database string) error {
+	// Disable statement timeout for this connection otherwise the lock could fail
+	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("could not disable statement_timeout: %w", err)
+	}
+	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", database); err != nil {
+		return fmt.Errorf("could not get advisory lock for database %s: %w", database, err)
 	}
 
 	return nil
