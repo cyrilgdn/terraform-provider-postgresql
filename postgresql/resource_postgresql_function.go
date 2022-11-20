@@ -16,6 +16,7 @@ const (
 	funcArgAttr         = "arg"
 	funcReturnsAttr     = "returns"
 	funcDropCascadeAttr = "drop_cascade"
+	funcDatabaseAttr    = "database"
 
 	funcArgTypeAttr    = "type"
 	funcArgNameAttr    = "name"
@@ -99,6 +100,13 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 			},
+			funcDatabaseAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				ForceNew:    true,
+				Description: "The database where the function is located. If not specified, the provider default database is used.",
+			},
 		},
 	}
 }
@@ -129,9 +137,22 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 	signature := getFunctionSignature(d)
 	functionExists := false
 
+	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	if err != nil {
+		return false, err
+	}
+	defer deferredRollback(txn)
+
 	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL", signature)
-	err := db.QueryRow(query).Scan(&functionExists)
-	return functionExists, err
+	if err := txn.QueryRow(query).Scan(&functionExists); err != nil {
+		return false, err
+	}
+
+	if err := txn.Commit(); err != nil {
+		return false, err
+	}
+
+	return functionExists, nil
 }
 
 func resourcePostgreSQLFunctionRead(db *DBConnection, d *schema.ResourceData) error {
@@ -154,7 +175,14 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		`FROM pg_proc p ` +
 		`LEFT JOIN pg_namespace n ON p.pronamespace = n.oid ` +
 		`WHERE p.oid = to_regprocedure($1)`
-	err := db.QueryRow(query, signature).Scan(&funcSchema, &funcName)
+
+	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	if err != nil {
+		return err
+	}
+	defer deferredRollback(txn)
+
+	err = txn.QueryRow(query, signature).Scan(&funcSchema, &funcName)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL function: %s", signature)
@@ -162,6 +190,16 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return nil
 	case err != nil:
 		return fmt.Errorf("Error reading function: %w", err)
+	}
+
+	if err := txn.Commit(); err != nil {
+		return err
+	}
+
+	if v, ok := d.GetOk(funcDatabaseAttr); ok {
+		d.Set(funcDatabaseAttr, v)
+	} else {
+		d.Set(funcDatabaseAttr, db.client.databaseName)
 	}
 
 	d.Set(funcNameAttr, funcName)
@@ -187,7 +225,18 @@ func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) 
 	}
 
 	sql := fmt.Sprintf("DROP FUNCTION IF EXISTS %s %s", signature, dropMode)
-	if _, err := db.Exec(sql); err != nil {
+
+	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	if err != nil {
+		return err
+	}
+	defer deferredRollback(txn)
+
+	if _, err := txn.Exec(sql); err != nil {
+		return err
+	}
+
+	if err := txn.Commit(); err != nil {
 		return err
 	}
 
@@ -271,7 +320,18 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 	fmt.Fprint(b, "\n", d.Get(funcBodyAttr).(string))
 
 	sql := b.String()
-	if _, err := db.Exec(sql); err != nil {
+
+	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	if err != nil {
+		return err
+	}
+	defer deferredRollback(txn)
+
+	if _, err := txn.Exec(sql); err != nil {
+		return err
+	}
+
+	if err := txn.Commit(); err != nil {
 		return err
 	}
 

@@ -125,6 +125,9 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		// Take a lock on db currentUser to avoid multiple database creation at the same time
 		// It can fail if they grant the same owner to current at the same time as it's not done in transaction.
 		lockTxn, err := startTransaction(db.client, "")
+		if err != nil {
+			return err
+		}
 		if err := pgLockRole(lockTxn, currentUser); err != nil {
 			return err
 		}
