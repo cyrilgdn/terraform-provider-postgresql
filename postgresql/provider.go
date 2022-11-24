@@ -3,10 +3,12 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"golang.org/x/oauth2/google"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -76,6 +78,13 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				Default:     "",
 				Description: "AWS profile to use for IAM auth",
+			},
+
+			"aws_rds_iam_region": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "AWS region to use for IAM auth",
 			},
 
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
@@ -166,7 +175,9 @@ func Provider() *schema.Provider {
 			"postgresql_schema":                    resourcePostgreSQLSchema(),
 			"postgresql_role":                      resourcePostgreSQLRole(),
 			"postgresql_function":                  resourcePostgreSQLFunction(),
-			"postgresql_alter_role":                resourcePostgreSQLAlterRole(),
+			"postgresql_server":                    resourcePostgreSQLServer(),
+			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
+      "postgresql_alter_role":                resourcePostgreSQLAlterRole(),
 		},
 
 		ConfigureFunc: providerConfigure,
@@ -180,7 +191,7 @@ func validateExpectedVersion(v interface{}, key string) (warnings []string, erro
 	return
 }
 
-func getRDSAuthToken(profile string, username string, host string, port int) (string, error) {
+func getRDSAuthToken(region string, profile string, username string, host string, port int) (string, error) {
 	endpoint := fmt.Sprintf("%s:%d", host, port)
 
 	ctx := context.Background()
@@ -190,6 +201,8 @@ func getRDSAuthToken(profile string, username string, host string, port int) (st
 
 	if profile != "" {
 		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithSharedConfigProfile(profile))
+	} else if region != "" {
+		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(region))
 	} else {
 		awscfg, err = awsConfig.LoadDefaultConfig(ctx)
 	}
@@ -200,6 +213,30 @@ func getRDSAuthToken(profile string, username string, host string, port int) (st
 	token, err := auth.BuildAuthToken(ctx, endpoint, awscfg.Region, username, awscfg.Credentials)
 
 	return token, err
+}
+
+func createGoogleCredsFileIfNeeded() error {
+	if _, err := google.FindDefaultCredentials(context.Background()); err == nil {
+		return nil
+	}
+
+	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
+	if rawGoogleCredentials == "" {
+		return nil
+	}
+
+	tmpFile, err := os.CreateTemp("", "")
+	if err != nil {
+		return fmt.Errorf("could not create temporary file: %w", err)
+	}
+	defer tmpFile.Close()
+
+	_, err = tmpFile.WriteString(rawGoogleCredentials)
+	if err != nil {
+		return fmt.Errorf("could not write in temporary file: %w", err)
+	}
+
+	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
 }
 
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
@@ -222,8 +259,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var password string
 	if d.Get("aws_rds_iam_auth").(bool) {
 		profile := d.Get("aws_rds_iam_profile").(string)
+		region := d.Get("aws_rds_iam_region").(string)
 		var err error
-		password, err = getRDSAuthToken(profile, username, host, port)
+		password, err = getRDSAuthToken(region, profile, username, host, port)
 		if err != nil {
 			return nil, err
 		}
@@ -253,6 +291,12 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 			}
+		}
+	}
+
+	if config.Scheme == "gcppostgres" {
+		if err := createGoogleCredsFileIfNeeded(); err != nil {
+			return nil, err
 		}
 	}
 
