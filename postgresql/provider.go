@@ -177,7 +177,7 @@ func Provider() *schema.Provider {
 			"postgresql_function":                  resourcePostgreSQLFunction(),
 			"postgresql_server":                    resourcePostgreSQLServer(),
 			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
-      "postgresql_alter_role":                resourcePostgreSQLAlterRole(),
+      			"postgresql_alter_role":                resourcePostgreSQLAlterRole(),
 		},
 
 		ConfigureFunc: providerConfigure,
