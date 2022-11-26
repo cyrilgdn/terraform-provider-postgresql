@@ -38,7 +38,6 @@ const (
 	featurePubTruncate
 	featurePublication
 	featurePubWithoutTruncate
-	featureSubscription
 	featureFunction
 	featureServer
 )
@@ -105,9 +104,6 @@ var (
 
 		// publication is Supported
 		featurePublication: semver.MustParseRange(">=10.0.0"),
-
-		// subscription is Supported
-		featureSubscription: semver.MustParseRange(">=10.0.0"),
 
 		// We do not support CREATE FUNCTION for Postgresql < 8.4
 		featureFunction: semver.MustParseRange(">=8.4.0"),

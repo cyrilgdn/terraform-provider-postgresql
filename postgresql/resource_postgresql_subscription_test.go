@@ -190,7 +190,6 @@ func TestAccPostgresqlSubscription_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featureSubscription)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
@@ -272,7 +271,6 @@ func TestAccPostgresqlSubscription_CustomSlotName(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featureSubscription)
 			testSuperuserPreCheck(t)
 		},
 		Providers:    testAccProviders,
