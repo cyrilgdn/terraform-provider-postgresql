@@ -171,6 +171,7 @@ func Provider() *schema.Provider {
 			"postgresql_grant_role":                resourcePostgreSQLGrantRole(),
 			"postgresql_replication_slot":          resourcePostgreSQLReplicationSlot(),
 			"postgresql_publication":               resourcePostgreSQLPublication(),
+			"postgresql_subscription":              resourcePostgreSQLSubscription(),
 			"postgresql_physical_replication_slot": resourcePostgreSQLPhysicalReplicationSlot(),
 			"postgresql_schema":                    resourcePostgreSQLSchema(),
 			"postgresql_role":                      resourcePostgreSQLRole(),
