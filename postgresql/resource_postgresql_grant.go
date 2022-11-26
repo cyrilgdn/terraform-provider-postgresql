@@ -150,6 +150,12 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 		return err
 	}
 
+	if objectType == "database" {
+		if err := pgLockDatabase(txn, database); err != nil {
+			return err
+		}
+	}
+
 	owners, err := getRolesToGrant(txn, d)
 	if err != nil {
 		return err
@@ -189,7 +195,8 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 		return fmt.Errorf("feature is not supported: %v", err)
 	}
 
-	txn, err := startTransaction(db.client, d.Get("database").(string))
+	database := d.Get("database").(string)
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
@@ -198,6 +205,13 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	role := d.Get("role").(string)
 	if err := pgLockRole(txn, role); err != nil {
 		return err
+	}
+
+	objectType := d.Get("object_type").(string)
+	if objectType == "database" {
+		if err := pgLockDatabase(txn, database); err != nil {
+			return err
+		}
 	}
 
 	owners, err := getRolesToGrant(txn, d)
