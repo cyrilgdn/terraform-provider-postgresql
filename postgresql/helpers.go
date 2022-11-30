@@ -379,6 +379,12 @@ SELECT rolname
   FROM pg_database
   JOIN pg_roles ON datdba = pg_roles.oid
   WHERE datname = $1
+UNION ALL
+SELECT rolname
+  FROM pg_database
+  JOIN pg_auth_members ON datdba = pg_auth_members.roleid
+  JOIN pg_roles ON pg_auth_members.member = pg_roles.oid
+  WHERE datname = $1
 `
 	var owner string
 
@@ -398,6 +404,13 @@ SELECT rolname
   FROM pg_namespace
   JOIN pg_roles ON nspowner = pg_roles.oid
   WHERE nspname = $1
+UNION ALL
+SELECT nspname, rolname
+  FROM pg_namespace
+  JOIN pg_auth_members ON nspowner = pg_auth_members.roleid
+  JOIN pg_roles ON pg_auth_members.member = pg_roles.oid
+  WHERE nspname = $1
+;
 `
 	var owner string
 
