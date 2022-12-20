@@ -112,7 +112,7 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	defer deferredRollback(txn)
 
 	var userMappingOptions []string
-	query := "SELECT umoptions FROM pg_user_mappings WHERE usename = $1 and srvname = $2"
+	query := "SELECT umoptions FROM information_schema._pg_user_mappings WHERE authorization_identifier = $1 and foreign_server_name = $2"
 	err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
 	switch {
 	case err == sql.ErrNoRows:
