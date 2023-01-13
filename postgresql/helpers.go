@@ -534,8 +534,5 @@ func findStringSubmatchMap(expression string, text string) map[string]string {
 }
 
 func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
-	if old == new {
-		return true
-	}
-	return false
+	return old == new
 }

@@ -211,7 +211,11 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 
 	if functionId == "" {
 		// Generate during creation
-		functionId = generateFunctionID(db, d)
+		generatedFunctionId, err := generateFunctionID(db, d)
+		if err != nil {
+			return err
+		}
+		functionId = generatedFunctionId
 	}
 
 	databaseName, functionSignature, expandErr := expandFunctionID(functionId, d, db)
@@ -248,7 +252,10 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 
 	var pgFunction PGFunction
 
-	pgFunction.Parse(funcDefinition)
+	err = pgFunction.Parse(funcDefinition)
+	if err != nil {
+		return err
+	}
 
 	var args []map[string]interface{}
 
@@ -331,7 +338,10 @@ func resourcePostgreSQLFunctionUpdate(db *DBConnection, d *schema.ResourceData) 
 func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) error {
 
 	var pgFunction PGFunction
-	pgFunction.FromResourceData(d)
+	err := pgFunction.FromResourceData(d)
+	if err != nil {
+		return err
+	}
 
 	b := bytes.NewBufferString("CREATE ")
 
@@ -397,7 +407,7 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 	return nil
 }
 
-func generateFunctionID(db *DBConnection, d *schema.ResourceData) string {
+func generateFunctionID(db *DBConnection, d *schema.ResourceData) (string, error) {
 
 	b := bytes.NewBufferString("")
 
@@ -408,7 +418,10 @@ func generateFunctionID(db *DBConnection, d *schema.ResourceData) string {
 	}
 
 	var pgFunction PGFunction
-	pgFunction.FromResourceData(d)
+	err := pgFunction.FromResourceData(d)
+	if err != nil {
+		return "", err
+	}
 
 	fmt.Fprint(b, pgFunction.Schema, ".", pgFunction.Name, "(")
 
@@ -432,7 +445,7 @@ func generateFunctionID(db *DBConnection, d *schema.ResourceData) string {
 
 	b.WriteRune(')')
 
-	return b.String()
+	return b.String(), nil
 }
 
 func expandFunctionID(functionId string, d *schema.ResourceData, db *DBConnection) (databaseName string, functionSignature string, err error) {

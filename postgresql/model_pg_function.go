@@ -99,7 +99,10 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 		rawArgs := strings.Split(argsData, ",")
 		for i := 0; i < len(rawArgs); i++ {
 			var arg PGFunctionArg
-			arg.Parse(rawArgs[i])
+			err := arg.Parse(rawArgs[i])
+			if err != nil {
+				continue
+			}
 			args = append(args, arg)
 		}
 	}
