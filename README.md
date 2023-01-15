@@ -20,7 +20,7 @@ Building The Provider
 Clone repository to: `$GOPATH/src/github.com/cyrilgdn/terraform-provider-postgresql`
 
 ```sh
-$ mkdir -p $GOPATH/src/github.com/terraform-providers; cd $GOPATH/src/github.com/terraform-providers
+$ mkdir -p $GOPATH/src/github.com/cyrilgdn; cd $GOPATH/src/github.com/cyrilgdn
 $ git clone git@github.com:cyrilgdn/terraform-provider-postgresql
 ```
 
