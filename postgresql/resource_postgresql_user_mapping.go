@@ -125,8 +125,8 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 
 	mappedOptions := make(map[string]interface{})
 	for _, v := range userMappingOptions {
-		idx := strings.Index(v, "=")
-		mappedOptions[v[:idx]] = v[idx+1:]
+		pair := strings.SplitN(v, "=", 2)
+		mappedOptions[pair[0]] = pair[1]
 	}
 
 	d.Set(userMappingUserNameAttr, username)
