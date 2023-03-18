@@ -275,12 +275,32 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 	return schema.NewSet(schema.HashString, s)
 }
 
+func quoteIdentifyIdent(ident string) string {
+	// When passing a function with arguments like "test(text, char)" this will correctly parse it to "test"(text, char).
+	// If we were to add quotes around the whole ident postgres would not be able to find the function.
+	// Usually specifying parameters of a function is not necessary, but postgres allows function overloading where it
+	// identifies the function by its parameters allowing the developer to have multiple functions with the same name.
+	// Information:
+	// https://en.wikipedia.org/wiki/Function_overloading
+	// https://stackoverflow.com/a/48640797
+
+	s := strings.Split(ident, "(")
+
+	functionArgTypes := ""
+
+	if len(s) > 1 {
+		functionArgTypes = "(" + s[1]
+	}
+
+	return fmt.Sprintf("%s%s", pq.QuoteIdentifier(s[0]), functionArgTypes)
+}
+
 func setToPgIdentList(schema string, idents *schema.Set) string {
 	quotedIdents := make([]string, idents.Len())
 	for i, ident := range idents.List() {
 		quotedIdents[i] = fmt.Sprintf(
 			"%s.%s",
-			pq.QuoteIdentifier(schema), pq.QuoteIdentifier(ident.(string)),
+			pq.QuoteIdentifier(schema), quoteIdentifyIdent(ident.(string)),
 		)
 	}
 	return strings.Join(quotedIdents, ",")
