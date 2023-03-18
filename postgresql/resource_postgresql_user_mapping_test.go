@@ -32,6 +32,8 @@ func TestAccPostgresqlUserMapping_Basic(t *testing.T) {
 						"postgresql_user_mapping.remote", "options.user", "admin"),
 					resource.TestCheckResourceAttr(
 						"postgresql_user_mapping.remote", "options.password", "pass"),
+					resource.TestCheckResourceAttr(
+						"postgresql_user_mapping.special_chars", "options.password", "pass=$*'"),
 				),
 			},
 		},
@@ -189,6 +191,19 @@ resource "postgresql_user_mapping" "remote" {
   options = {
     user = "admin"
     password = "pass"
+  }
+}
+
+resource "postgresql_role" "special" {
+  name = "special"
+}
+
+resource "postgresql_user_mapping" "special_chars" {
+  server_name = postgresql_server.myserver_postgres.server_name
+  user_name   = postgresql_role.special.name
+  options = {
+	user = "admin"
+	password = "pass=$*'"
   }
 }
 `
