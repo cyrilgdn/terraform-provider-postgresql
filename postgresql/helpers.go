@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -531,4 +532,24 @@ func isUniqueArr(arr []interface{}) (interface{}, bool) {
 		keys[entry] = true
 	}
 	return nil, true
+}
+
+func findStringSubmatchMap(expression string, text string) map[string]string {
+
+	r := regexp.MustCompile(expression)
+
+	parts := r.FindStringSubmatch(text)
+
+	paramsMap := make(map[string]string)
+	for i, name := range r.SubexpNames() {
+		if i > 0 && i <= len(parts) {
+			paramsMap[name] = parts[i]
+		}
+	}
+
+	return paramsMap
+}
+
+func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
+	return old == new
 }
