@@ -23,6 +23,7 @@ var allowedObjectTypes = []string{
 	"table",
 	"foreign_data_wrapper",
 	"foreign_server",
+	"column",
 }
 
 var objectTypes = map[string]string{
@@ -36,8 +37,9 @@ var objectTypes = map[string]string{
 func resourcePostgreSQLGrant() *schema.Resource {
 	return &schema.Resource{
 		Create: PGResourceFunc(resourcePostgreSQLGrantCreate),
-		// As create revokes and grants we can use it to update too
-		Update: PGResourceFunc(resourcePostgreSQLGrantCreate),
+		// Since all of this resource's arguments force a recreation
+		// there's no need for an Update function
+		// Update:
 		Read:   PGResourceFunc(resourcePostgreSQLGrantRead),
 		Delete: PGResourceFunc(resourcePostgreSQLGrantDelete),
 
@@ -75,9 +77,18 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Set:         schema.HashString,
 				Description: "The specific objects to grant privileges on for this role (empty means all objects of the requested type)",
 			},
+			"columns": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				ForceNew:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Set:         schema.HashString,
+				Description: "The specific columns to grant privileges on for this role",
+			},
 			"privileges": {
 				Type:        schema.TypeSet,
 				Required:    true,
+				ForceNew:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
 				Description: "The list of privileges to grant",
@@ -129,6 +140,18 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	}
 	if d.Get("objects").(*schema.Set).Len() > 0 && (objectType == "database" || objectType == "schema") {
 		return fmt.Errorf("cannot specify `objects` when `object_type` is `database` or `schema`")
+	}
+	if d.Get("columns").(*schema.Set).Len() > 0 && (objectType != "column") {
+		return fmt.Errorf("cannot specify `columns` when `object_type` is not `column`")
+	}
+	if d.Get("columns").(*schema.Set).Len() == 0 && (objectType == "column") {
+		return fmt.Errorf("must specify `columns` when `object_type` is `column`")
+	}
+	if d.Get("privileges").(*schema.Set).Len() != 1 && (objectType == "column") {
+		return fmt.Errorf("must specify exactly 1 `privileges` when `object_type` is `column`")
+	}
+	if (d.Get("objects").(*schema.Set).Len() != 1) && (objectType == "column") {
+		return fmt.Errorf("must specify exactly 1 table in the `objects` field when `object_type` is `column`")
 	}
 	if d.Get("objects").(*schema.Set).Len() != 1 && (objectType == "foreign_data_wrapper" || objectType == "foreign_server") {
 		return fmt.Errorf("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`")
@@ -310,6 +333,84 @@ WHERE grantee = $2
 	return nil
 }
 
+func readColumnRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+	objects := d.Get("objects").(*schema.Set)
+
+	missingColumns := d.Get("columns").(*schema.Set) // Getting columns from state.
+	// If the query returns a column, it is a removed from the missingColumns.
+
+	var rows *sql.Rows
+
+	// The attacl column of pg_attribute contains information only about explicit column grants
+	query := `
+SELECT relname AS table_name, attname AS column_name, array_agg(privilege_type) AS column_privileges
+FROM (SELECT relname, attname, (aclexplode(attacl)).*
+      FROM pg_class
+               JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
+               JOIN pg_attribute ON pg_class.oid = attrelid
+      WHERE nspname = $2
+        AND relname = $3
+        AND relkind = $4)
+         AS col_privs
+         JOIN pg_roles ON pg_roles.oid = col_privs.grantee
+WHERE rolname = $1
+  AND privilege_type = $5
+GROUP BY col_privs.relname, col_privs.attname, col_privs.privilege_type
+ORDER BY col_privs.attname
+;`
+	rows, err := txn.Query(
+		query, d.Get("role").(string), d.Get("schema"), objects.List()[0], objectTypes["table"], d.Get("privileges").(*schema.Set).List()[0],
+	)
+
+	if err != nil {
+		return err
+	}
+
+	for rows.Next() {
+		var objName string
+		var colName string
+		var privileges pq.ByteaArray
+
+		if err := rows.Scan(&objName, &colName, &privileges); err != nil {
+			return err
+		}
+
+		if objects.Len() > 0 && !objects.Contains(objName) {
+			continue
+		}
+
+		if missingColumns.Contains(colName) {
+			missingColumns.Remove(colName)
+		}
+
+		privilegesSet := pgArrayToSet(privileges)
+
+		if !privilegesSet.Equal(d.Get("privileges").(*schema.Set)) {
+			// If any object doesn't have the same privileges as saved in the state,
+			// we return its privileges to force an update.
+			log.Printf(
+				"[DEBUG] %s %s has not the expected privileges %v for role %s",
+				strings.ToTitle("column"), objName, privileges, d.Get("role"),
+			)
+			d.Set("privileges", privilegesSet)
+			break
+		}
+	}
+
+	if missingColumns.Len() > 0 {
+		// If missingColumns is not empty by the end of the result processing loop
+		// it means that a column is missing
+		remainingColumns := d.Get("columns").(*schema.Set).Difference(missingColumns)
+		log.Printf(
+			"[DEBUG] Role %s does not have the expected privileges on columns",
+			d.Get("role"),
+		)
+		d.Set("columns", remainingColumns)
+	}
+
+	return nil
+}
+
 func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
@@ -355,6 +456,9 @@ GROUP BY pg_proc.proname
 		rows, err = txn.Query(
 			query, roleOID, d.Get("schema"),
 		)
+
+	case "column":
+		return readColumnRolePrivileges(txn, d)
 
 	default:
 		query = `
@@ -448,6 +552,15 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 			pq.QuoteIdentifier(srvName.(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
+	case "COLUMN":
+		objects := d.Get("objects").(*schema.Set)
+		query = fmt.Sprintf(
+			"GRANT %s (%s) ON TABLE %s TO %s",
+			strings.Join(privileges, ","),
+			setToPgIdentListWithoutSchema(d.Get("columns").(*schema.Set)),
+			setToPgIdentList(d.Get("schema").(string), objects),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
 	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
 		objects := d.Get("objects").(*schema.Set)
 		if objects.Len() > 0 {
@@ -506,15 +619,44 @@ func createRevokeQuery(d *schema.ResourceData) string {
 			pq.QuoteIdentifier(srvName.(string)),
 			pq.QuoteIdentifier(d.Get("role").(string)),
 		)
-	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
+	case "COLUMN":
 		objects := d.Get("objects").(*schema.Set)
-		if objects.Len() > 0 {
+		columns := d.Get("columns").(*schema.Set)
+		privileges := d.Get("privileges").(*schema.Set)
+		if privileges.Len() == 0 || columns.Len() == 0 {
+			// No privileges to revoke, so don't revoke anything
+			query = "SELECT NULL"
+		} else {
 			query = fmt.Sprintf(
-				"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
-				strings.ToUpper(d.Get("object_type").(string)),
+				"REVOKE %s (%s) ON TABLE %s FROM %s",
+				setToPgIdentSimpleList(privileges),
+				setToPgIdentListWithoutSchema(columns),
 				setToPgIdentList(d.Get("schema").(string), objects),
 				pq.QuoteIdentifier(d.Get("role").(string)),
 			)
+		}
+	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
+		objects := d.Get("objects").(*schema.Set)
+		privileges := d.Get("privileges").(*schema.Set)
+		if objects.Len() > 0 {
+			if privileges.Len() > 0 {
+				// Revoking specific privileges instead of all privileges
+				// to avoid messing with column level grants
+				query = fmt.Sprintf(
+					"REVOKE %s ON %s %s FROM %s",
+					setToPgIdentSimpleList(privileges),
+					strings.ToUpper(d.Get("object_type").(string)),
+					setToPgIdentList(d.Get("schema").(string), objects),
+					pq.QuoteIdentifier(d.Get("role").(string)),
+				)
+			} else {
+				query = fmt.Sprintf(
+					"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
+					strings.ToUpper(d.Get("object_type").(string)),
+					setToPgIdentList(d.Get("schema").(string), objects),
+					pq.QuoteIdentifier(d.Get("role").(string)),
+				)
+			}
 		} else {
 			query = fmt.Sprintf(
 				"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
@@ -547,6 +689,10 @@ func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	query := createRevokeQuery(d)
+	if len(query) == 0 {
+		// Query is empty, don't run anything
+		return nil
+	}
 	if _, err := txn.Exec(query); err != nil {
 		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
@@ -619,6 +765,10 @@ func generateGrantID(d *schema.ResourceData) string {
 
 	for _, object := range d.Get("objects").(*schema.Set).List() {
 		parts = append(parts, object.(string))
+	}
+
+	for _, column := range d.Get("columns").(*schema.Set).List() {
+		parts = append(parts, column.(string))
 	}
 
 	return strings.Join(parts, "_")

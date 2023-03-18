@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,7 +167,7 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	}
 
 	for _, table := range tables {
-		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (val text)", table)); err != nil {
+		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (val text, test_column_one text, test_column_two text)", table)); err != nil {
 			t.Fatalf("could not create test table in db %s: %v", dbName, err)
 		}
 		if owner != "" {
@@ -334,6 +335,36 @@ func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas [
 		queries := map[string]string{
 			"USAGE":  fmt.Sprintf("DROP TABLE IF EXISTS %s.test_table", schema),
 			"CREATE": fmt.Sprintf("CREATE TABLE %s.test_table()", schema),
+		}
+
+		for queryType, query := range queries {
+			if err := testHasGrantForQuery(db, query, sliceContainsStr(allowedPrivileges, queryType)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func testCheckColumnPrivileges(t *testing.T, dbName, roleName string, tables []string, allowedPrivileges []string, columns []string) error {
+	db := connectAsTestRole(t, roleName, dbName)
+	defer db.Close()
+
+	columnValues := []string{}
+	for _, col := range columns {
+		columnValues = append(columnValues, fmt.Sprint("'", col, "'"))
+	}
+
+	updateColumnValues := []string{}
+	for i := range columns {
+		updateColumnValues = append(updateColumnValues, fmt.Sprint(columns[i], " = ", columnValues[i]))
+	}
+
+	for _, table := range tables {
+		queries := map[string]string{
+			"SELECT": fmt.Sprintf("SELECT %s FROM %s", strings.Join(columns, ", "), table),
+			"INSERT": fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ", "), strings.Join(columnValues, ", ")),
+			"UPDATE": fmt.Sprintf("UPDATE %s SET %s", table, strings.Join(updateColumnValues, ", ")),
 		}
 
 		for queryType, query := range queries {
