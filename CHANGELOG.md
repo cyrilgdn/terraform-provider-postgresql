@@ -1,4 +1,51 @@
-## Unreleased
+## 1.18.0 (November 26)
+
+* **New resource**: `postgresql_server` and `postgresql_user_mapping` - @fabiopaiva
+  [#220](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/220)
+
+* **New resource**: `postgresql_subscription` - @nicarl
+  [#244](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/244)
+
+* Allow to configure AWS Region with AWS IAM Auth - @bpaquet
+  [#260](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/260)
+
+* Create temporary file for `GOOGLE_APPLICATION_CREDENTIALS` in Terraform cloud - @minkainc-opensource
+  [#249](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/249)
+
+FIX:
+
+* `postgresql_grant`: Concurrency issue on database privileges - @timothegenzmer
+  [#224](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/224)
+
+* `postgresql_grant`: Remove `TEMP` privileges for database - @cyrilgdn
+  [#243](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/243)
+
+DEV IMPROVEMENTS:
+
+* Update Postgres versions in tests - @cyrilgdn
+
+
+## 1.17.1 (August 19, 2022)
+
+FIX:
+
+* `provider`: Fix segfault on bad credentials when `expected_version` is defined - @cyrilgdn
+  [#242](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/242)
+
+## 1.17.0 (August 19, 2022)
+
+FEATURES
+
+* `postgresql_function`: Add `database` parameter - @LucasBoisserie
+  [#216](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/216)
+
+* `postgresql_role`: Support of ALTER ROLE ... SET ROLE- @kostiantyn-nemchenko
+  [#209](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/209)
+
+FIX:
+
+* `postgresql_publication`: Fix unordered tables - @nguyenhoaibao
+  [#219](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/219)
 
 ## 1.16.0 (May 8, 2022)
 

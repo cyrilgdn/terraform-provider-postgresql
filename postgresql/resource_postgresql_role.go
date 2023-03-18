@@ -34,6 +34,7 @@ const (
 	roleRolesAttr                           = "roles"
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
+	roleAssumeRoleAttr                      = "assume_role"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -167,6 +168,11 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Description:  "Abort any statement that takes more than the specified number of milliseconds",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
+			roleAssumeRoleAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Role to switch to at login",
+			},
 		},
 	}
 }
@@ -298,6 +304,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+		return err
+	}
+
+	if err = setAssumeRole(txn, d); err != nil {
 		return err
 	}
 
@@ -446,6 +456,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleBypassRLSAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
+	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
@@ -520,6 +531,20 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 		}
 	}
 	return 0, nil
+}
+
+// readAssumeRole searches for a role entry in the rolconfig array.
+// In case no such value is present, it returns empty string.
+func readAssumeRole(roleConfig pq.ByteaArray) string {
+	var res string
+	var assumeRoleAttr = "role"
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, assumeRoleAttr) {
+			res = strings.TrimPrefix(config, assumeRoleAttr+"=")
+		}
+	}
+	return res
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -657,6 +682,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+		return err
+	}
+
+	if err = setAssumeRole(txn, d); err != nil {
 		return err
 	}
 
@@ -1004,6 +1033,31 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleAssumeRoleAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	assumeRole := d.Get(roleAssumeRoleAttr).(string)
+	if assumeRole != "" {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET ROLE TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(assumeRole),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set role %s for %s: %w", assumeRole, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET ROLE", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
 		}
 	}
 	return nil
