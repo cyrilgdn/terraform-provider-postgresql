@@ -275,6 +275,14 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 	return schema.NewSet(schema.HashString, s)
 }
 
+func stringSliceToSet(slice []string) *schema.Set {
+	s := make([]interface{}, len(slice))
+	for i, v := range slice {
+		s[i] = v
+	}
+	return schema.NewSet(schema.HashString, s)
+}
+
 func quoteIdentifyIdent(ident string) string {
 	// When passing a function with arguments like "test(text, char)" this will correctly parse it to "test"(text, char).
 	// If we were to add quotes around the whole ident postgres would not be able to find the function.
