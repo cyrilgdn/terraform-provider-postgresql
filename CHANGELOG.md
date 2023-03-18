@@ -1,4 +1,24 @@
-## 1.18.0 (November 26)
+## 1.19.0 (March 18, 2023)
+
+* **New data sources**: `postgresql_schemas`, `postgresql_sequences` and `postgresql_tables` - @SpencerBinXia
+  [#214](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/214)
+
+* `postgresql_grant`: Add column level access - @kda-jt @wilsonjackson 
+  [#135](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/135)
+
+* `postgresql_function`: Support terraform import - @khkhalifa
+  [#275](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/275)
+
+* `postgresql_grant`: Support arguments in function name - @marvin-kolja
+  [#228](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/228)
+
+FIX:
+
+* `postgresql_user_mapping`: Fix for RDS Aurora - @fabiopaiva
+  [#274](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/274)
+
+
+## 1.18.0 (November 26, 2022)
 
 * **New resource**: `postgresql_server` and `postgresql_user_mapping` - @fabiopaiva
   [#220](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/220)
