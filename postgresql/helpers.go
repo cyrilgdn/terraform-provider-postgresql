@@ -422,7 +422,7 @@ SELECT rolname
   JOIN pg_roles ON nspowner = pg_roles.oid
   WHERE nspname = $1
 UNION ALL
-SELECT nspname, rolname
+SELECT rolname
   FROM pg_namespace
   JOIN pg_auth_members ON nspowner = pg_auth_members.roleid
   JOIN pg_roles ON pg_auth_members.member = pg_roles.oid
