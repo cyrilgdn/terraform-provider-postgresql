@@ -252,8 +252,13 @@ func testAccCheckPostgresqlFunctionDestroy(s *terraform.State) error {
 		}
 		defer deferredRollback(txn)
 
-		signature := rs.Primary.ID
-		exists, err := checkFunctionExists(txn, signature)
+		_, functionSignature, expandErr := expandFunctionID(rs.Primary.ID, nil, nil)
+
+		if expandErr != nil {
+			return fmt.Errorf("Incorrect resource Id %s", err)
+		}
+
+		exists, err := checkFunctionExists(txn, functionSignature)
 
 		if err != nil {
 			return fmt.Errorf("Error checking function %s", err)
