@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.1.6
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.15.0
-	github.com/lib/pq v1.10.4
+	github.com/lib/pq v1.10.7
 	github.com/sean-/postgresql-acl v0.0.0-20161225120419-d10489e5d217
 	github.com/stretchr/testify v1.7.0
 	gocloud.dev v0.25.0
