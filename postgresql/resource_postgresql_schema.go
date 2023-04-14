@@ -309,6 +309,7 @@ func resourcePostgreSQLSchemaRead(db *DBConnection, d *schema.ResourceData) erro
 }
 
 func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) error {
+	dropCascade := d.Get(schemaDropCascade).(bool)
 	database, schemaName, err := getDBSchemaName(d, db.client.databaseName)
 	if err != nil {
 		return err
@@ -357,6 +358,7 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 		d.Set(schemaNameAttr, schemaName)
 		d.Set(schemaOwnerAttr, schemaOwner)
 		d.Set(schemaDatabaseAttr, database)
+		d.Set(schemaDropCascade, dropCascade)
 		d.SetId(generateSchemaID(d, database))
 
 		return nil

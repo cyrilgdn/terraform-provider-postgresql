@@ -170,6 +170,7 @@ func resourcePostgreSQLExtensionRead(db *DBConnection, d *schema.ResourceData) e
 }
 
 func resourcePostgreSQLExtensionReadImpl(db *DBConnection, d *schema.ResourceData) error {
+	dropCascade := d.Get(extDropCascadeAttr).(bool)
 	database, extName, err := getDBExtName(d, db.client)
 	if err != nil {
 		return err
@@ -199,6 +200,7 @@ func resourcePostgreSQLExtensionReadImpl(db *DBConnection, d *schema.ResourceDat
 	d.Set(extSchemaAttr, extSchema)
 	d.Set(extVersionAttr, extVersion)
 	d.Set(extDatabaseAttr, database)
+	d.Set(extDropCascadeAttr, dropCascade)
 	d.SetId(generateExtensionID(d, database))
 
 	return nil
