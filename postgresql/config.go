@@ -277,6 +277,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
+
+		if err == nil {
+			err = db.Ping()
+		}
 		if err != nil {
 			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
 			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
