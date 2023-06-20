@@ -149,6 +149,11 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 	var revokedRoles []string
 
 	for _, role := range roles {
+		// The `pg_database_owner` role (https://www.postgresql.org/docs/current/predefined-roles.html)
+		// Is a built-in role in PG 14 and later that cannot be manipulated with the below logic
+		if role == "pg_database_owner" {
+			continue
+		}
 		// We need to check if the role we want to grant is a superuser
 		// in this case Postgres disallows to grant it to a current user which is not superuser.
 		superuser, err := isSuperuser(txn, role)
