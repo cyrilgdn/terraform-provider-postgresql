@@ -8,23 +8,31 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/lib/pq"
 )
 
 const (
-	funcNameAttr        = "name"
-	funcSchemaAttr      = "schema"
-	funcBodyAttr        = "body"
-	funcArgAttr         = "arg"
-	funcLanguageAttr    = "language"
-	funcReturnsAttr     = "returns"
-	funcDropCascadeAttr = "drop_cascade"
-	funcDatabaseAttr    = "database"
+	funcNameAttr            = "name"
+	funcSchemaAttr          = "schema"
+	funcBodyAttr            = "body"
+	funcArgAttr             = "arg"
+	funcLanguageAttr        = "language"
+	funcReturnsAttr         = "returns"
+	funcDropCascadeAttr     = "drop_cascade"
+	funcDatabaseAttr        = "database"
+	funcParallelAttr        = "parallel"
+	funcSecurityDefinerAttr = "security_definer"
+	funcStrictAttr          = "strict"
+	funcVolatilityAttr      = "volatility"
 
 	funcArgTypeAttr    = "type"
 	funcArgNameAttr    = "name"
 	funcArgModeAttr    = "mode"
 	funcArgDefaultAttr = "default"
+
+	defaultFunctionVolatility = "VOLATILE"
+	defaultFunctionParallel   = "UNSAFE"
 )
 
 func resourcePostgreSQLFunction() *schema.Resource {
@@ -130,6 +138,34 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Description: "Automatically drop objects that depend on the function (such as operators or triggers), and in turn all objects that depend on those objects.",
 				Optional:    true,
 				Default:     false,
+			},
+			funcParallelAttr: {
+				Type:             schema.TypeString,
+				Description:      "If the function can be executed in parallel for a single query execution. One of: UNSAFE, RESTRICTED, SAFE",
+				Optional:         true,
+				Default:          defaultFunctionParallel,
+				DiffSuppressFunc: defaultDiffSuppressFunc,
+				ValidateFunc:     validation.StringInSlice([]string{"UNSAFE", "RESTRICTED", "SAFE"}, false),
+			},
+			funcSecurityDefinerAttr: {
+				Type:        schema.TypeBool,
+				Description: "If the function should execute with the permissions of the function owner instead of the permissions of the caller.",
+				Optional:    true,
+				Default:     false,
+			},
+			funcStrictAttr: {
+				Type:        schema.TypeBool,
+				Description: "If the function should always return NULL if any of it's inputs is NULL.",
+				Optional:    true,
+				Default:     false,
+			},
+			funcVolatilityAttr: {
+				Type:             schema.TypeString,
+				Description:      "Volatility of the function. One of: VOLATILE, STABLE, IMMUTABLE.",
+				Optional:         true,
+				Default:          defaultFunctionVolatility,
+				DiffSuppressFunc: defaultDiffSuppressFunc,
+				ValidateFunc:     validation.StringInSlice([]string{"VOLATILE", "STABLE", "IMMUTABLE"}, false),
 			},
 			funcDatabaseAttr: {
 				Type:        schema.TypeString,
@@ -274,6 +310,10 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 	d.Set(funcLanguageAttr, pgFunction.Language)
 	d.Set(funcReturnsAttr, pgFunction.Returns)
 	d.Set(funcBodyAttr, pgFunction.Body)
+	d.Set(funcSecurityDefinerAttr, pgFunction.SecurityDefiner)
+	d.Set(funcStrictAttr, pgFunction.Strict)
+	d.Set(funcParallelAttr, pgFunction.Parallel)
+	d.Set(funcVolatilityAttr, pgFunction.Volatility)
 	d.Set(funcArgAttr, args)
 
 	d.SetId(functionId)
@@ -385,6 +425,18 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 
 	fmt.Fprint(b, "\nRETURNS ", pgFunction.Returns)
 	fmt.Fprint(b, "\nLANGUAGE ", pgFunction.Language)
+	if pgFunction.Volatility != defaultFunctionVolatility {
+		fmt.Fprint(b, "\n", pgFunction.Volatility)
+	}
+	if pgFunction.SecurityDefiner {
+		fmt.Fprint(b, "\nSECURITY DEFINER")
+	}
+	if pgFunction.Parallel != defaultFunctionParallel {
+		fmt.Fprint(b, "\nPARALLEL ", pgFunction.Parallel)
+	}
+	if pgFunction.Strict {
+		fmt.Fprint(b, "\nSTRICT")
+	}
 
 	fmt.Fprint(b, "\nAS $function$", pgFunction.Body, "$function$;")
 

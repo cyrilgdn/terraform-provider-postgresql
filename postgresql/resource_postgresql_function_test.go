@@ -13,13 +13,12 @@ func TestAccPostgresqlFunction_Basic(t *testing.T) {
 	config := `
 resource "postgresql_function" "basic_function" {
     name = "basic_function"
-	returns = "integer"
+    returns = "integer"
+    language = "plpgsql"
     body = <<-EOF
-        AS $$
         BEGIN
             RETURN 1;
         END;
-        $$ LANGUAGE plpgsql;
     EOF
 }
 `
@@ -40,6 +39,8 @@ resource "postgresql_function" "basic_function" {
 						"postgresql_function.basic_function", "name", "basic_function"),
 					resource.TestCheckResourceAttr(
 						"postgresql_function.basic_function", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.basic_function", "language", "plpgsql"),
 				),
 			},
 		},
@@ -57,14 +58,13 @@ func TestAccPostgresqlFunction_SpecificDatabase(t *testing.T) {
 	config := `
 resource "postgresql_function" "basic_function" {
     name = "basic_function"
-	database = "%s"
-	returns = "integer"
+    database = "%s"
+    returns = "integer"
+    language = "plpgsql"
     body = <<-EOF
-        AS $$
         BEGIN
             RETURN 1;
         END;
-        $$ LANGUAGE plpgsql;
     EOF
 }
 `
@@ -87,6 +87,8 @@ resource "postgresql_function" "basic_function" {
 						"postgresql_function.basic_function", "database", dbName),
 					resource.TestCheckResourceAttr(
 						"postgresql_function.basic_function", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.basic_function", "language", "plpgsql"),
 				),
 			},
 		},
@@ -96,28 +98,31 @@ resource "postgresql_function" "basic_function" {
 func TestAccPostgresqlFunction_MultipleArgs(t *testing.T) {
 	config := `
 resource "postgresql_schema" "test" {
-	name = "test"
+    name = "test"
 }
 
 resource "postgresql_function" "increment" {
-	schema = postgresql_schema.test.name
+    schema = postgresql_schema.test.name
     name = "increment"
     arg {
-		name = "i"
-		type = "integer"
-		default = "7"
-	}
+        name = "i"
+        type = "integer"
+        default = "7"
+    }
     arg {
-		name = "result"
-		type = "integer"
-		mode = "OUT"
-	}
+        name = "result"
+        type = "integer"
+        mode = "OUT"
+    }
+    language = "plpgsql"
+    parallel = "RESTRICTED"
+    strict = true
+    security_definer = true
+    volatility = "STABLE"
     body = <<-EOF
-        AS $$
         BEGIN
             result = i + 1;
         END;
-        $$ LANGUAGE plpgsql;
     EOF
 }
 `
@@ -138,6 +143,16 @@ resource "postgresql_function" "increment" {
 						"postgresql_function.increment", "name", "increment"),
 					resource.TestCheckResourceAttr(
 						"postgresql_function.increment", "schema", "test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.increment", "language", "plpgsql"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.increment", "strict", "true"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.increment", "parallel", "RESTRICTED"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.increment", "security_definer", "true"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.increment", "volatility", "STABLE"),
 				),
 			},
 		},
@@ -148,13 +163,12 @@ func TestAccPostgresqlFunction_Update(t *testing.T) {
 	configCreate := `
 resource "postgresql_function" "func" {
     name = "func"
-	returns = "integer"
+    returns = "integer"
+    language = "plpgsql"
     body = <<-EOF
-        AS $$
         BEGIN
             RETURN 1;
         END;
-        $$ LANGUAGE plpgsql;
     EOF
 }
 `
@@ -162,13 +176,13 @@ resource "postgresql_function" "func" {
 	configUpdate := `
 resource "postgresql_function" "func" {
     name = "func"
-	returns = "integer"
+    returns = "integer"
+    language = "plpgsql"
+    volatility = "IMMUTABLE"
     body = <<-EOF
-        AS $$
         BEGIN
             RETURN 2;
         END;
-        $$ LANGUAGE plpgsql;
     EOF
 }
 `
@@ -188,6 +202,8 @@ resource "postgresql_function" "func" {
 						"postgresql_function.func", "name", "func"),
 					resource.TestCheckResourceAttr(
 						"postgresql_function.func", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.func", "volatility", "VOLATILE"),
 				),
 			},
 			{
@@ -198,6 +214,8 @@ resource "postgresql_function" "func" {
 						"postgresql_function.func", "name", "func"),
 					resource.TestCheckResourceAttr(
 						"postgresql_function.func", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_function.func", "volatility", "IMMUTABLE"),
 				),
 			},
 		},
