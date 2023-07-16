@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 		t.Fatalf("could connect to database: %v", err)
 	}
 	if !db.featureSupported(feature) {
-		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", db.version))
+		t.Skipf("Skip extension tests for Postgres %s", db.version)
 	}
 }
 
@@ -63,9 +64,7 @@ func getTestConfig(t *testing.T) Config {
 
 func skipIfNotAcc(t *testing.T) {
 	if os.Getenv(resource.EnvTfAcc) == "" {
-		t.Skip(fmt.Sprintf(
-			"Acceptance tests skipped unless env '%s' set",
-			resource.EnvTfAcc))
+		t.Skipf("Acceptance tests skipped unless env '%s' set", resource.EnvTfAcc)
 	}
 }
 
@@ -166,7 +165,7 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	}
 
 	for _, table := range tables {
-		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (val text)", table)); err != nil {
+		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (val text, test_column_one text, test_column_two text)", table)); err != nil {
 			t.Fatalf("could not create test table in db %s: %v", dbName, err)
 		}
 		if owner != "" {
@@ -274,6 +273,71 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 	}
 }
 
+func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owner string) func() {
+	config := getTestConfig(t)
+	dbName, _ := getTestDBNames(dbSuffix)
+	adminUser := config.getDatabaseUsername()
+
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer db.Close()
+
+	if owner != "" {
+		if !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+				t.Fatalf("could not grant role %s to current user: %v", owner, err)
+			}
+		}
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", owner)); err != nil {
+			t.Fatalf("could not set role to %s: %v", owner, err)
+		}
+	}
+
+	for _, sequence := range sequences {
+		if _, err := db.Exec(fmt.Sprintf("CREATE sequence %s", sequence)); err != nil {
+			t.Fatalf("could not create test sequence in db %s: %v", dbName, err)
+		}
+		if owner != "" {
+			if _, err := db.Exec(fmt.Sprintf("ALTER sequence %s OWNER TO %s", sequence, owner)); err != nil {
+				t.Fatalf("could not set test_sequence owner to %s: %v", owner, err)
+			}
+		}
+	}
+	if owner != "" && !config.Superuser {
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
+			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+		}
+	}
+
+	return func() {
+		db, err := sql.Open("postgres", config.connStr(dbName))
+		if err != nil {
+			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+		}
+		defer db.Close()
+
+		if owner != "" && !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
+				t.Fatalf("could not grant role %s to current user: %v", owner, err)
+			}
+		}
+
+		for _, sequence := range sequences {
+			if _, err := db.Exec(fmt.Sprintf("DROP sequence %s", sequence)); err != nil {
+				t.Fatalf("could not drop table %s: %v", sequence, err)
+			}
+		}
+		if owner != "" && !config.Superuser {
+			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
+				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+			}
+		}
+
+	}
+}
+
 // testHasGrantForQuery executes a query and checks that it fails if
 // we were not allowed or succeses if we're allowed.
 func testHasGrantForQuery(db *sql.DB, query string, allowed bool) error {
@@ -334,6 +398,36 @@ func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas [
 		queries := map[string]string{
 			"USAGE":  fmt.Sprintf("DROP TABLE IF EXISTS %s.test_table", schema),
 			"CREATE": fmt.Sprintf("CREATE TABLE %s.test_table()", schema),
+		}
+
+		for queryType, query := range queries {
+			if err := testHasGrantForQuery(db, query, sliceContainsStr(allowedPrivileges, queryType)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func testCheckColumnPrivileges(t *testing.T, dbName, roleName string, tables []string, allowedPrivileges []string, columns []string) error {
+	db := connectAsTestRole(t, roleName, dbName)
+	defer db.Close()
+
+	columnValues := []string{}
+	for _, col := range columns {
+		columnValues = append(columnValues, fmt.Sprint("'", col, "'"))
+	}
+
+	updateColumnValues := []string{}
+	for i := range columns {
+		updateColumnValues = append(updateColumnValues, fmt.Sprint(columns[i], " = ", columnValues[i]))
+	}
+
+	for _, table := range tables {
+		queries := map[string]string{
+			"SELECT": fmt.Sprintf("SELECT %s FROM %s", strings.Join(columns, ", "), table),
+			"INSERT": fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ", "), strings.Join(columnValues, ", ")),
+			"UPDATE": fmt.Sprintf("UPDATE %s SET %s", table, strings.Join(updateColumnValues, ", ")),
 		}
 
 		for queryType, query := range queries {

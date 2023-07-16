@@ -4,24 +4,35 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/lib/pq"
 	"log"
+	"strings"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"github.com/lib/pq"
 )
 
 const (
-	funcNameAttr        = "name"
-	funcSchemaAttr      = "schema"
-	funcBodyAttr        = "body"
-	funcArgAttr         = "arg"
-	funcReturnsAttr     = "returns"
-	funcDropCascadeAttr = "drop_cascade"
-	funcDatabaseAttr    = "database"
+	funcNameAttr            = "name"
+	funcSchemaAttr          = "schema"
+	funcBodyAttr            = "body"
+	funcArgAttr             = "arg"
+	funcLanguageAttr        = "language"
+	funcReturnsAttr         = "returns"
+	funcDropCascadeAttr     = "drop_cascade"
+	funcDatabaseAttr        = "database"
+	funcParallelAttr        = "parallel"
+	funcSecurityDefinerAttr = "security_definer"
+	funcStrictAttr          = "strict"
+	funcVolatilityAttr      = "volatility"
 
 	funcArgTypeAttr    = "type"
 	funcArgNameAttr    = "name"
 	funcArgModeAttr    = "mode"
 	funcArgDefaultAttr = "default"
+
+	defaultFunctionVolatility = "VOLATILE"
+	defaultFunctionParallel   = "UNSAFE"
 )
 
 func resourcePostgreSQLFunction() *schema.Resource {
@@ -42,6 +53,8 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Computed:    true,
 				ForceNew:    true,
 				Description: "Schema where the function is located. If not specified, the provider default schema is used.",
+
+				DiffSuppressFunc: defaultDiffSuppressFunc,
 			},
 			funcNameAttr: {
 				Type:        schema.TypeString,
@@ -71,6 +84,13 @@ func resourcePostgreSQLFunction() *schema.Resource {
 							Optional:    true,
 							Default:     "IN",
 							ForceNew:    true,
+
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								if (new == "" && old == "IN") || (new == "IN" && old == "") {
+									return true
+								}
+								return old == new
+							},
 						},
 						funcArgDefaultAttr: {
 							Type:        schema.TypeString,
@@ -83,16 +103,35 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				ForceNew:    true,
 				Description: "Function argument definitions.",
 			},
+			funcLanguageAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				ForceNew:    true,
+				Default:     "plpgsql",
+				Description: "Language of theof the function. One of: internal, sql, c, plpgsql",
+
+				DiffSuppressFunc: defaultDiffSuppressFunc,
+			},
 			funcReturnsAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
 				ForceNew:    true,
-				Description: "Function return type.",
+				Computed:    true,
+				Description: "Function return type. If not specified, it will be calculated based on the output arguments",
+
+				DiffSuppressFunc: defaultDiffSuppressFunc,
 			},
 			funcBodyAttr: {
 				Type:        schema.TypeString,
 				Required:    true,
 				Description: "Body of the function.",
+
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					return normalizeFunctionBody(new) == old
+				},
+				StateFunc: func(val interface{}) string {
+					return normalizeFunctionBody(val.(string))
+				},
 			},
 			funcDropCascadeAttr: {
 				Type:        schema.TypeBool,
@@ -100,12 +139,42 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 			},
+			funcParallelAttr: {
+				Type:             schema.TypeString,
+				Description:      "If the function can be executed in parallel for a single query execution. One of: UNSAFE, RESTRICTED, SAFE",
+				Optional:         true,
+				Default:          defaultFunctionParallel,
+				DiffSuppressFunc: defaultDiffSuppressFunc,
+				ValidateFunc:     validation.StringInSlice([]string{"UNSAFE", "RESTRICTED", "SAFE"}, false),
+			},
+			funcSecurityDefinerAttr: {
+				Type:        schema.TypeBool,
+				Description: "If the function should execute with the permissions of the function owner instead of the permissions of the caller.",
+				Optional:    true,
+				Default:     false,
+			},
+			funcStrictAttr: {
+				Type:        schema.TypeBool,
+				Description: "If the function should always return NULL if any of it's inputs is NULL.",
+				Optional:    true,
+				Default:     false,
+			},
+			funcVolatilityAttr: {
+				Type:             schema.TypeString,
+				Description:      "Volatility of the function. One of: VOLATILE, STABLE, IMMUTABLE.",
+				Optional:         true,
+				Default:          defaultFunctionVolatility,
+				DiffSuppressFunc: defaultDiffSuppressFunc,
+				ValidateFunc:     validation.StringInSlice([]string{"VOLATILE", "STABLE", "IMMUTABLE"}, false),
+			},
 			funcDatabaseAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Computed:    true,
 				ForceNew:    true,
 				Description: "The database where the function is located. If not specified, the provider default database is used.",
+
+				DiffSuppressFunc: defaultDiffSuppressFunc,
 			},
 		},
 	}
@@ -134,16 +203,23 @@ func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) 
 		)
 	}
 
-	signature := getFunctionSignature(d)
-	functionExists := false
+	functionId := d.Id()
 
-	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	databaseName, functionSignature, expandErr := expandFunctionID(functionId, d, db)
+	if expandErr != nil {
+		return false, expandErr
+	}
+
+	var functionExists bool
+
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return false, err
 	}
 	defer deferredRollback(txn)
 
-	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL", signature)
+	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL AS functionExists", functionSignature)
+
 	if err := txn.QueryRow(query).Scan(&functionExists); err != nil {
 		return false, err
 	}
@@ -167,25 +243,39 @@ func resourcePostgreSQLFunctionRead(db *DBConnection, d *schema.ResourceData) er
 }
 
 func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData) error {
-	signature := getFunctionSignature(d)
+	functionId := d.Id()
 
-	var funcSchema, funcName string
+	if functionId == "" {
+		// Generate during creation
+		generatedFunctionId, err := generateFunctionID(db, d)
+		if err != nil {
+			return err
+		}
+		functionId = generatedFunctionId
+	}
 
-	query := `SELECT n.nspname, p.proname ` +
+	databaseName, functionSignature, expandErr := expandFunctionID(functionId, d, db)
+	if expandErr != nil {
+		return expandErr
+	}
+
+	var funcDefinition string
+
+	query := `SELECT pg_get_functiondef(p.oid::regproc) funcDefinition ` +
 		`FROM pg_proc p ` +
 		`LEFT JOIN pg_namespace n ON p.pronamespace = n.oid ` +
 		`WHERE p.oid = to_regprocedure($1)`
 
-	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
-	err = txn.QueryRow(query, signature).Scan(&funcSchema, &funcName)
+	err = txn.QueryRow(query, functionSignature).Scan(&funcDefinition)
 	switch {
 	case err == sql.ErrNoRows:
-		log.Printf("[WARN] PostgreSQL function: %s", signature)
+		log.Printf("[WARN] PostgreSQL function: %s", functionId)
 		d.SetId("")
 		return nil
 	case err != nil:
@@ -196,15 +286,37 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return err
 	}
 
-	if v, ok := d.GetOk(funcDatabaseAttr); ok {
-		d.Set(funcDatabaseAttr, v)
-	} else {
-		d.Set(funcDatabaseAttr, db.client.databaseName)
+	var pgFunction PGFunction
+
+	err = pgFunction.Parse(funcDefinition)
+	if err != nil {
+		return err
 	}
 
-	d.Set(funcNameAttr, funcName)
-	d.Set(funcSchemaAttr, funcSchema)
-	d.SetId(signature)
+	var args []map[string]interface{}
+
+	for _, a := range pgFunction.Args {
+		args = append(args, map[string]interface{}{
+			funcArgTypeAttr:    a.Type,
+			funcArgNameAttr:    a.Name,
+			funcArgModeAttr:    a.Mode,
+			funcArgDefaultAttr: a.Default,
+		})
+	}
+
+	d.Set(funcDatabaseAttr, databaseName)
+	d.Set(funcNameAttr, pgFunction.Name)
+	d.Set(funcSchemaAttr, pgFunction.Schema)
+	d.Set(funcLanguageAttr, pgFunction.Language)
+	d.Set(funcReturnsAttr, pgFunction.Returns)
+	d.Set(funcBodyAttr, pgFunction.Body)
+	d.Set(funcSecurityDefinerAttr, pgFunction.SecurityDefiner)
+	d.Set(funcStrictAttr, pgFunction.Strict)
+	d.Set(funcParallelAttr, pgFunction.Parallel)
+	d.Set(funcVolatilityAttr, pgFunction.Volatility)
+	d.Set(funcArgAttr, args)
+
+	d.SetId(functionId)
 
 	return nil
 }
@@ -217,16 +329,19 @@ func resourcePostgreSQLFunctionDelete(db *DBConnection, d *schema.ResourceData) 
 		)
 	}
 
-	signature := getFunctionSignature(d)
+	databaseName, functionSignature, err := expandFunctionID(d.Id(), d, db)
+	if err != nil {
+		return err
+	}
 
 	dropMode := "RESTRICT"
 	if v, ok := d.GetOk(funcDropCascadeAttr); ok && v.(bool) {
 		dropMode = "CASCADE"
 	}
 
-	sql := fmt.Sprintf("DROP FUNCTION IF EXISTS %s %s", signature, dropMode)
+	sql := fmt.Sprintf("DROP FUNCTION IF EXISTS %s %s", functionSignature, dropMode)
 
-	txn, err := startTransaction(db.client, d.Get(funcDatabaseAttr).(string))
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
@@ -261,6 +376,13 @@ func resourcePostgreSQLFunctionUpdate(db *DBConnection, d *schema.ResourceData) 
 }
 
 func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) error {
+
+	var pgFunction PGFunction
+	err := pgFunction.FromResourceData(d)
+	if err != nil {
+		return err
+	}
+
 	b := bytes.NewBufferString("CREATE ")
 
 	if replace {
@@ -269,55 +391,54 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 
 	b.WriteString("FUNCTION ")
 
-	if v, ok := d.GetOk(funcSchemaAttr); ok {
-		fmt.Fprint(b, pq.QuoteIdentifier(v.(string)), ".")
+	fmt.Fprint(b, pq.QuoteIdentifier(pgFunction.Schema), ".")
+
+	fmt.Fprint(b, pq.QuoteIdentifier(pgFunction.Name), " (")
+
+	for i, arg := range pgFunction.Args {
+		if i > 0 {
+			b.WriteRune(',')
+		}
+
+		b.WriteString("\n    ")
+
+		if arg.Mode != "" {
+			fmt.Fprint(b, arg.Mode, " ")
+		}
+
+		if arg.Name != "" {
+			fmt.Fprint(b, arg.Name, " ")
+		}
+
+		b.WriteString(arg.Type)
+
+		if arg.Default != "" {
+			fmt.Fprint(b, " DEFAULT ", arg.Default)
+		}
 	}
 
-	fmt.Fprint(b, pq.QuoteIdentifier(d.Get(funcNameAttr).(string)), " (")
-
-	if args, ok := d.GetOk(funcArgAttr); ok {
-		args := args.([]interface{})
-
-		for i, arg := range args {
-			arg := arg.(map[string]interface{})
-
-			if i > 0 {
-				b.WriteRune(',')
-			}
-
-			b.WriteString("\n    ")
-
-			if v, ok := arg[funcArgModeAttr]; ok {
-				fmt.Fprint(b, v.(string), " ")
-			}
-
-			if v, ok := arg[funcArgNameAttr]; ok {
-				fmt.Fprint(b, v.(string), " ")
-			}
-
-			b.WriteString(arg[funcArgTypeAttr].(string))
-
-			if v, ok := arg[funcArgDefaultAttr]; ok {
-				v := v.(string)
-
-				if len(v) > 0 {
-					fmt.Fprint(b, " DEFAULT ", v)
-				}
-			}
-		}
-
-		if len(args) > 0 {
-			b.WriteRune('\n')
-		}
+	if len(pgFunction.Args) > 0 {
+		b.WriteRune('\n')
 	}
 
 	b.WriteString(")")
 
-	if v, ok := d.GetOk(funcReturnsAttr); ok {
-		fmt.Fprint(b, " RETURNS ", v.(string))
+	fmt.Fprint(b, "\nRETURNS ", pgFunction.Returns)
+	fmt.Fprint(b, "\nLANGUAGE ", pgFunction.Language)
+	if pgFunction.Volatility != defaultFunctionVolatility {
+		fmt.Fprint(b, "\n", pgFunction.Volatility)
+	}
+	if pgFunction.SecurityDefiner {
+		fmt.Fprint(b, "\nSECURITY DEFINER")
+	}
+	if pgFunction.Parallel != defaultFunctionParallel {
+		fmt.Fprint(b, "\nPARALLEL ", pgFunction.Parallel)
+	}
+	if pgFunction.Strict {
+		fmt.Fprint(b, "\nSTRICT")
 	}
 
-	fmt.Fprint(b, "\n", d.Get(funcBodyAttr).(string))
+	fmt.Fprint(b, "\nAS $function$", pgFunction.Body, "$function$;")
 
 	sql := b.String()
 
@@ -338,39 +459,87 @@ func createFunction(db *DBConnection, d *schema.ResourceData, replace bool) erro
 	return nil
 }
 
-func getFunctionSignature(d *schema.ResourceData) string {
+func generateFunctionID(db *DBConnection, d *schema.ResourceData) (string, error) {
+
 	b := bytes.NewBufferString("")
 
-	if v, ok := d.GetOk(funcSchemaAttr); ok {
-		fmt.Fprint(b, pq.QuoteIdentifier(v.(string)), ".")
+	if dbAttr, ok := d.GetOk(funcDatabaseAttr); ok {
+		fmt.Fprint(b, dbAttr.(string), ".")
+	} else {
+		fmt.Fprint(b, db.client.databaseName, ".")
 	}
 
-	fmt.Fprint(b, pq.QuoteIdentifier(d.Get(funcNameAttr).(string)), "(")
+	var pgFunction PGFunction
+	err := pgFunction.FromResourceData(d)
+	if err != nil {
+		return "", err
+	}
 
-	if args, ok := d.GetOk(funcArgAttr); ok {
-		argCount := 0
+	fmt.Fprint(b, pgFunction.Schema, ".", pgFunction.Name, "(")
 
-		for _, arg := range args.([]interface{}) {
-			arg := arg.(map[string]interface{})
+	argCount := 0
 
-			mode := "IN"
+	for _, arg := range pgFunction.Args {
+		mode := "IN"
+		if arg.Mode != "" {
+			mode = arg.Mode
+		}
 
-			if v, ok := arg[funcArgModeAttr]; ok {
-				mode = v.(string)
+		if mode != "OUT" {
+			if argCount > 0 {
+				b.WriteRune(',')
 			}
 
-			if mode != "OUT" {
-				if argCount > 0 {
-					b.WriteRune(',')
-				}
-
-				b.WriteString(arg[funcArgTypeAttr].(string))
-				argCount += 1
-			}
+			b.WriteString(arg.Type)
+			argCount += 1
 		}
 	}
 
 	b.WriteRune(')')
 
-	return b.String()
+	return b.String(), nil
+}
+
+func expandFunctionID(functionId string, d *schema.ResourceData, db *DBConnection) (databaseName string, functionSignature string, err error) {
+
+	partsCount := strings.Count(functionId, ".") + 1
+
+	if partsCount == 2 {
+		clientDatabaseName := "postgres"
+		if db != nil {
+			clientDatabaseName = db.client.databaseName
+		}
+
+		signature, err := quoteSignature(functionId)
+		if err != nil {
+			return "", "", err
+		}
+
+		return getDatabase(d, clientDatabaseName), signature, nil
+	}
+
+	if partsCount == 3 {
+		functionIdParts := strings.Split(functionId, ".")
+		signature, err := quoteSignature(strings.Join(functionIdParts[1:], "."))
+		if err != nil {
+			return "", "", err
+		}
+		return functionIdParts[0], signature, nil
+	}
+
+	return "", "", fmt.Errorf("function ID %s has not the expected format 'database.schema.function_name(arguments)'", functionId)
+}
+
+func quoteSignature(s string) (signature string, err error) {
+
+	signatureData := findStringSubmatchMap(`(?si)(?P<Schema>[^\.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\)`, s)
+
+	schemaName, schemaFound := signatureData["Schema"]
+	name, nameFound := signatureData["Name"]
+	args, argsFound := signatureData["Args"]
+	if schemaFound && nameFound && argsFound {
+		return fmt.Sprintf("%s.%s(%s)", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(name), args), nil
+	}
+
+	return "", fmt.Errorf("Incorrect signature format \"%s\". The expected format is schema.function_name(arguments)", s)
 }

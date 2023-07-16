@@ -30,3 +30,11 @@ resource "postgresql_publication" "publication" {
 - `drop_cascade` - (Optional) Should all subsequent resources of the publication be dropped. Defaults to 'false'
 - `publish_param` - (Optional) Which 'publish' options should be turned on. Default to 'insert','update','delete'
 - `publish_via_partition_root_param` - (Optional) Should be option 'publish_via_partition_root' be turned on. Default to 'false'
+
+## Import Example
+
+Publication can be imported using this format:
+
+```
+$ terraform import postgresql_publication.publication {{database_name}}.{{publication_name}}
+```
