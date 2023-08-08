@@ -5,3 +5,6 @@
 .*.swp
 tests/docker-compose.*.yml
 terraform-provider-postgresql
+
+# Ignore IDE files
+.idea/
