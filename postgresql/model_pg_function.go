@@ -8,12 +8,16 @@ import (
 
 // PGFunction is the model for the database function
 type PGFunction struct {
-	Schema   string
-	Name     string
-	Returns  string
-	Language string
-	Body     string
-	Args     []PGFunctionArg
+	Schema          string
+	Name            string
+	Returns         string
+	Language        string
+	Body            string
+	Args            []PGFunctionArg
+	Parallel        string
+	SecurityDefiner bool
+	Strict          bool
+	Volatility      string
 }
 
 type PGFunctionArg struct {
@@ -40,6 +44,27 @@ func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 	}
 	pgFunction.Body = normalizeFunctionBody(d.Get(funcBodyAttr).(string))
 	pgFunction.Args = []PGFunctionArg{}
+
+	if v, ok := d.GetOk(funcParallelAttr); ok {
+		pgFunction.Parallel = v.(string)
+	} else {
+		pgFunction.Parallel = defaultFunctionParallel
+	}
+	if v, ok := d.GetOk(funcStrictAttr); ok {
+		pgFunction.Strict = v.(bool)
+	} else {
+		pgFunction.Strict = false
+	}
+	if v, ok := d.GetOk(funcSecurityDefinerAttr); ok {
+		pgFunction.SecurityDefiner = v.(bool)
+	} else {
+		pgFunction.SecurityDefiner = false
+	}
+	if v, ok := d.GetOk(funcVolatilityAttr); ok {
+		pgFunction.Volatility = v.(string)
+	} else {
+		pgFunction.Volatility = defaultFunctionVolatility
+	}
 
 	// For the main returns if not provided
 	argOutput := "void"
@@ -87,7 +112,7 @@ func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 
 	pgFunctionData := findStringSubmatchMap(
-		`(?si)CREATE\sOR\sREPLACE\sFUNCTION\s(?P<Schema>[^.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\).*RETURNS\s(?P<Returns>[^\n]+).*LANGUAGE\s(?P<Language>[^\n]+).*\$[a-zA-Z]*\$(?P<Body>.*)\$[a-zA-Z]*\$`,
+		`(?si)CREATE\sOR\sREPLACE\sFUNCTION\s(?P<Schema>[^.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\).*RETURNS\s(?P<Returns>[^\n]+).*LANGUAGE\s(?P<Language>[^\n\s]+)\s*(?P<Volatility>(STABLE|IMMUTABLE)?)\s*(?P<Parallel>(PARALLEL (SAFE|RESTRICTED))?)\s*(?P<Strict>(STRICT)?)\s*(?P<Security>(SECURITY DEFINER)?).*\$[a-zA-Z]*\$(?P<Body>.*)\$[a-zA-Z]*\$`,
 		functionDefinition,
 	)
 
@@ -113,6 +138,18 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	pgFunction.Language = pgFunctionData["Language"]
 	pgFunction.Body = pgFunctionData["Body"]
 	pgFunction.Args = args
+	pgFunction.SecurityDefiner = len(pgFunctionData["Security"]) > 0
+	pgFunction.Strict = len(pgFunctionData["Strict"]) > 0
+	if len(pgFunctionData["Volatility"]) == 0 {
+		pgFunction.Volatility = defaultFunctionVolatility
+	} else {
+		pgFunction.Volatility = pgFunctionData["Volatility"]
+	}
+	if len(pgFunctionData["Parallel"]) == 0 {
+		pgFunction.Parallel = defaultFunctionParallel
+	} else {
+		pgFunction.Parallel = strings.TrimPrefix(pgFunctionData["Parallel"], "PARALLEL ")
+	}
 
 	return nil
 }

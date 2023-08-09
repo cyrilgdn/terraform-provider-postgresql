@@ -32,11 +32,66 @@ func TestFromResourceData(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, pgFunction, PGFunction{
-		Schema:   "public",
-		Name:     "increment",
-		Returns:  "integer",
-		Language: "plpgsql",
-		Body:     "BEGIN result = i + 1; END;",
+		Schema:          "public",
+		Name:            "increment",
+		Returns:         "integer",
+		Language:        "plpgsql",
+		Parallel:        defaultFunctionParallel,
+		Strict:          false,
+		SecurityDefiner: false,
+		Volatility:      defaultFunctionVolatility,
+		Body:            "BEGIN result = i + 1; END;",
+		Args: []PGFunctionArg{
+			{
+				Name: "i",
+				Type: "integer",
+			},
+			{
+				Name: "result",
+				Type: "integer",
+				Mode: "OUT",
+			},
+		},
+	})
+}
+
+func TestFromResourceDataWithArguments(t *testing.T) {
+	d := mockFunctionResourceData(t, PGFunction{
+		Name: "increment",
+		Body: "BEGIN result = i + 1; END;",
+		Args: []PGFunctionArg{
+			{
+				Name: "i",
+				Type: "integer",
+			},
+			{
+				Name: "result",
+				Type: "integer",
+				Mode: "OUT",
+			},
+		},
+		Parallel:        "SAFE",
+		Strict:          true,
+		SecurityDefiner: true,
+		Volatility:      "IMMUTABLE",
+	})
+
+	var pgFunction PGFunction
+
+	err := pgFunction.FromResourceData(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, pgFunction, PGFunction{
+		Schema:          "public",
+		Name:            "increment",
+		Returns:         "integer",
+		Language:        "plpgsql",
+		Parallel:        "SAFE",
+		Strict:          true,
+		SecurityDefiner: true,
+		Volatility:      "IMMUTABLE",
+		Body:            "BEGIN result = i + 1; END;",
 		Args: []PGFunctionArg{
 			{
 				Name: "i",
@@ -57,7 +112,7 @@ func TestPGFunctionParseWithArguments(t *testing.T) {
 CREATE OR REPLACE FUNCTION public.pg_func_test(showtext boolean, OUT userid oid, default_null integer DEFAULT NULL::integer, simple_default integer DEFAULT 42, long_default character varying DEFAULT 'foo'::character varying)
 RETURNS SETOF record
 LANGUAGE c
-PARALLEL SAFE STRICT
+STABLE PARALLEL SAFE STRICT SECURITY DEFINER
 AS $function$pg_func_test_body$function$
 	`
 
@@ -69,11 +124,15 @@ AS $function$pg_func_test_body$function$
 	}
 
 	assert.Equal(t, pgFunction, PGFunction{
-		Name:     "pg_func_test",
-		Schema:   "public",
-		Returns:  "SETOF record",
-		Language: "c",
-		Body:     "pg_func_test_body",
+		Name:            "pg_func_test",
+		Schema:          "public",
+		Returns:         "SETOF record",
+		Language:        "c",
+		Parallel:        "SAFE",
+		SecurityDefiner: true,
+		Strict:          true,
+		Volatility:      "STABLE",
+		Body:            "pg_func_test_body",
 		Args: []PGFunctionArg{
 			{
 				Mode: "IN",
@@ -113,7 +172,6 @@ func TestPGFunctionParseWithoutArguments(t *testing.T) {
 CREATE OR REPLACE FUNCTION public.pg_func_test()
 RETURNS SETOF record
 LANGUAGE plpgsql
-PARALLEL SAFE STRICT
 AS $function$
 MultiLine Function
 $function$
@@ -127,10 +185,14 @@ $function$
 	}
 
 	assert.Equal(t, pgFunction, PGFunction{
-		Name:     "pg_func_test",
-		Schema:   "public",
-		Returns:  "SETOF record",
-		Language: "plpgsql",
+		Name:            "pg_func_test",
+		Schema:          "public",
+		Returns:         "SETOF record",
+		Language:        "plpgsql",
+		Parallel:        "UNSAFE",
+		SecurityDefiner: false,
+		Strict:          false,
+		Volatility:      "VOLATILE",
 		Body: `
 MultiLine Function
 `,
@@ -187,6 +249,10 @@ func mockFunctionResourceData(t *testing.T, obj PGFunction) *schema.ResourceData
 	attributes["returns"] = obj.Returns
 	attributes["language"] = obj.Language
 	attributes["body"] = obj.Body
+	attributes["strict"] = obj.Strict
+	attributes["security_definer"] = obj.SecurityDefiner
+	attributes["parallel"] = obj.Parallel
+	attributes["volatility"] = obj.Volatility
 
 	var args []interface{}
 
