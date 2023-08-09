@@ -34,3 +34,9 @@ jobs:
 
       - name: testacc
         run: make testacc
+
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "report.xml"
+        if: always()

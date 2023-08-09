@@ -12,7 +12,8 @@ setup() {
 }
 
 run() {
-  go test -count=1 ./postgresql -v -timeout 120m
+  go install github.com/jstemmer/go-junit-report/v2@latest
+  go test -count=1 ./postgresql -v -timeout 120m 2>&1 | tee test_output.txt | go-junit-report -iocopy -set-exit-code -out report.xml
   
   # keep the return value for the scripts to fail and clean properly
   return $?
