@@ -115,6 +115,8 @@ The following arguments are supported:
   from the environment (or the given profile, see `aws_rds_iam_profile`)
 * `aws_rds_iam_profile` - (Optional) The AWS IAM Profile to use while using AWS RDS IAM Auth.
 * `aws_rds_iam_region` - (Optional) The AWS region to use while using AWS RDS IAM Auth.
+* `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
+* `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
 
 ## GoCloud
 
@@ -196,6 +198,45 @@ provider "postgresql" {
 
 resource postgresql_database "test_db" {
   name = "test_db"
+}
+```
+
+### Azure
+
+To enable [passwordless authentication](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication) with MS Azure set `azure_identity_auth` to `true` and provide `azure_tenant_id`
+
+```hcl
+data "azurerm_client_config" "current" {
+}
+
+# https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/postgresql_flexible_server
+resource "azurerm_postgresql_flexible_server" "pgsql" {
+  # ...
+  authentication {
+    active_directory_auth_enabled = true
+    password_auth_enabled         = false
+    tenant_id                     = data.azurerm_client_config.current.tenant_id
+  }
+}
+
+# https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/postgresql_flexible_server_active_directory_administrator
+resource "azurerm_postgresql_flexible_server_active_directory_administrator" "administrators" {
+  object_id           = "00000000-0000-0000-0000-000000000000"
+  principal_name      = "Azure AD Admin Group"
+  principal_type      = "Group"
+  resource_group_name = var.rg_name
+  server_name         = azurerm_postgresql_flexible_server.pgsql.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+}
+
+provider "postgresql" {
+  host                = azurerm_postgresql_flexible_server.pgsql.fqdn
+  port                = 5432
+  database            = "postgres"
+  username            = azurerm_postgresql_flexible_server_active_directory_administrator.administrators.principal_name
+  sslmode             = "require"
+  azure_identity_auth = true
+  azure_tenant_id     = data.azurerm_client_config.current.tenant_id
 }
 ```
 
