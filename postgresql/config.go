@@ -11,7 +11,7 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
-	_ "github.com/lib/pq" //PostgreSQL db
+	_ "github.com/lib/pq" // PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
 	_ "gocloud.dev/postgres/gcppostgres"
@@ -245,8 +245,8 @@ func (c *Config) connStr(database string) string {
 	connStr := fmt.Sprintf(
 		"%s://%s:%s@%s:%d/%s?%s",
 		c.Scheme,
-		url.QueryEscape(c.Username),
-		url.QueryEscape(c.Password),
+		url.PathEscape(c.Username),
+		url.PathEscape(c.Password),
 		host,
 		c.Port,
 		database,
@@ -302,7 +302,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 			// Version hint not set by user, need to fingerprint
 			version, err = fingerprintCapabilities(db)
 			if err != nil {
-				db.Close()
+				_ = db.Close()
 				return nil, fmt.Errorf("error detecting capabilities: %w", err)
 			}
 		}
