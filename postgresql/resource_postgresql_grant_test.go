@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -1287,6 +1288,15 @@ resource "postgresql_role" "test" {
 	login    = true
 }
 
+// From PostgreSQL 15, schema public is not wild open anymore
+resource "postgresql_grant" "public_usage" {
+	database          = "postgres"
+	schema            = "public"
+	role              = postgresql_role.test.name
+	object_type       = "schema"
+	privileges        = ["CREATE", "USAGE"]
+}
+
 resource "postgresql_grant" "test" {
 	depends_on        = [postgresql_role.test]
 	database          = "postgres"
@@ -1321,6 +1331,72 @@ resource "postgresql_grant" "test" {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "0"),
 					testCheckForeignServerPrivileges(t, false),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	config := getTestConfig(t)
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not connect to database %s: %v", dbName, err)
+	}
+
+	defer db.Close()
+	//	time.Sleep(120 * time.Second)
+
+	// Set the owner to the new pg_database_owner role
+	if _, err := db.Exec(`
+ALTER SCHEMA test_schema OWNER TO pg_database_owner;
+ALTER TABLE test_schema.test_table OWNER TO pg_database_owner;
+`,
+	); err != nil {
+		t.Fatalf("could not alter owner of test_table (as %s): %v", config.Username, err)
+	}
+
+	var tfConfig = fmt.Sprintf(`
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		privileges  = ["SELECT"]
+	}`, dbName, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureDatabaseOwnerRole)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: resource.ComposeTestCheckFunc(
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, []string{"test_schema.test_table"}, []string{"SELECT"})
+					},
+				),
+			},
+			{
+				Config:  tfConfig,
+				Destroy: true,
+				Check: resource.ComposeTestCheckFunc(
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, []string{"test_schema.test_table"}, []string{})
+					},
 				),
 			},
 		},

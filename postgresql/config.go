@@ -21,6 +21,7 @@ type featureName uint
 
 const (
 	featureCreateRoleWith featureName = iota
+	featureDatabaseOwnerRole
 	featureDBAllowConnections
 	featureDBIsTemplate
 	featureFallbackApplicationName
@@ -109,6 +110,8 @@ var (
 		featureFunction: semver.MustParseRange(">=8.4.0"),
 		// CREATE SERVER support
 		featureServer: semver.MustParseRange(">=10.0.0"),
+
+		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
 	}
 )
 
