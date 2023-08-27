@@ -271,8 +271,12 @@ WHERE grantee = $2
 	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
-
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	wanted := d.Get("privileges").(*schema.Set)
+	equal := arePrivilegesEqual(granted, wanted, d)
+	if !equal {
+		return d.Set("privileges", wanted)
+	}
 	return nil
 }
 
@@ -291,7 +295,12 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	wanted := d.Get("privileges").(*schema.Set)
+	equal := arePrivilegesEqual(granted, wanted, d)
+	if !equal {
+		return d.Set("privileges", wanted)
+	}
 	return nil
 }
 
@@ -311,7 +320,12 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for foreign data wrapper %s: %w", fdwName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	wanted := d.Get("privileges").(*schema.Set)
+	equal := arePrivilegesEqual(granted, wanted, d)
+	if !equal {
+		return d.Set("privileges", wanted)
+	}
 	return nil
 }
 
@@ -331,7 +345,12 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for foreign server %s: %w", srvName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	wanted := d.Get("privileges").(*schema.Set)
+	equal := arePrivilegesEqual(granted, wanted, d)
+	if !equal {
+		return d.Set("privileges", wanted)
+	}
 	return nil
 }
 
@@ -507,7 +526,7 @@ GROUP BY pg_class.relname
 		}
 
 		privilegesSet := pgArrayToSet(privileges)
-		privilegesEqual := strictOrImplicitEqual(privilegesSet, d.Get("privileges").(*schema.Set), objectType)
+		privilegesEqual := arePrivilegesEqual(privilegesSet, d.Get("privileges").(*schema.Set), d)
 		if !privilegesEqual {
 			// If any object doesn't have the same privileges as saved in the state,
 			// we return its privileges to force an update.
@@ -521,32 +540,6 @@ GROUP BY pg_class.relname
 	}
 
 	return nil
-}
-
-func strictOrImplicitEqual(granted *schema.Set, wanted *schema.Set, objectType string) bool {
-	if granted.Equal(wanted) {
-		return true
-	}
-
-	if !wanted.Contains("ALL") {
-		return false
-	}
-
-	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL, implicitely")
-	implicits := make([]string, 0)
-	for _, p := range allowedPrivileges[objectType] {
-		if p != "ALL" {
-			implicits = append(implicits, p)
-		}
-	}
-
-	s := make([]interface{}, len(implicits))
-	for i, privilege := range implicits {
-		s[i] = privilege
-	}
-	wantedSet := schema.NewSet(schema.HashString, s)
-	log.Printf("wanted: %v, present: %v", wantedSet.List(), granted.List())
-	return granted.Equal(wantedSet)
 }
 
 func createGrantQuery(d *schema.ResourceData, privileges []string) string {

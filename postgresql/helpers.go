@@ -267,6 +267,34 @@ func validatePrivileges(d *schema.ResourceData) error {
 	return nil
 }
 
+func arePrivilegesEqual(granted *schema.Set, wanted *schema.Set, d *schema.ResourceData) bool {
+	objectType := d.Get("object_type").(string)
+
+	if granted.Equal(wanted) {
+		return true
+	}
+
+	if !wanted.Contains("ALL") {
+		return false
+	}
+
+	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
+	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitely")
+	implicits := make([]string, 0)
+	for _, p := range allowedPrivileges[objectType] {
+		if p != "ALL" {
+			implicits = append(implicits, p)
+		}
+	}
+
+	s := make([]interface{}, len(implicits))
+	for i, privilege := range implicits {
+		s[i] = privilege
+	}
+	wantedSet := schema.NewSet(schema.HashString, s)
+	return granted.Equal(wantedSet)
+}
+
 func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 	s := make([]interface{}, len(arr))
 	for i, v := range arr {
