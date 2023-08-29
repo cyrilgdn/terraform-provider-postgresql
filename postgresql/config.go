@@ -39,6 +39,7 @@ const (
 	featurePublication
 	featurePubWithoutTruncate
 	featureFunction
+	featureServer
 )
 
 var (
@@ -103,8 +104,11 @@ var (
 
 		// publication is Supported
 		featurePublication: semver.MustParseRange(">=10.0.0"),
+
 		// We do not support CREATE FUNCTION for Postgresql < 8.4
 		featureFunction: semver.MustParseRange(">=8.4.0"),
+		// CREATE SERVER support
+		featureServer: semver.MustParseRange(">=10.0.0"),
 	}
 )
 
@@ -273,8 +277,13 @@ func (c *Client) Connect() (*DBConnection, error) {
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
+
+		if err == nil {
+			err = db.Ping()
+		}
 		if err != nil {
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %w", c.config.Host, c.config.Scheme, err)
+			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
+			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
 		// We don't want to retain connection

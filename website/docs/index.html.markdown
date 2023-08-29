@@ -40,6 +40,7 @@ provider "postgresql" {
     cert = "/path/to/public-certificate.pem"
     key  = "/path/to/private-key.pem"
   }
+}
 ```
 
 Configuring multiple servers can be done by specifying the alias option.

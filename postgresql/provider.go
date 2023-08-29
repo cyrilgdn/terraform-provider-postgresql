@@ -3,10 +3,12 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"golang.org/x/oauth2/google"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -169,14 +171,20 @@ func Provider() *schema.Provider {
 			"postgresql_grant_role":                resourcePostgreSQLGrantRole(),
 			"postgresql_replication_slot":          resourcePostgreSQLReplicationSlot(),
 			"postgresql_publication":               resourcePostgreSQLPublication(),
+			"postgresql_subscription":              resourcePostgreSQLSubscription(),
 			"postgresql_physical_replication_slot": resourcePostgreSQLPhysicalReplicationSlot(),
 			"postgresql_schema":                    resourcePostgreSQLSchema(),
 			"postgresql_role":                      resourcePostgreSQLRole(),
 			"postgresql_function":                  resourcePostgreSQLFunction(),
+			"postgresql_server":                    resourcePostgreSQLServer(),
+			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
-			"postgresql_password": dataSourcePostgrePassword(),
+			"postgresql_password":  dataSourcePostgrePassword(),
+			"postgresql_schemas":   dataSourcePostgreSQLDatabaseSchemas(),
+			"postgresql_tables":    dataSourcePostgreSQLDatabaseTables(),
+			"postgresql_sequences": dataSourcePostgreSQLDatabaseSequences(),
 		},
 
 		ConfigureFunc: providerConfigure,
@@ -212,6 +220,30 @@ func getRDSAuthToken(region string, profile string, username string, host string
 	token, err := auth.BuildAuthToken(ctx, endpoint, awscfg.Region, username, awscfg.Credentials)
 
 	return token, err
+}
+
+func createGoogleCredsFileIfNeeded() error {
+	if _, err := google.FindDefaultCredentials(context.Background()); err == nil {
+		return nil
+	}
+
+	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
+	if rawGoogleCredentials == "" {
+		return nil
+	}
+
+	tmpFile, err := os.CreateTemp("", "")
+	if err != nil {
+		return fmt.Errorf("could not create temporary file: %w", err)
+	}
+	defer tmpFile.Close()
+
+	_, err = tmpFile.WriteString(rawGoogleCredentials)
+	if err != nil {
+		return fmt.Errorf("could not write in temporary file: %w", err)
+	}
+
+	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
 }
 
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
@@ -266,6 +298,12 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 			}
+		}
+	}
+
+	if config.Scheme == "gcppostgres" {
+		if err := createGoogleCredsFileIfNeeded(); err != nil {
+			return nil, err
 		}
 	}
 

@@ -1,4 +1,49 @@
-## Unreleased
+## 1.19.0 (March 18, 2023)
+
+* **New data sources**: `postgresql_schemas`, `postgresql_sequences` and `postgresql_tables` - @SpencerBinXia
+  [#214](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/214)
+
+* `postgresql_grant`: Add column level access - @kda-jt @wilsonjackson 
+  [#135](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/135)
+
+* `postgresql_function`: Support terraform import - @khkhalifa
+  [#275](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/275)
+
+* `postgresql_grant`: Support arguments in function name - @marvin-kolja
+  [#228](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/228)
+
+FIX:
+
+* `postgresql_user_mapping`: Fix for RDS Aurora - @fabiopaiva
+  [#274](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/274)
+
+
+## 1.18.0 (November 26, 2022)
+
+* **New resource**: `postgresql_server` and `postgresql_user_mapping` - @fabiopaiva
+  [#220](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/220)
+
+* **New resource**: `postgresql_subscription` - @nicarl
+  [#244](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/244)
+
+* Allow to configure AWS Region with AWS IAM Auth - @bpaquet
+  [#260](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/260)
+
+* Create temporary file for `GOOGLE_APPLICATION_CREDENTIALS` in Terraform cloud - @minkainc-opensource
+  [#249](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/249)
+
+FIX:
+
+* `postgresql_grant`: Concurrency issue on database privileges - @timothegenzmer
+  [#224](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/224)
+
+* `postgresql_grant`: Remove `TEMP` privileges for database - @cyrilgdn
+  [#243](https://github.com/cyrilgdn/terraform-provider-postgresql/pull/243)
+
+DEV IMPROVEMENTS:
+
+* Update Postgres versions in tests - @cyrilgdn
+
 
 ## 1.17.1 (August 19, 2022)
 

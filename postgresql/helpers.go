@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -235,7 +236,7 @@ func sliceContainsStr(haystack []string, needle string) bool {
 // allowedPrivileges is the list of privileges allowed per object types in Postgres.
 // see: https://www.postgresql.org/docs/current/sql-grant.html
 var allowedPrivileges = map[string][]string{
-	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY", "TEMP"},
+	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY"},
 	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
 	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE"},
 	"schema":               {"ALL", "CREATE", "USAGE"},
@@ -245,6 +246,7 @@ var allowedPrivileges = map[string][]string{
 	"type":                 {"ALL", "USAGE"},
 	"foreign_data_wrapper": {"ALL", "USAGE"},
 	"foreign_server":       {"ALL", "USAGE"},
+	"column":               {"ALL", "SELECT", "INSERT", "UPDATE", "REFERENCES"},
 }
 
 // validatePrivileges checks that privileges to apply are allowed for this object type.
@@ -273,13 +275,57 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 	return schema.NewSet(schema.HashString, s)
 }
 
+func stringSliceToSet(slice []string) *schema.Set {
+	s := make([]interface{}, len(slice))
+	for i, v := range slice {
+		s[i] = v
+	}
+	return schema.NewSet(schema.HashString, s)
+}
+
+func quoteIdentifyIdent(ident string) string {
+	// When passing a function with arguments like "test(text, char)" this will correctly parse it to "test"(text, char).
+	// If we were to add quotes around the whole ident postgres would not be able to find the function.
+	// Usually specifying parameters of a function is not necessary, but postgres allows function overloading where it
+	// identifies the function by its parameters allowing the developer to have multiple functions with the same name.
+	// Information:
+	// https://en.wikipedia.org/wiki/Function_overloading
+	// https://stackoverflow.com/a/48640797
+
+	s := strings.Split(ident, "(")
+
+	functionArgTypes := ""
+
+	if len(s) > 1 {
+		functionArgTypes = "(" + s[1]
+	}
+
+	return fmt.Sprintf("%s%s", pq.QuoteIdentifier(s[0]), functionArgTypes)
+}
+
 func setToPgIdentList(schema string, idents *schema.Set) string {
 	quotedIdents := make([]string, idents.Len())
 	for i, ident := range idents.List() {
 		quotedIdents[i] = fmt.Sprintf(
 			"%s.%s",
-			pq.QuoteIdentifier(schema), pq.QuoteIdentifier(ident.(string)),
+			pq.QuoteIdentifier(schema), quoteIdentifyIdent(ident.(string)),
 		)
+	}
+	return strings.Join(quotedIdents, ",")
+}
+
+func setToPgIdentListWithoutSchema(idents *schema.Set) string {
+	quotedIdents := make([]string, idents.Len())
+	for i, ident := range idents.List() {
+		quotedIdents[i] = pq.QuoteIdentifier(ident.(string))
+	}
+	return strings.Join(quotedIdents, ",")
+}
+
+func setToPgIdentSimpleList(idents *schema.Set) string {
+	quotedIdents := make([]string, idents.Len())
+	for i, ident := range idents.List() {
+		quotedIdents[i] = ident.(string)
 	}
 	return strings.Join(quotedIdents, ",")
 }
@@ -477,6 +523,19 @@ func pgLockRole(txn *sql.Tx, role string) error {
 	return nil
 }
 
+// Lock a database and all his members to avoid concurrent updates on some resources
+func pgLockDatabase(txn *sql.Tx, database string) error {
+	// Disable statement timeout for this connection otherwise the lock could fail
+	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("could not disable statement_timeout: %w", err)
+	}
+	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", database); err != nil {
+		return fmt.Errorf("could not get advisory lock for database %s: %w", database, err)
+	}
+
+	return nil
+}
+
 func arrayDifference(a, b []interface{}) (diff []interface{}) {
 	m := make(map[interface{}]bool)
 
@@ -501,4 +560,24 @@ func isUniqueArr(arr []interface{}) (interface{}, bool) {
 		keys[entry] = true
 	}
 	return nil, true
+}
+
+func findStringSubmatchMap(expression string, text string) map[string]string {
+
+	r := regexp.MustCompile(expression)
+
+	parts := r.FindStringSubmatch(text)
+
+	paramsMap := make(map[string]string)
+	for i, name := range r.SubexpNames() {
+		if i > 0 && i <= len(parts) {
+			paramsMap[name] = parts[i]
+		}
+	}
+
+	return paramsMap
+}
+
+func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
+	return old == new
 }
