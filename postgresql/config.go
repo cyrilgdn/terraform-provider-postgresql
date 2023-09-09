@@ -149,6 +149,7 @@ func (db *DBConnection) isSuperuser() (bool, error) {
 type ClientCertificateConfig struct {
 	CertificatePath string
 	KeyPath         string
+	SSLInline       bool
 }
 
 // Config - provider config
@@ -215,6 +216,9 @@ func (c *Config) connParams() []string {
 	if c.SSLClientCert != nil {
 		params["sslcert"] = c.SSLClientCert.CertificatePath
 		params["sslkey"] = c.SSLClientCert.KeyPath
+		if c.SSLClientCert.SSLInline {
+			params["sslinline"] = strconv.FormatBool(c.SSLClientCert.SSLInline)
+		}
 	}
 
 	if c.SSLRootCertPath != "" {
