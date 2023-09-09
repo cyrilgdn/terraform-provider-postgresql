@@ -28,3 +28,9 @@ resource "postgresql_extension" "my_extension" {
 * `database` - (Optional) Which database to create the extension on. Defaults to provider database.
 * `drop_cascade` - (Optional) When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects. (Default: false)
 * `create_cascade` - (Optional) When true, will also create any extensions that this extension depends on that are not already installed. (Default: false)
+
+## Import
+
+PostgreSQL Extensions can be imported using the database name and the extension's resource name, e.g.
+
+`terraform import postgresql_extension.uuid_ossp example-database.uuid-ossp`
