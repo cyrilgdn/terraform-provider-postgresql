@@ -1348,24 +1348,6 @@ func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
 
 	dbName, roleName := getTestDBNames(dbSuffix)
 
-	config := getTestConfig(t)
-	db, err := sql.Open("postgres", config.connStr(dbName))
-	if err != nil {
-		t.Fatalf("could not connect to database %s: %v", dbName, err)
-	}
-
-	defer db.Close()
-	//	time.Sleep(120 * time.Second)
-
-	// Set the owner to the new pg_database_owner role
-	if _, err := db.Exec(`
-ALTER SCHEMA test_schema OWNER TO pg_database_owner;
-ALTER TABLE test_schema.test_table OWNER TO pg_database_owner;
-`,
-	); err != nil {
-		t.Fatalf("could not alter owner of test_table (as %s): %v", config.Username, err)
-	}
-
 	var tfConfig = fmt.Sprintf(`
 	resource "postgresql_grant" "test" {
 		database    = "%s"
@@ -1379,6 +1361,25 @@ ALTER TABLE test_schema.test_table OWNER TO pg_database_owner;
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureDatabaseOwnerRole)
+
+			// Change the owner to the new pg_database_owner role
+			func() {
+				config := getTestConfig(t)
+				db, err := sql.Open("postgres", config.connStr(dbName))
+				if err != nil {
+					t.Fatalf("could not connect to database %s: %v", dbName, err)
+				}
+
+				defer db.Close()
+
+				if _, err := db.Exec(`
+					ALTER SCHEMA test_schema OWNER TO pg_database_owner;
+					ALTER TABLE test_schema.test_table OWNER TO pg_database_owner;
+				`); err != nil {
+					t.Fatalf("could not alter owner of test_table (as %s): %v", config.Username, err)
+				}
+
+			}()
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
