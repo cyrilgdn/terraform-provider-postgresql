@@ -491,12 +491,12 @@ func isSuperuser(db QueryAble, role string) (bool, error) {
 
 const publicRole = "public"
 
-func getRoleOID(db QueryAble, role string) (int, error) {
+func getRoleOID(db QueryAble, role string) (uint32, error) {
 	if role == publicRole {
 		return 0, nil
 	}
 
-	var oid int
+	var oid uint32
 	if err := db.QueryRow("SELECT oid FROM pg_roles WHERE rolname = $1", role).Scan(&oid); err != nil {
 		return 0, fmt.Errorf("could not find oid for role %s: %w", role, err)
 	}
