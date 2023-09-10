@@ -21,6 +21,7 @@ type featureName uint
 
 const (
 	featureCreateRoleWith featureName = iota
+	featureDatabaseOwnerRole
 	featureDBAllowConnections
 	featureDBIsTemplate
 	featureFallbackApplicationName
@@ -109,6 +110,8 @@ var (
 		featureFunction: semver.MustParseRange(">=8.4.0"),
 		// CREATE SERVER support
 		featureServer: semver.MustParseRange(">=10.0.0"),
+
+		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
 	}
 )
 
@@ -149,6 +152,7 @@ func (db *DBConnection) isSuperuser() (bool, error) {
 type ClientCertificateConfig struct {
 	CertificatePath string
 	KeyPath         string
+	SSLInline       bool
 }
 
 // Config - provider config
@@ -215,6 +219,9 @@ func (c *Config) connParams() []string {
 	if c.SSLClientCert != nil {
 		params["sslcert"] = c.SSLClientCert.CertificatePath
 		params["sslkey"] = c.SSLClientCert.KeyPath
+		if c.SSLClientCert.SSLInline {
+			params["sslinline"] = strconv.FormatBool(c.SSLClientCert.SSLInline)
+		}
 	}
 
 	if c.SSLRootCertPath != "" {
@@ -276,6 +283,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 			db, err = sql.Open(proxyDriverName, dsn)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
+		}
+
+		if err == nil {
+			err = db.Ping()
 		}
 		if err != nil {
 			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
