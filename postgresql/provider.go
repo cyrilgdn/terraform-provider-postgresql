@@ -146,6 +146,11 @@ func Provider() *schema.Provider {
 							Description: "The SSL client certificate private key file path. The file must contain PEM encoded data.",
 							Required:    true,
 						},
+						"sslinline": {
+							Type:        schema.TypeBool,
+							Description: "Must be set to true if you are inlining the cert/key instead of using a file path.",
+							Optional:    true,
+						},
 					},
 				},
 				MaxItems: 1,
@@ -338,6 +343,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 			config.SSLClientCert = &ClientCertificateConfig{
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
+				SSLInline:       spec["sslinline"].(bool),
 			}
 		}
 	}

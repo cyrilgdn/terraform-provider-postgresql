@@ -255,7 +255,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("database").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -274,7 +274,7 @@ WHERE grantee = $2
 	return nil
 }
 
-func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("schema").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -293,7 +293,7 @@ WHERE grantee = $2
 	return nil
 }
 
-func readForeignDataWrapperRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+func readForeignDataWrapperRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	objects := d.Get("objects").(*schema.Set).List()
 	fdwName := objects[0].(string)
 	query := `
@@ -313,7 +313,7 @@ WHERE grantee = $2
 	return nil
 }
 
-func readForeignServerRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID int) error {
+func readForeignServerRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	objects := d.Get("objects").(*schema.Set).List()
 	srvName := objects[0].(string)
 	query := `
@@ -801,6 +801,11 @@ func getRolesToGrant(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 	}
 	if !sliceContainsStr(owners, schemaOwner) {
 		owners = append(owners, schemaOwner)
+	}
+
+	owners, err = resolveOwners(txn, owners)
+	if err != nil {
+		return nil, err
 	}
 
 	return owners, nil
