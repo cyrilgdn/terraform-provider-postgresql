@@ -71,6 +71,73 @@ resource "postgresql_database" "my_db2" {
 }
 ```
 
+## Injecting Credentials
+There are several methods of providing credentials to the provider without hardcoding them.
+
+### Environment Variables
+Provider settings can be specified via environment variables as follows:
+
+```shell
+export PGHOST=localhost
+export PGPORT=5432
+export PGUSER=postgres
+export PGPASSWORD=postgres
+```
+
+### Terraform Variables
+Input variables can be used in provider configuration. These variables can be initialised in your Terraform code, via a [variable file](https://developer.hashicorp.com/terraform/language/values/variables#variable-definitions-tfvars-files), via [`TF_VAR_` environment variables](https://developer.hashicorp.com/terraform/language/values/variables#environment-variables) or any other method that Terraform allows.
+
+For example:
+```hcl
+variable "host" {
+  default = "localhost"
+}
+
+variable "password" {
+  default = "adm"
+}
+
+variable "port" {
+  default = 55432
+}
+
+provider "postgresql" {
+  host     = var.host
+  port     = var.port
+  password = var.password
+  sslmode  = "disable"
+}
+
+resource postgresql_database "test" {
+  name = "test"
+}
+```
+
+You could set the `host` variable by setting the environment variable `TF_VAR_host`.
+
+### Data Sources and Resources
+Credentials can be referenced via Terraform data sources, or resource attributes. This is useful for getting values from a secrets store such as AWS Secrets Manager.
+
+Resource attributes may only be referenced in provider config where the value is available in the resource definition; per [Terraform docs](https://developer.hashicorp.com/terraform/language/providers/configuration#provider-configuration-1):
+
+> you can safely reference input variables, but not attributes exported by resources (with an exception for resource arguments that are specified directly in the configuration).
+
+For example:
+
+```hcl
+data "aws_secretsmanager_secret" "postgres_password" {
+  name = "postgres_password"
+}
+data "aws_secretsmanager_secret_version" "postgres_password" {
+  secret_id = data.aws_secretsmanager_secret.postgres_password.id
+}
+
+provider "postgresql" {
+   [...]
+   password = data.aws_secretsmanager_secret_version.postgres_password.secret_string
+}
+```
+
 ## Argument Reference
 
 The following arguments are supported:
