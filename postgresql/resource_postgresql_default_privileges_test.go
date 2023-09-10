@@ -145,6 +145,15 @@ resource postgresql_role "test_owner" {
     name = "test_owner"
 }
 
+// From PostgreSQL 15, schema public is not wild open anymore
+resource "postgresql_grant" "public_usage" {
+	database          = "%s"
+	schema            = "public"
+	role              = postgresql_role.test_owner.name
+	object_type       = "schema"
+	privileges        = ["CREATE", "USAGE"]
+}
+
 resource "postgresql_default_privileges" "test_ro" {
 	database    = "%s"
 	owner       = postgresql_role.test_owner.name
@@ -153,7 +162,7 @@ resource "postgresql_default_privileges" "test_ro" {
 	object_type = "table"
 	privileges  = ["SELECT"]
 }
-	`, dbName, roleName)
+	`, dbName, dbName, roleName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
