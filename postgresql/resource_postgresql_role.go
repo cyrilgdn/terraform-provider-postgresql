@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,9 @@ const (
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
 )
+
+// Array of configuration paramers. Since they're managed in same way it is easier to have them in one place.
+var roleConfigurationParamers = [...]string{roleIdleInTransactionSessionTimeoutAttr, roleStatementTimeoutAttr}
 
 func resourcePostgreSQLRole() *schema.Resource {
 	return &schema.Resource{
@@ -120,12 +124,6 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Default:     false,
 				Description: "Determine whether this role will be permitted to create new roles",
 			},
-			roleIdleInTransactionSessionTimeoutAttr: {
-				Type:         schema.TypeInt,
-				Optional:     true,
-				Description:  "Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds",
-				ValidateFunc: validation.IntAtLeast(0),
-			},
 			roleInheritAttr: {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -162,16 +160,22 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Default:     false,
 				Description: "Skip actually running the REASSIGN OWNED command when removing a role from PostgreSQL",
 			},
-			roleStatementTimeoutAttr: {
-				Type:         schema.TypeInt,
-				Optional:     true,
-				Description:  "Abort any statement that takes more than the specified number of milliseconds",
-				ValidateFunc: validation.IntAtLeast(0),
-			},
 			roleAssumeRoleAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role to switch to at login",
+			},
+			roleStatementTimeoutAttr: {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Abort any statement that takes more than the specified number of milliseconds",
+				ValidateFunc: validation.StringMatch(regexp.MustCompile(`\d+(us|ms|s|min|h|d)?`), "Valid units for this parameter are 'us', 'ms', 's', 'min', 'h', and 'd'"),
+			},
+			roleIdleInTransactionSessionTimeoutAttr: {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds",
+				ValidateFunc: validation.StringMatch(regexp.MustCompile(`\d+(us|ms|s|min|h|d)?`), "Valid units for this parameter are 'us', 'ms', 's', 'min', 'h', and 'd'"),
 			},
 		},
 	}
@@ -299,12 +303,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	if err = setStatementTimeout(txn, d); err != nil {
-		return err
-	}
-
-	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
-		return err
+	for _, param := range roleConfigurationParamers {
+		if err = setConfigurationParameter(txn, d, param); err != nil {
+			return err
+		}
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
@@ -458,19 +460,10 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
 
-	statementTimeout, err := readStatementTimeout(roleConfig)
-	if err != nil {
-		return err
+	// Set configuration parameters
+	for _, param := range roleConfigurationParamers {
+		d.Set(param, readConfigurationParameter(roleConfig, param))
 	}
-
-	d.Set(roleStatementTimeoutAttr, statementTimeout)
-
-	idleInTransactionSessionTimeout, err := readIdleInTransactionSessionTimeout(roleConfig)
-	if err != nil {
-		return err
-	}
-
-	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
 
 	d.SetId(roleName)
 
@@ -516,21 +509,16 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 	return 0, nil
 }
 
-// readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
-// In case no such value is present, it returns nil.
-func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
+// readConfigurationParameter searches for a paramName entry in the rolconfig array.
+// In case no such value is present, it returns empty string.
+func readConfigurationParameter(roleConfig pq.ByteaArray, paramName string) string {
 	for _, v := range roleConfig {
 		config := string(v)
-		if strings.HasPrefix(config, roleStatementTimeoutAttr) {
-			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
-			res, err := strconv.Atoi(result[0])
-			if err != nil {
-				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
-			}
-			return res, nil
+		if strings.HasPrefix(config, paramName) {
+			return strings.Split(strings.TrimPrefix(config, paramName+"="), ", ")[0]
 		}
 	}
-	return 0, nil
+	return ""
 }
 
 // readAssumeRole searches for a role entry in the rolconfig array.
@@ -677,12 +665,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	if err = setStatementTimeout(txn, d); err != nil {
-		return err
-	}
-
-	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
-		return err
+	for _, param := range roleConfigurationParamers {
+		if err = setConfigurationParameter(txn, d, param); err != nil {
+			return err
+		}
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
@@ -988,53 +974,31 @@ func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
-	if !d.HasChange(roleStatementTimeoutAttr) {
+func setConfigurationParameter(txn *sql.Tx, d *schema.ResourceData, paramName string) error {
+	if !d.HasChange(paramName) {
 		return nil
 	}
 
 	roleName := d.Get(roleNameAttr).(string)
-	statementTimeout := d.Get(roleStatementTimeoutAttr).(int)
-	if statementTimeout != 0 {
-		sql := fmt.Sprintf(
-			"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
+	paramValue := d.Get(paramName).(string)
+	var sql string
+	var err error
+	if paramValue != "" {
+		sql = fmt.Sprintf(
+			"ALTER ROLE %s SET %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(paramName), pq.QuoteLiteral(paramValue),
 		)
-		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not set statement_timeout %d for %s: %w", statementTimeout, roleName, err)
-		}
+		err = fmt.Errorf("could not set (%s=%s) for %s: %s", paramName, paramValue, roleName, err)
 	} else {
-		sql := fmt.Sprintf(
-			"ALTER ROLE %s RESET statement_timeout", pq.QuoteIdentifier(roleName),
+		sql = fmt.Sprintf(
+			"ALTER ROLE %s RESET %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(paramName),
 		)
-		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not reset statement_timeout for %s: %w", roleName, err)
-		}
-	}
-	return nil
-}
-
-func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) error {
-	if !d.HasChange(roleIdleInTransactionSessionTimeoutAttr) {
-		return nil
+		err = fmt.Errorf("could not reset %s for %s: %w", paramName, roleName, err)
 	}
 
-	roleName := d.Get(roleNameAttr).(string)
-	idleInTransactionSessionTimeout := d.Get(roleIdleInTransactionSessionTimeoutAttr).(int)
-	if idleInTransactionSessionTimeout != 0 {
-		sql := fmt.Sprintf(
-			"ALTER ROLE %s SET idle_in_transaction_session_timeout TO %d", pq.QuoteIdentifier(roleName), idleInTransactionSessionTimeout,
-		)
-		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not set idle_in_transaction_session_timeout %d for %s: %w", idleInTransactionSessionTimeout, roleName, err)
-		}
-	} else {
-		sql := fmt.Sprintf(
-			"ALTER ROLE %s RESET idle_in_transaction_session_timeout", pq.QuoteIdentifier(roleName),
-		)
-		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
-		}
+	if _, e := txn.Exec(sql); e != nil {
+		return err
 	}
+
 	return nil
 }
 
