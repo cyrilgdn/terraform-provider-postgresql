@@ -462,15 +462,17 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	if err != nil {
 		return err
 	}
-
-	d.Set(roleStatementTimeoutAttr, statementTimeout)
+	if statementTimeout != -1 {
+		d.Set(roleStatementTimeoutAttr, statementTimeout)
+	}
 
 	idleInTransactionSessionTimeout, err := readIdleInTransactionSessionTimeout(roleConfig)
 	if err != nil {
 		return err
 	}
-
-	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
+	if idleInTransactionSessionTimeout != -1 {
+		d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
+	}
 
 	d.SetId(roleName)
 
@@ -500,7 +502,7 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 }
 
 // readIdleInTransactionSessionTimeout searches for a idle_in_transaction_session_timeout entry in the rolconfig array.
-// In case no such value is present, it returns nil.
+// In case no such value is present, it returns -1.
 func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
 	for _, v := range roleConfig {
 		config := string(v)
@@ -508,16 +510,16 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 			var result = strings.Split(strings.TrimPrefix(config, roleIdleInTransactionSessionTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
-				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
+				return -1, fmt.Errorf("Error reading idle_in_transaction_session_timeout: %w", err)
 			}
 			return res, nil
 		}
 	}
-	return 0, nil
+	return -1, nil
 }
 
 // readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
-// In case no such value is present, it returns nil.
+// In case no such value is present, it returns -1.
 func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 	for _, v := range roleConfig {
 		config := string(v)
@@ -530,7 +532,7 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 			return res, nil
 		}
 	}
-	return 0, nil
+	return -1, nil
 }
 
 // readAssumeRole searches for a role entry in the rolconfig array.
@@ -994,8 +996,8 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	roleName := d.Get(roleNameAttr).(string)
-	statementTimeout := d.Get(roleStatementTimeoutAttr).(int)
-	if statementTimeout != 0 {
+	statementTimeout := d.Get(roleStatementTimeoutAttr)
+	if statementTimeout != nil {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET statement_timeout TO %d", pq.QuoteIdentifier(roleName), statementTimeout,
 		)
@@ -1019,8 +1021,8 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 	}
 
 	roleName := d.Get(roleNameAttr).(string)
-	idleInTransactionSessionTimeout := d.Get(roleIdleInTransactionSessionTimeoutAttr).(int)
-	if idleInTransactionSessionTimeout != 0 {
+	idleInTransactionSessionTimeout := d.Get(roleIdleInTransactionSessionTimeoutAttr)
+	if idleInTransactionSessionTimeout != nil {
 		sql := fmt.Sprintf(
 			"ALTER ROLE %s SET idle_in_transaction_session_timeout TO %d", pq.QuoteIdentifier(roleName), idleInTransactionSessionTimeout,
 		)
