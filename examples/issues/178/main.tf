@@ -26,7 +26,7 @@ resource "docker_image" "postgres" {
 
 resource "docker_container" "postgres" {
   image = docker_image.postgres.image_id
-  name  = "postgres"
+  name  = var.container_name
   wait  = true
   ports {
     internal = var.POSTGRES_PORT
@@ -52,12 +52,13 @@ provider "postgresql" {
   username  = var.POSTGRES_PASSWORD
   password  = var.POSTGRES_PASSWORD
   sslmode   = "disable"
-  superuser = false
+  superuser = var.superuser
 }
 
 resource "postgresql_database" "this" {
-  name  = "test"
-  owner = var.POSTGRES_USER
+  name     = var.database_name
+  template = var.database_template
+  owner    = var.POSTGRES_USER
 }
 
 resource "postgresql_role" "readonly_role" {

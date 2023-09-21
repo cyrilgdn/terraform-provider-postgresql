@@ -37,3 +37,31 @@ variable "keep_image" {
   type        = bool
   sensitive   = false
 }
+
+variable "database_name" {
+  description = "Name for the database to be created."
+  default     = "issue178"
+  type        = string
+  sensitive   = false
+}
+
+variable "database_template" {
+  description = "The name of the template database from which to create the database."
+  default     = "template0"
+  type        = string
+  sensitive   = false
+}
+
+variable "superuser" {
+  description = "Whether the POSTGRES_USER is a PostgreSQL superuser."
+  default     = false
+  type        = bool
+  sensitive   = false
+}
+
+variable "container_name" {
+  description = "The name for the docker container."
+  default     = "postgres"
+  type        = string
+  sensitive   = false
+}
