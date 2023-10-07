@@ -112,13 +112,13 @@ func TestPGFunctionParseWithArguments(t *testing.T) {
 CREATE OR REPLACE FUNCTION public.pg_func_test(showtext boolean, OUT userid oid, default_null integer DEFAULT NULL::integer, simple_default integer DEFAULT 42, long_default character varying DEFAULT 'foo'::character varying)
 RETURNS SETOF record
 LANGUAGE c
-STABLE PARALLEL SAFE STRICT SECURITY DEFINER
+SECURITY DEFINER STABLE STRICT PARALLEL SAFE
 AS $function$pg_func_test_body$function$
 	`
 
 	var pgFunction PGFunction
 
-	err := pgFunction.Parse(functionDefinition)
+	err := pgFunction.Parse(functionDefinition, true, true, "s", "s", "c")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ $function$
 
 	var pgFunction PGFunction
 
-	err := pgFunction.Parse(functionDefinition)
+	err := pgFunction.Parse(functionDefinition, false, false, "u", "v", "plpgsql")
 	if err != nil {
 		t.Fatal(err)
 	}

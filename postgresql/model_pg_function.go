@@ -109,10 +109,10 @@ func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 	return nil
 }
 
-func (pgFunction *PGFunction) Parse(functionDefinition string) error {
+func (pgFunction *PGFunction) Parse(functionDefinition string, securityDefiner bool, strict bool, parallelSafety string, volatility string, language string) error {
 
 	pgFunctionData := findStringSubmatchMap(
-		`(?si)CREATE\sOR\sREPLACE\sFUNCTION\s(?P<Schema>[^.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\).*RETURNS\s(?P<Returns>[^\n]+).*LANGUAGE\s(?P<Language>[^\n\s]+)\s*(?P<Volatility>(STABLE|IMMUTABLE)?)\s*(?P<Parallel>(PARALLEL (SAFE|RESTRICTED))?)\s*(?P<Strict>(STRICT)?)\s*(?P<Security>(SECURITY DEFINER)?).*\$[a-zA-Z]*\$(?P<Body>.*)\$[a-zA-Z]*\$`,
+		`(?si)CREATE\sOR\sREPLACE\sFUNCTION\s(?P<Schema>[^.]+)\.(?P<Name>[^(]+)\((?P<Args>.*)\).*RETURNS\s(?P<Returns>[^\n]+).*\$[a-zA-Z]*\$(?P<Body>.*)\$[a-zA-Z]*\$`,
 		functionDefinition,
 	)
 
@@ -135,20 +135,23 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	pgFunction.Schema = pgFunctionData["Schema"]
 	pgFunction.Name = pgFunctionData["Name"]
 	pgFunction.Returns = pgFunctionData["Returns"]
-	pgFunction.Language = pgFunctionData["Language"]
+	pgFunction.Language = language
 	pgFunction.Body = pgFunctionData["Body"]
 	pgFunction.Args = args
-	pgFunction.SecurityDefiner = len(pgFunctionData["Security"]) > 0
-	pgFunction.Strict = len(pgFunctionData["Strict"]) > 0
-	if len(pgFunctionData["Volatility"]) == 0 {
-		pgFunction.Volatility = defaultFunctionVolatility
-	} else {
-		pgFunction.Volatility = pgFunctionData["Volatility"]
+	pgFunction.SecurityDefiner = securityDefiner
+	pgFunction.Strict = strict
+	pgFunction.Volatility = defaultFunctionVolatility
+	if volatility == "i" {
+		pgFunction.Volatility = "IMMUTABLE"
+	} else if volatility == "s" {
+		pgFunction.Volatility = "STABLE"
 	}
-	if len(pgFunctionData["Parallel"]) == 0 {
-		pgFunction.Parallel = defaultFunctionParallel
-	} else {
-		pgFunction.Parallel = strings.TrimPrefix(pgFunctionData["Parallel"], "PARALLEL ")
+
+	pgFunction.Parallel = defaultFunctionParallel
+	if parallelSafety == "r" {
+		pgFunction.Parallel = "RESTRICTED"
+	} else if parallelSafety == "s" {
+		pgFunction.Parallel = "SAFE"
 	}
 
 	return nil
