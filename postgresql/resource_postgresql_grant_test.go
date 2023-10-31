@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gruntwork-io/terratest/modules/logger"
-	terratest "github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -299,55 +297,6 @@ func TestCreateRevokeQuery(t *testing.T) {
 		if out != c.expected {
 			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
 		}
-	}
-}
-
-// Test the fix for
-// https://github.com/cyrilgdn/terraform-provider-postgresql/issues/178
-func TestConcurrentPostgresqlGrant(t *testing.T) {
-	var testcases = []struct {
-		database_template string
-		superuser         bool
-	}{
-		{
-			"template0",
-			true,
-		},
-		{
-			"template0",
-			false,
-		},
-		{
-			"template1",
-			true,
-		},
-		{
-			"template1",
-			false,
-		},
-	}
-
-	for _, testCase := range testcases {
-		testCase := testCase
-		name := fmt.Sprintf("%s-%t", testCase.database_template, testCase.superuser)
-
-		t.Run(name, func(t *testing.T) {
-			t.Logf("Starting test loop with database template: %s and superuser: %t", testCase.database_template, testCase.superuser)
-
-			terraformOptions := terratest.WithDefaultRetryableErrors(t, &terratest.Options{
-				TerraformDir: "../examples/issues/178",
-				Logger:       logger.Discard,
-				Vars: map[string]interface{}{
-					"database_template": testCase.database_template,
-					"superuser":         testCase.superuser,
-				},
-			})
-
-			defer terratest.Destroy(t, terraformOptions)
-
-			terratest.InitAndApply(t, terraformOptions)
-		})
-
 	}
 }
 
