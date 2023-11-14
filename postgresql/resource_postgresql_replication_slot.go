@@ -131,9 +131,9 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 		return fmt.Errorf("Error reading ReplicationSlot: %w", err)
 	}
 
-	d.Set("name", replicationSlotName)
-	d.Set("plugin", replicationSlotPlugin)
-	d.Set("database", database)
+	_ = d.Set("name", replicationSlotName)
+	_ = d.Set("plugin", replicationSlotPlugin)
+	_ = d.Set("database", database)
 	d.SetId(generateReplicationSlotID(d, database))
 
 	return nil

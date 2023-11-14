@@ -25,7 +25,7 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 		t.Fatalf("could connect to database: %v", err)
 	}
 	if !db.featureSupported(feature) {
-		t.Skip(fmt.Sprintf("Skip extension tests for Postgres %s", db.version))
+		t.Skipf("Skip extension tests for Postgres %s", db.version)
 	}
 }
 
@@ -63,9 +63,7 @@ func getTestConfig(t *testing.T) Config {
 
 func skipIfNotAcc(t *testing.T) {
 	if os.Getenv(resource.TestEnvVar) == "" {
-		t.Skip(fmt.Sprintf(
-			"Acceptance tests skipped unless env '%s' set",
-			resource.TestEnvVar))
+		t.Skipf("Acceptance tests skipped unless env '%s' set", resource.TestEnvVar)
 	}
 }
 
@@ -193,7 +191,9 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 	return func() {
 		dsn, _ = config.connStr(dbName)
 		db, err := sql.Open("postgres", dsn)
-		defer db.Close()
+		defer func() {
+			_ = db.Close()
+		}()
 
 		if err != nil {
 			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)

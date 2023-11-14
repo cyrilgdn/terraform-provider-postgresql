@@ -568,16 +568,6 @@ func schemaChangedPolicies(old, new []interface{}) (dropped, added, update, unch
 	return droppedRoles, addedRoles, updatedRoles, unchangedRoles
 }
 
-func schemaPolicyToHCL(s *acl.Schema) map[string]interface{} {
-	return map[string]interface{}{
-		schemaPolicyRoleAttr:            s.Role,
-		schemaPolicyCreateAttr:          s.GetPrivilege(acl.Create),
-		schemaPolicyCreateWithGrantAttr: s.GetGrantOption(acl.Create),
-		schemaPolicyUsageAttr:           s.GetPrivilege(acl.Usage),
-		schemaPolicyUsageWithGrantAttr:  s.GetGrantOption(acl.Usage),
-	}
-}
-
 func schemaPolicyToACL(policyMap map[string]interface{}) acl.Schema {
 	var rolePolicy acl.Schema
 
@@ -613,11 +603,6 @@ func generateSchemaID(d *schema.ResourceData, databaseName string) string {
 	}, ".")
 
 	return SchemaID
-}
-
-func getSchemaNameFromID(ID string) string {
-	splitted := strings.Split(ID, ".")
-	return splitted[0]
 }
 
 func getDBSchemaName(d *schema.ResourceData, databaseName string) (string, string, error) {
