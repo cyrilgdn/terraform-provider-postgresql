@@ -224,7 +224,7 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	_ = d.Set("privileges", pgArrayToSet(privileges))
 	return nil
 }
 
@@ -243,7 +243,7 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	_ = d.Set("privileges", pgArrayToSet(privileges))
 	return nil
 }
 
@@ -339,7 +339,7 @@ GROUP BY pg_class.relname
 				"[DEBUG] %s %s has not the expected privileges %v for role %s",
 				strings.ToTitle(objectType), objName, privileges, d.Get("role"),
 			)
-			d.Set("privileges", privilegesSet)
+			_ = d.Set("privileges", privilegesSet)
 			break
 		}
 	}
@@ -386,7 +386,7 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 		}
 	}
 
-	if d.Get("with_grant_option").(bool) == true {
+	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
 
@@ -495,7 +495,9 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 		if err != nil {
 			return false, err
 		}
-		defer dbTxn.Rollback()
+		defer func() {
+			_ = dbTxn.Rollback()
+		}()
 
 		// Check the schema exists (the SQL connection needs to be on the right database)
 		exists, err = schemaExists(dbTxn, pgSchema)

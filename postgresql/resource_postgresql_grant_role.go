@@ -146,9 +146,9 @@ func readGrantRole(db QueryAble, d *schema.ResourceData) error {
 		return fmt.Errorf("Error reading grant role: %w", err)
 	}
 
-	d.Set("role", roleName)
-	d.Set("grant_role", grantRoleName)
-	d.Set("with_admin_option", withAdminOption)
+	_ = d.Set("role", roleName)
+	_ = d.Set("grant_role", grantRoleName)
+	_ = d.Set("with_admin_option", withAdminOption)
 
 	d.SetId(generateGrantRoleID(d))
 

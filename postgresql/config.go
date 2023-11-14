@@ -303,7 +303,9 @@ func (c *Client) connect() (*DBConnection, error) {
 	if found {
 		log.Printf("Reusing database connection")
 		rows, err := conn.Query("SELECT 1")
-		defer rows.Close()
+		defer func() {
+			_ = rows.Close()
+		}()
 		if err != nil {
 			delete(c.dbRegistry, dsn)
 			return nil, fmt.Errorf("failed to ping database %w", err)
@@ -387,10 +389,8 @@ func (c *Client) tryConnectWithFallback() (*DBConnection, error) {
 }
 
 func (c *Client) connectionWatcher() {
-	select {
-	case <-c.config.ctx.Done():
-		c.closeConnections()
-	}
+	<-c.config.ctx.Done()
+	c.closeConnections()
 }
 
 func (c *Client) closeConnections() {

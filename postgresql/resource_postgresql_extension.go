@@ -184,10 +184,10 @@ func resourcePostgreSQLExtensionReadImpl(db *DBConnection, d *schema.ResourceDat
 		return fmt.Errorf("Error reading extension: %w", err)
 	}
 
-	d.Set(extNameAttr, extName)
-	d.Set(extSchemaAttr, extSchema)
-	d.Set(extVersionAttr, extVersion)
-	d.Set(extDatabaseAttr, database)
+	_ = d.Set(extNameAttr, extName)
+	_ = d.Set(extSchemaAttr, extSchema)
+	_ = d.Set(extVersionAttr, extVersion)
+	_ = d.Set(extDatabaseAttr, database)
 	d.SetId(generateExtensionID(d, database))
 
 	return nil

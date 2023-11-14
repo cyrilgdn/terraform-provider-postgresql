@@ -234,7 +234,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	privilegesSet := pgArrayToSet(privileges)
-	d.Set("privileges", privilegesSet)
+	_ = d.Set("privileges", privilegesSet)
 	d.SetId(generateDefaultPrivilegesID(d))
 
 	return nil
@@ -264,7 +264,7 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		pq.QuoteIdentifier(role),
 	)
 
-	if d.Get("with_grant_option").(bool) == true {
+	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
 

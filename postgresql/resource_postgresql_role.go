@@ -182,7 +182,9 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	if v, ok := d.GetOk(createIfNotExistsAttr); ok && v.(bool) {
 		log.Printf("[DEBUG] Creating role %s with IF NOT EXISTS", roleName)
 		result, err := db.Query("SELECT 1 FROM pg_roles WHERE rolname = $1", roleName)
-		defer result.Close()
+		defer func() {
+			_ = result.Close()
+		}()
 		if err != nil {
 			return fmt.Errorf("failed to check if the role %s exists %w", roleName, err)
 		}
@@ -451,35 +453,35 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		return fmt.Errorf("Error reading ROLE: %w", err)
 	}
 
-	d.Set(roleNameAttr, roleName)
-	d.Set(roleConnLimitAttr, roleConnLimit)
-	d.Set(roleCreateDBAttr, roleCreateDB)
-	d.Set(roleCreateRoleAttr, roleCreateRole)
-	d.Set(roleEncryptedPassAttr, true)
-	d.Set(roleInheritAttr, roleInherit)
-	d.Set(roleLoginAttr, roleCanLogin)
-	d.Set(roleSkipDropRoleAttr, d.Get(roleSkipDropRoleAttr).(bool))
-	d.Set(roleSkipReassignOwnedAttr, d.Get(roleSkipReassignOwnedAttr).(bool))
-	d.Set(roleSuperuserAttr, roleSuperuser)
-	d.Set(roleValidUntilAttr, roleValidUntil)
-	d.Set(roleReplicationAttr, roleReplication)
-	d.Set(roleBypassRLSAttr, roleBypassRLS)
-	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
-	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
+	_ = d.Set(roleNameAttr, roleName)
+	_ = d.Set(roleConnLimitAttr, roleConnLimit)
+	_ = d.Set(roleCreateDBAttr, roleCreateDB)
+	_ = d.Set(roleCreateRoleAttr, roleCreateRole)
+	_ = d.Set(roleEncryptedPassAttr, true)
+	_ = d.Set(roleInheritAttr, roleInherit)
+	_ = d.Set(roleLoginAttr, roleCanLogin)
+	_ = d.Set(roleSkipDropRoleAttr, d.Get(roleSkipDropRoleAttr).(bool))
+	_ = d.Set(roleSkipReassignOwnedAttr, d.Get(roleSkipReassignOwnedAttr).(bool))
+	_ = d.Set(roleSuperuserAttr, roleSuperuser)
+	_ = d.Set(roleValidUntilAttr, roleValidUntil)
+	_ = d.Set(roleReplicationAttr, roleReplication)
+	_ = d.Set(roleBypassRLSAttr, roleBypassRLS)
+	_ = d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
+	_ = d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
 		return err
 	}
 
-	d.Set(roleStatementTimeoutAttr, statementTimeout)
+	_ = d.Set(roleStatementTimeoutAttr, statementTimeout)
 
 	idleInTransactionSessionTimeout, err := readIdleInTransactionSessionTimeout(roleConfig)
 	if err != nil {
 		return err
 	}
 
-	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
+	_ = d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
 
 	d.SetId(roleName)
 
@@ -488,7 +490,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		return err
 	}
 
-	d.Set(rolePasswordAttr, password)
+	_ = d.Set(rolePasswordAttr, password)
 	return nil
 }
 

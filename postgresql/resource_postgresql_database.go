@@ -153,7 +153,9 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	if v, ok := d.GetOk(createIfNotExistsAttr); ok && v.(bool) {
 		result, err := db.Query("SELECT 1 FROM pg_database WHERE datname = $1", dbName)
-		defer result.Close()
+		defer func() {
+			_ = result.Close()
+		}()
 		if err != nil {
 			return fmt.Errorf("failed to check if the database %s exists %w", dbName, err)
 		}
@@ -363,18 +365,18 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		return fmt.Errorf("Error reading database: %w", err)
 	}
 
-	d.Set(dbNameAttr, dbName)
-	d.Set(dbOwnerAttr, ownerName)
-	d.Set(dbEncodingAttr, dbEncoding)
-	d.Set(dbCollationAttr, dbCollation)
-	d.Set(dbCTypeAttr, dbCType)
-	d.Set(dbTablespaceAttr, dbTablespaceName)
-	d.Set(dbConnLimitAttr, dbConnLimit)
+	_ = d.Set(dbNameAttr, dbName)
+	_ = d.Set(dbOwnerAttr, ownerName)
+	_ = d.Set(dbEncodingAttr, dbEncoding)
+	_ = d.Set(dbCollationAttr, dbCollation)
+	_ = d.Set(dbCTypeAttr, dbCType)
+	_ = d.Set(dbTablespaceAttr, dbTablespaceName)
+	_ = d.Set(dbConnLimitAttr, dbConnLimit)
 	dbTemplate := d.Get(dbTemplateAttr).(string)
 	if dbTemplate == "" {
 		dbTemplate = "template0"
 	}
-	d.Set(dbTemplateAttr, dbTemplate)
+	_ = d.Set(dbTemplateAttr, dbTemplate)
 
 	if db.featureSupported(featureDBAllowConnections) {
 		var dbAllowConns bool
@@ -384,7 +386,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 			return fmt.Errorf("Error reading ALLOW_CONNECTIONS property for DATABASE: %w", err)
 		}
 
-		d.Set(dbAllowConnsAttr, dbAllowConns)
+		_ = d.Set(dbAllowConnsAttr, dbAllowConns)
 	}
 
 	if db.featureSupported(featureDBIsTemplate) {
@@ -395,7 +397,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 			return fmt.Errorf("Error reading IS_TEMPLATE property for DATABASE: %w", err)
 		}
 
-		d.Set(dbIsTemplateAttr, dbIsTemplate)
+		_ = d.Set(dbIsTemplateAttr, dbIsTemplate)
 	}
 
 	return nil
