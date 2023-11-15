@@ -448,15 +448,24 @@ func getDatabase(d *schema.ResourceData, databaseName string) string {
 }
 
 func getDatabaseOwner(db QueryAble, database string) (string, error) {
-	query := `
+	dbQueryString := "$1"
+	dbQueryValues := []interface{}{database}
+
+	// Empty means current DB
+	if database == "" {
+		dbQueryString = "current_database()"
+		dbQueryValues = []interface{}{}
+
+	}
+	query := fmt.Sprintf(`
 SELECT rolname
   FROM pg_database
   JOIN pg_roles ON datdba = pg_roles.oid
-  WHERE datname = $1
-`
+  WHERE datname = %s
+`, dbQueryString)
 	var owner string
 
-	err := db.QueryRow(query, database).Scan(&owner)
+	err := db.QueryRow(query, dbQueryValues...).Scan(&owner)
 	switch {
 	case err == sql.ErrNoRows:
 		return "", fmt.Errorf("could not find database '%s' while looking for owner", database)
@@ -507,6 +516,22 @@ func getTablesOwner(db QueryAble, schemaName string) ([]string, error) {
 	return owners, nil
 }
 
+func resolveOwners(db QueryAble, owners []string) ([]string, error) {
+	resolvedOwners := []string{}
+	for _, owner := range owners {
+		if owner == "pg_database_owner" {
+			var err error
+			owner, err = getDatabaseOwner(db, "")
+			if err != nil {
+				return nil, err
+			}
+		}
+		resolvedOwners = append(resolvedOwners, owner)
+	}
+
+	return resolvedOwners, nil
+}
+
 func isSuperuser(db QueryAble, role string) (bool, error) {
 	var superuser bool
 
@@ -519,12 +544,12 @@ func isSuperuser(db QueryAble, role string) (bool, error) {
 
 const publicRole = "public"
 
-func getRoleOID(db QueryAble, role string) (int, error) {
+func getRoleOID(db QueryAble, role string) (uint32, error) {
 	if role == publicRole {
 		return 0, nil
 	}
 
-	var oid int
+	var oid uint32
 	if err := db.QueryRow("SELECT oid FROM pg_roles WHERE rolname = $1", role).Scan(&oid); err != nil {
 		return 0, fmt.Errorf("could not find oid for role %s: %w", role, err)
 	}

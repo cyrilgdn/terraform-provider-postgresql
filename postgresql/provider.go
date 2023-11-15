@@ -3,6 +3,8 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"os"
 
 	"github.com/blang/semver"
@@ -87,6 +89,20 @@ func Provider() *schema.Provider {
 				Description: "AWS region to use for IAM auth",
 			},
 
+			"azure_identity_auth": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Description: "Use MS Azure identity OAuth token " +
+					"(see: https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication)",
+			},
+
+			"azure_tenant_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "MS Azure tenant ID (see: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)",
+			},
+
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -129,6 +145,11 @@ func Provider() *schema.Provider {
 							Type:        schema.TypeString,
 							Description: "The SSL client certificate private key file path. The file must contain PEM encoded data.",
 							Required:    true,
+						},
+						"sslinline": {
+							Type:        schema.TypeBool,
+							Description: "Must be set to true if you are inlining the cert/key instead of using a file path.",
+							Optional:    true,
 						},
 					},
 				},
@@ -245,6 +266,22 @@ func createGoogleCredsFileIfNeeded() error {
 	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
 }
 
+func acquireAzureOauthToken(tenantId string) (string, error) {
+	credential, err := azidentity.NewDefaultAzureCredential(
+		&azidentity.DefaultAzureCredentialOptions{TenantID: tenantId})
+	if err != nil {
+		return "", err
+	}
+	token, err := credential.GetToken(context.Background(), policy.TokenRequestOptions{
+		Scopes:   []string{"https://ossrdbms-aad.database.windows.net/.default"},
+		TenantID: tenantId,
+	})
+	if err != nil {
+		return "", err
+	}
+	return token.Token, nil
+}
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -268,6 +305,16 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		region := d.Get("aws_rds_iam_region").(string)
 		var err error
 		password, err = getRDSAuthToken(region, profile, username, host, port)
+		if err != nil {
+			return nil, err
+		}
+	} else if d.Get("azure_identity_auth").(bool) {
+		tenantId := d.Get("azure_tenant_id").(string)
+		if tenantId == "" {
+			return nil, fmt.Errorf("postgresql: azure_identity_auth is enabled, azure_tenant_id must be provided also")
+		}
+		var err error
+		password, err = acquireAzureOauthToken(tenantId)
 		if err != nil {
 			return nil, err
 		}
@@ -296,6 +343,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 			config.SSLClientCert = &ClientCertificateConfig{
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
+				SSLInline:       spec["sslinline"].(bool),
 			}
 		}
 	}

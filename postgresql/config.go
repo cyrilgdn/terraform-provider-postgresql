@@ -11,7 +11,7 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
-	_ "github.com/lib/pq" //PostgreSQL db
+	_ "github.com/lib/pq" // PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
 	_ "gocloud.dev/postgres/gcppostgres"
@@ -21,6 +21,7 @@ type featureName uint
 
 const (
 	featureCreateRoleWith featureName = iota
+	featureDatabaseOwnerRole
 	featureDBAllowConnections
 	featureDBIsTemplate
 	featureFallbackApplicationName
@@ -109,6 +110,8 @@ var (
 		featureFunction: semver.MustParseRange(">=8.4.0"),
 		// CREATE SERVER support
 		featureServer: semver.MustParseRange(">=10.0.0"),
+
+		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
 	}
 )
 
@@ -149,6 +152,7 @@ func (db *DBConnection) isSuperuser() (bool, error) {
 type ClientCertificateConfig struct {
 	CertificatePath string
 	KeyPath         string
+	SSLInline       bool
 }
 
 // Config - provider config
@@ -215,6 +219,9 @@ func (c *Config) connParams() []string {
 	if c.SSLClientCert != nil {
 		params["sslcert"] = c.SSLClientCert.CertificatePath
 		params["sslkey"] = c.SSLClientCert.KeyPath
+		if c.SSLClientCert.SSLInline {
+			params["sslinline"] = strconv.FormatBool(c.SSLClientCert.SSLInline)
+		}
 	}
 
 	if c.SSLRootCertPath != "" {
@@ -231,7 +238,6 @@ func (c *Config) connParams() []string {
 
 func (c *Config) connStr(database string) string {
 	host := c.Host
-
 	// For GCP, support both project/region/instance and project:region:instance
 	// (The second one allows to use the output of google_sql_database_instance as host
 	if c.Scheme == "gcppostgres" {
@@ -241,8 +247,8 @@ func (c *Config) connStr(database string) string {
 	connStr := fmt.Sprintf(
 		"%s://%s:%s@%s:%d/%s?%s",
 		c.Scheme,
-		url.QueryEscape(c.Username),
-		url.QueryEscape(c.Password),
+		url.PathEscape(c.Username),
+		url.PathEscape(c.Password),
 		host,
 		c.Port,
 		database,
@@ -298,7 +304,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 			// Version hint not set by user, need to fingerprint
 			version, err = fingerprintCapabilities(db)
 			if err != nil {
-				db.Close()
+				_ = db.Close()
 				return nil, fmt.Errorf("error detecting capabilities: %w", err)
 			}
 		}
