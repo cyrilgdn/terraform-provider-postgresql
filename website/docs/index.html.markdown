@@ -153,7 +153,7 @@ The following arguments are supported:
 * `password` - (Optional) Password for the server connection.
 * `database_username` - (Optional) Username of the user in the database if different than connection username (See [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)).
 * `superuser` - (Optional) Should be set to `false` if the user to connect is not a PostgreSQL superuser (as is the case in AWS RDS or GCP SQL).
-*                          In this case, some features might be disabled (e.g.: Refreshing state password from database).
+  In this case, some features might be disabled (e.g.: Refreshing state password from database).
 * `sslmode` - (Optional) Set the priority for an SSL connection to the server.
   Valid values for `sslmode` are (note: `prefer` is not supported by Go's
   [`lib/pq`][libpq])):
