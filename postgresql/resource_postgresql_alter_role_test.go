@@ -12,9 +12,9 @@ import (
 )
 
 func TestCreateAlterRoleQuery(t *testing.T) {
-	var roleName = "foo"
-	var parameterKey = "log_statement"
-	var parameterValue = "ALL"
+	roleName := "foo"
+	parameterKey := "log_statement"
+	parameterValue := "ALL"
 
 	cases := []struct {
 		resource map[string]interface{}
@@ -42,8 +42,8 @@ func TestCreateAlterRoleQuery(t *testing.T) {
 }
 
 func TestResetRoleQuery(t *testing.T) {
-	var roleName = "foo"
-	var parameterKey = "log_statement"
+	roleName := "foo"
+	parameterKey := "log_statement"
 
 	expected := fmt.Sprintf("ALTER ROLE %s RESET %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(parameterKey))
 
