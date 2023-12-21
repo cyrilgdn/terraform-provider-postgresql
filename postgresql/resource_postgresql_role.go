@@ -194,29 +194,33 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	intOpts := []struct {
 		hclKey string
 		sqlKey string
-	}{
-		{roleConnLimitAttr, "CONNECTION LIMIT"},
+	}{}
+	if db.featureSupported(fetureRoleConnectionLimit) {
+		intOpts = append(intOpts, struct {
+			hclKey string
+			sqlKey string
+		}{roleConnLimitAttr, "CONNECTION LIMIT"})
 	}
-
 	type boolOptType struct {
 		hclKey        string
 		sqlKeyEnable  string
 		sqlKeyDisable string
 	}
 	boolOpts := []boolOptType{
-		{roleSuperuserAttr, "SUPERUSER", "NOSUPERUSER"},
 		{roleCreateDBAttr, "CREATEDB", "NOCREATEDB"},
 		{roleCreateRoleAttr, "CREATEROLE", "NOCREATEROLE"},
-		{roleInheritAttr, "INHERIT", "NOINHERIT"},
 		{roleLoginAttr, "LOGIN", "NOLOGIN"},
-		// roleEncryptedPassAttr is used only when rolePasswordAttr is set.
-		// {roleEncryptedPassAttr, "ENCRYPTED", "UNENCRYPTED"},
 	}
 
+	if db.featureSupported(fetureRoleSuperuser) {
+		boolOpts = append(boolOpts, boolOptType{roleSuperuserAttr, "SUPERUSER", "NOSUPERUSER"})
+	}
+	if db.featureSupported(featureRoleroleInherit) {
+		boolOpts = append(boolOpts, boolOptType{roleInheritAttr, "INHERIT", "NOINHERIT"})
+	}
 	if db.featureSupported(featureRLS) {
 		boolOpts = append(boolOpts, boolOptType{roleBypassRLSAttr, "BYPASSRLS", "NOBYPASSRLS"})
 	}
-
 	if db.featureSupported(featureReplication) {
 		boolOpts = append(boolOpts, boolOptType{roleReplicationAttr, "REPLICATION", "NOREPLICATION"})
 	}
@@ -235,7 +239,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 			case opt.hclKey == rolePasswordAttr:
 				if strings.ToUpper(v.(string)) == "NULL" {
 					createOpts = append(createOpts, "PASSWORD NULL")
-				} else {
+				} else if db.featureSupported(fetureRoleEncryptedPass) {
 					if d.Get(roleEncryptedPassAttr).(bool) {
 						createOpts = append(createOpts, "ENCRYPTED")
 					} else {
@@ -246,7 +250,13 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 			case opt.hclKey == roleValidUntilAttr:
 				switch {
 				case v.(string) == "", strings.ToLower(v.(string)) == "infinity":
-					createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, "infinity"))
+					//temp fix for cockroachdb valid until bug fixed
+					//https://github.com/cockroachdb/cockroach/issues/116714
+					if db.dbType == dbTypeCockroachdb {
+						createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, "294276-12-31 23:59:59"))
+					} else {
+						createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, "infinity"))
+					}
 				default:
 					createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
 				}
@@ -322,14 +332,13 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 
 func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
-
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
-	if err := pgLockRole(txn, roleName); err != nil {
+	if err := pgLockRole(txn, db, roleName); err != nil {
 		return err
 	}
 
@@ -339,9 +348,16 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 			if _, err := txn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
 				return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)
 			}
-
-			if _, err := txn.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
-				return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
+			//cockroach does not support schema changes within explicit transactions
+			// https://www.cockroachlabs.com/docs/v23.1/online-schema-changes
+			if db.dbType == dbTypeCockroachdb {
+				if _, err := db.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
+					return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
+				}
+			} else {
+				if _, err := txn.Exec(fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(roleName))); err != nil {
+					return fmt.Errorf("could not drop owned by role %s: %w", roleName, err)
+				}
 			}
 			return nil
 		}); err != nil {
@@ -616,7 +632,7 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	defer deferredRollback(txn)
 
 	oldName, _ := d.GetChange(roleNameAttr)
-	if err := pgLockRole(txn, oldName.(string)); err != nil {
+	if err := pgLockRole(txn, db, oldName.(string)); err != nil {
 		return err
 	}
 
@@ -660,7 +676,7 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	if err := setRoleValidUntil(txn, d); err != nil {
+	if err := setRoleValidUntil(txn, d, db); err != nil {
 		return err
 	}
 
@@ -887,7 +903,7 @@ func setRoleSuperuser(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setRoleValidUntil(txn *sql.Tx, d *schema.ResourceData) error {
+func setRoleValidUntil(txn *sql.Tx, d *schema.ResourceData, db *DBConnection) error {
 	if !d.HasChange(roleValidUntilAttr) {
 		return nil
 	}
@@ -896,7 +912,13 @@ func setRoleValidUntil(txn *sql.Tx, d *schema.ResourceData) error {
 	if validUntil == "" {
 		return nil
 	} else if strings.ToLower(validUntil) == "infinity" {
-		validUntil = "infinity"
+		//temp fix for cockroachdb valid until bug fixed
+		//https://github.com/cockroachdb/cockroach/issues/116714
+		if db.dbType == dbTypeCockroachdb {
+			validUntil = "294276-12-31 23:59:59"
+		} else {
+			validUntil = "infinity"
+		}
 	}
 
 	roleName := d.Get(roleNameAttr).(string)
