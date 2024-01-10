@@ -102,7 +102,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 	}
 	defer deferredRollback(txn)
 
-	return readRoleDefaultPrivileges(txn, d)
+	return readRoleDefaultPrivileges(txn, d, db)
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -136,7 +136,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
-	if err := pgLockRole(txn, owner); err != nil {
+	if err := pgLockRole(txn, db, owner); err != nil {
 		return err
 	}
 
@@ -170,7 +170,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
-	return readRoleDefaultPrivileges(txn, d)
+	return readRoleDefaultPrivileges(txn, d, db)
 }
 
 func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -191,7 +191,7 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
-	if err := pgLockRole(txn, owner); err != nil {
+	if err := pgLockRole(txn, db, owner); err != nil {
 		return err
 	}
 
@@ -209,14 +209,14 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 	return nil
 }
 
-func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData, db *DBConnection) error {
 	role := d.Get("role").(string)
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
 	objectType := d.Get("object_type").(string)
 	privilegesInput := d.Get("privileges").(*schema.Set).List()
 
-	if err := pgLockRole(txn, owner); err != nil {
+	if err := pgLockRole(txn, db, owner); err != nil {
 		return err
 	}
 
@@ -227,8 +227,14 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	var query string
 	var queryArgs []interface{}
-
-	if pgSchema != "" {
+	if !db.featureSupported(fetureAclExplode) {
+		var inSchema string
+		// If a schema is specified we need to build the part of the query string to action this
+		if pgSchema != "" {
+			inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
+		}
+		query = fmt.Sprintf("with a as (show DEFAULT PRIVILEGES for role %s %s) select array_agg(privilege_type) from a where grantee = '%s' and object_type = '%ss';", owner, inSchema, role, objectType)
+	} else if pgSchema != "" {
 		query = `SELECT array_agg(prtype) FROM (
 		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
 		WHERE defaclobjtype = $3
@@ -250,8 +256,8 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	// This query aggregates the list of default privileges type (prtype)
 	// for the role (grantee), owner (grantor), schema (namespace name)
 	// and the specified object type (defaclobjtype).
-
 	var privileges pq.ByteaArray
+
 	if err := txn.QueryRow(
 		query, queryArgs...,
 	).Scan(&privileges); err != nil {
@@ -306,7 +312,6 @@ func grantRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	if d.Get("with_grant_option").(bool) {
 		query = query + " WITH GRANT OPTION"
 	}
-
 	_, err := txn.Exec(
 		query,
 	)
@@ -333,7 +338,6 @@ func revokeRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 		strings.ToUpper(d.Get("object_type").(string)),
 		pq.QuoteIdentifier(d.Get("role").(string)),
 	)
-
 	if _, err := txn.Exec(query); err != nil {
 		return fmt.Errorf("could not revoke default privileges: %w", err)
 	}
