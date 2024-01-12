@@ -46,6 +46,7 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_reassign_owned", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "idle_in_transaction_session_timeout", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "log_statement", "none"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "assume_role", ""),
 
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "name", "role_with_create_database"),
@@ -121,6 +122,7 @@ resource "postgresql_role" "update_role" {
   search_path = ["mysearchpath"]
   statement_timeout = 30000
   idle_in_transaction_session_timeout = 60000
+  log_statement = "none" 
   assume_role = "${postgresql_role.group_role.name}"
 }
 `
@@ -145,6 +147,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "log_statement", "none"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
@@ -166,6 +169,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.0", "mysearchpath"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "30000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "60000"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "log_statement", "none"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", "group_role"),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
@@ -184,6 +188,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "log_statement", "none"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
@@ -417,6 +422,7 @@ resource "postgresql_role" "role_with_defaults" {
   valid_until = "infinity"
   statement_timeout = 0
   idle_in_transaction_session_timeout = 0
+  log_statement = "none"
   assume_role = ""
 }
 
