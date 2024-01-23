@@ -35,6 +35,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleLockTimeoutAttr                     = "lock_timeout"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +174,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleLockTimeoutAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Abort any statement that waits longer than the specified amount of time while attempting to acquire a lock on a table, index, row, or other database object",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
 		},
 	}
 }
@@ -300,6 +307,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setStatementTimeout(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLockTimeout(txn, d); err != nil {
 		return err
 	}
 
@@ -463,6 +474,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		return err
 	}
 
+	lockTimeout, err := readLockTimeout(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleLockTimeoutAttr, lockTimeout)
+
 	d.Set(roleStatementTimeoutAttr, statementTimeout)
 
 	idleInTransactionSessionTimeout, err := readIdleInTransactionSessionTimeout(roleConfig)
@@ -526,6 +544,23 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
 				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+// readLockTimeout searches for a lock_timeout entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readLockTimeout(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, roleLockTimeoutAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, roleLockTimeoutAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("Error reading lock_timeout: %w", err)
 			}
 			return res, nil
 		}
@@ -678,6 +713,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setStatementTimeout(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLockTimeout(txn, d); err != nil {
 		return err
 	}
 
@@ -1008,6 +1047,31 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset statement_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setLockTimeout(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleLockTimeoutAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	lockTimeout := d.Get(roleLockTimeoutAttr).(int)
+	if lockTimeout != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET lock_timeout TO %d", pq.QuoteIdentifier(roleName), lockTimeout,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set lock_timeout %d for %s: %w", lockTimeout, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET lock_timeout", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset lock_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil
