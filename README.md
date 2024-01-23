@@ -58,7 +58,7 @@ $ make test
 
 In order to run the full suite of Acceptance tests, run `make testacc`.
 
-*Note:* 
+*Note:*
 - Acceptance tests create real resources, and often cost money to run.
 
 ```sh
@@ -68,7 +68,7 @@ $ make testacc
 In order to manually run some Acceptance test locally, run the following commands:
 ```sh
 # spins up a local docker postgres container
-make testacc_setup 
+make testacc_setup
 
 # Load the needed environment variables for the tests
 source tests/switch_superuser.sh
@@ -77,5 +77,5 @@ source tests/switch_superuser.sh
 TF_LOG=INFO go test -v ./postgresql -run ^TestAccPostgresqlRole_Basic$
 
 # cleans the env and tears down the postgres container
-make testacc_cleanup 
+make testacc_cleanup
 ```
