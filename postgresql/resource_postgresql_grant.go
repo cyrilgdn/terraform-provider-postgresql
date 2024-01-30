@@ -282,6 +282,9 @@ WHERE grantee = $2
 func readSchemaRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32, role string) error {
 	dbName := d.Get("schema").(string)
 	var query string
+	if strings.Contains(dbName, "-") {
+		dbName = "\"" + dbName + "\""
+	}
 	if !db.featureSupported(fetureAclExplode) {
 		query = fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a;`, dbName, role)
 	} else {
