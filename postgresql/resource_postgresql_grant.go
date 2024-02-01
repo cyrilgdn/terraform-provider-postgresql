@@ -298,7 +298,6 @@ WHERE grantee = $2
 	}
 
 	var privileges pq.ByteaArray
-
 	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
 	}
