@@ -298,8 +298,15 @@ WHERE grantee = $2
 	}
 
 	var privileges pq.ByteaArray
-	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
-		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
+
+	if strings.Contains(query, "$") {
+		if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
+			return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
+		} else {
+			if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+				return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
+			}
+		}
 	}
 
 	d.Set("privileges", pgArrayToSet(privileges))
