@@ -286,7 +286,12 @@ func readSchemaRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceDat
 		dbName = "\"" + dbName + "\""
 	}
 	if !db.featureSupported(fetureAclExplode) {
-		query = `with a as ( show grants on schema $1 for $2) select array_agg(privilege_type) from a;`
+		query = `
+SELECT array_agg(privilege_type)
+FROM information_schema.role_table_grants
+WHERE table_schema = $1
+  AND grantee = $2;
+`
 	} else {
 		query = `
 SELECT array_agg(privilege_type)
