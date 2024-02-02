@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -20,7 +23,7 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 			{
 				Config: testAccPostgreSQLDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb"),
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb", nil),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.mydb", "name", "mydb"),
 					resource.TestCheckResourceAttr(
@@ -81,6 +84,8 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.pathological_opts", "connection_limit", "0"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "is_template", "true"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.pathological_opts", "search_path.#", "0"),
 
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "owner", "myrole"),
@@ -100,6 +105,8 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.pg_default_opts", "connection_limit", "0"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pg_default_opts", "is_template", "true"),
+
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb_search_path", []string{"bar", "foo-with-hyphen"}),
 				),
 			},
 		},
@@ -115,7 +122,7 @@ func TestAccPostgresqlDatabase_DefaultOwner(t *testing.T) {
 			{
 				Config: testAccPostgreSQLDatabaseConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb_default_owner"),
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.mydb_default_owner", nil),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.mydb_default_owner", "name", "mydb_default_owner"),
 					resource.TestCheckResourceAttrSet(
@@ -154,10 +161,11 @@ func TestAccPostgresqlDatabase_Update(t *testing.T) {
 resource postgresql_database test_db {
     name = "test_db"
 	allow_connections = "%t"
+    search_path = ["searchpathInitial"]
 }
 `, allowConnections),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db", []string{"searchpathInitial"}),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr(
@@ -172,10 +180,11 @@ resource postgresql_database test_db {
 	name = "test_db"
 	connection_limit = 2
 	allow_connections = false
+	search_path = ["searchpathUpdated"]
 }
 	`,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db", []string{"searchpathUpdated"}),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "connection_limit", "2"),
 					resource.TestCheckResourceAttr(
@@ -212,7 +221,7 @@ resource postgresql_database "test_db" {
 			{
 				Config: stateConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db", nil),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
@@ -254,7 +263,7 @@ resource postgresql_database "test_db" {
 			{
 				Config: stateConfig,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db", nil),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
@@ -328,7 +337,7 @@ func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
+func testAccCheckPostgresqlDatabaseExists(n string, searchPath []string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -350,6 +359,12 @@ func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
 			return errors.New("Db not found")
 		}
 
+		if searchPath != nil {
+			if err := checkDBSearchPath(client, rs.Primary.ID, searchPath); err != nil {
+				return fmt.Errorf("Error checking db search_path %s", err)
+			}
+		}
+
 		return nil
 	}
 }
@@ -369,6 +384,41 @@ func checkDatabaseExists(client *Client, dbName string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func checkDBSearchPath(client *Client, dbName string, expectedSearchPath []string) error {
+	db, err := client.Connect()
+	if err != nil {
+		return err
+	}
+
+	var searchPathStr string
+	err = db.QueryRow(`
+		    SELECT (pg_options_to_table(drs.setconfig)).option_value 
+		    FROM pg_catalog.pg_database AS d, pg_catalog.pg_db_role_setting AS drs 
+		    WHERE d.datname = $1 AND d.oid = drs.setdatabase`,
+		dbName,
+	).Scan(&searchPathStr)
+
+	// The query returns ErrNoRows if the search path hasn't been altered.
+	if err != nil && err == sql.ErrNoRows {
+		searchPathStr = ""
+	} else if err != nil {
+		return fmt.Errorf("Error reading search_path: %v", err)
+	}
+
+	searchPath := strings.Split(searchPathStr, ", ")
+	for i := range searchPath {
+		searchPath[i] = strings.Trim(searchPath[i], `"`)
+	}
+	sort.Strings(expectedSearchPath)
+	if !reflect.DeepEqual(searchPath, expectedSearchPath) {
+		return fmt.Errorf(
+			"search_path is not equal to expected value. expected %v - got %v",
+			expectedSearchPath, searchPath,
+		)
+	}
+	return nil
 }
 
 var testAccPostgreSQLDatabaseConfig = `
@@ -440,10 +490,16 @@ resource "postgresql_database" "pg_default_opts" {
   tablespace_name = "DEFAULT"
   connection_limit = 0
   is_template = true
+  search_path = []
 }
 
 resource "postgresql_database" "mydb_default_owner" {
    name = "mydb_default_owner"
+}
+
+resource "postgresql_database" "mydb_search_path" {
+   name = "mydb_search_path"
+   search_path = ["bar", "foo-with-hyphen"]
 }
 
 `

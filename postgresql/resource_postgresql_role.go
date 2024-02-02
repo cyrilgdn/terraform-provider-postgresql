@@ -483,22 +483,6 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	return nil
 }
 
-// readSearchPath searches for a search_path entry in the rolconfig array.
-// In case no such value is present, it returns nil.
-func readSearchPath(roleConfig pq.ByteaArray) []string {
-	for _, v := range roleConfig {
-		config := string(v)
-		if strings.HasPrefix(config, roleSearchPathAttr) {
-			var result = strings.Split(strings.TrimPrefix(config, roleSearchPathAttr+"="), ", ")
-			for i := range result {
-				result[i] = strings.Trim(result[i], `"`)
-			}
-			return result
-		}
-	}
-	return nil
-}
-
 // readIdleInTransactionSessionTimeout searches for a idle_in_transaction_session_timeout entry in the rolconfig array.
 // In case no such value is present, it returns nil.
 func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
