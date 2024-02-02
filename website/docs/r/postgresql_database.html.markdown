@@ -82,6 +82,10 @@ resource "postgresql_database" "my_db" {
   force the creation of a new resource as this value can only be changed when a
   database is created.
 
+* `search_path` - (Optional) Alters the search path of this new database. Note 
+  that due to limitations in the implementation, values cannot contain the 
+  substring `", "`.
+
 ## Import Example
 
 `postgresql_database` supports importing resources.  Supposing the following

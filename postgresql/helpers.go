@@ -606,3 +606,20 @@ func findStringSubmatchMap(expression string, text string) map[string]string {
 func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	return old == new
 }
+
+// readSearchPath searches for a search_path entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readSearchPath(roleConfig pq.ByteaArray) []string {
+	searchPathPrefix := "search_path"
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, searchPathPrefix) {
+			var result = strings.Split(strings.TrimPrefix(config, searchPathPrefix+"="), ", ")
+			for i := range result {
+				result[i] = strings.Trim(result[i], `"`)
+			}
+			return result
+		}
+	}
+	return nil
+}
