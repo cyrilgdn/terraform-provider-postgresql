@@ -571,7 +571,7 @@ func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin boo
 	// Role which cannot login does not have password in pg_shadow.
 	// Also, if user specifies that admin is not a superuser we don't try to read pg_shadow
 	// (only superuser can read pg_shadow)
-	if !roleCanLogin || !db.client.config.Superuser {
+	if !roleCanLogin || !db.client.config.Superuser || db.dbType == dbTypeCockroachdb {
 		return statePassword, nil
 	}
 
