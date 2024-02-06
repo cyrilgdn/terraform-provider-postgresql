@@ -6,7 +6,7 @@ description: |-
   A provider for PostgreSQL Server.
 ---
 
-# PostgreSQL Provider
+# PostgreSQL Provider with CockroachDB compatibility
 
 The PostgreSQL provider gives the ability to deploy and configure resources in a PostgreSQL server.
 

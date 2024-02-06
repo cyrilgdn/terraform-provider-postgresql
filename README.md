@@ -1,12 +1,9 @@
-Terraform Provider for PostgreSQL
+Terraform Provider for PostgreSQL with CockroachDB compatibility
 =================================
 
 This provider allows to manage with Terraform [Postgresql](https://www.postgresql.org/) objects like databases, extensions, roles, etc..
 
-It's published on the [Terraform registry](https://registry.terraform.io/providers/cyrilgdn/postgresql/latest/docs).
-It replaces https://github.com/hashicorp/terraform-provider-postgresql since Hashicorp stopped hosting community providers in favor of the Terraform registry.
-
-- Documentation: https://registry.terraform.io/providers/cyrilgdn/postgresql/latest/docs
+- Documentation: https://registry.terraform.io/providers/Riskified/postgresql/latest/docs
 
 Requirements
 ------------
