@@ -236,9 +236,9 @@ func sliceContainsStr(haystack []string, needle string) bool {
 // allowedPrivileges is the list of privileges allowed per object types in Postgres.
 // see: https://www.postgresql.org/docs/current/sql-grant.html
 var allowedPrivileges = map[string][]string{
-	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY"},
-	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
-	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE"},
+	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY", "BACKUP", "RESTORE", "ZONECONFIG"},
+	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "DROP", "CHANGEFEED", "RESTORE", "ZONECONFIG"},
+	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE", "CREATE", "DELETE", "INSERT", "ZONECONFIG"},
 	"schema":               {"ALL", "CREATE", "USAGE"},
 	"function":             {"ALL", "EXECUTE"},
 	"procedure":            {"ALL", "EXECUTE"},
