@@ -35,6 +35,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	defaultTransactionIsolationAttr         = "default_transaction_isolation"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -172,6 +173,11 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role to switch to at login",
+			},
+			defaultTransactionIsolationAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Role default_transaction_isolation",
 			},
 		},
 	}
@@ -319,6 +325,12 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 
 	if err = setAssumeRole(txn, d); err != nil {
 		return err
+	}
+
+	if db.featureSupported(featureTransactionIsolation) {
+		if err = setTransactionIsolation(txn, d); err != nil {
+			return err
+		}
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -473,6 +485,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
+	d.Set(defaultTransactionIsolationAttr, readDefaultTransactionIsolationAttr(roleConfig))
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
@@ -499,7 +512,23 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	return nil
 }
 
-// readSearchPath searches for a search_path entry in the rolconfig array.
+// readDefaultTransactionIsolation searches for a search_path entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readDefaultTransactionIsolationAttr(roleConfig pq.ByteaArray) []string {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, defaultTransactionIsolationAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, defaultTransactionIsolationAttr+"="), ", ")
+			for i := range result {
+				result[i] = strings.Trim(result[i], `"`)
+			}
+			return result
+		}
+	}
+	return nil
+}
+
+// readSearchPath searches for a default_transaction_isolation entry in the rolconfig array.
 // In case no such value is present, it returns nil.
 func readSearchPath(roleConfig pq.ByteaArray) []string {
 	for _, v := range roleConfig {
@@ -703,6 +732,12 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 
 	if err = setAssumeRole(txn, d); err != nil {
 		return err
+	}
+
+	if db.featureSupported(featureTransactionIsolation) {
+		if err = setTransactionIsolation(txn, d); err != nil {
+			return err
+		}
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -1080,6 +1115,31 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(defaultTransactionIsolationAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	defaultTransactionIsolation := d.Get(defaultTransactionIsolationAttr).(string)
+	if defaultTransactionIsolation != "" {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET default_transaction_isolation = %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(defaultTransactionIsolation),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set default_transaction_isolation %d for %s: %w", defaultTransactionIsolation, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET default_transaction_isolation", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset default_transaction_isolation for %s: %w", roleName, err)
 		}
 	}
 	return nil
