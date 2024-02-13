@@ -258,9 +258,13 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 func readDatabaseRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32, role string) error {
 	dbName := d.Get("database").(string)
 	var query string
+	var privileges pq.ByteaArray
 	//cockroachdb does not support aclexplode
 	if !db.featureSupported(fetureAclExplode) {
 		query = fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a`, dbName, role)
+		if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+			return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
+		}
 	} else {
 		query = `
 SELECT array_agg(privilege_type)
@@ -269,10 +273,9 @@ FROM (
 ) as privileges
 WHERE grantee = $2
 `
-	}
-	var privileges pq.ByteaArray
-	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
-		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
+		if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
+			return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
+		}
 	}
 
 	d.Set("privileges", pgArrayToSet(privileges))
@@ -282,16 +285,15 @@ WHERE grantee = $2
 func readSchemaRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32, role string) error {
 	dbName := d.Get("schema").(string)
 	var query string
+	var privileges pq.ByteaArray
 	if strings.Contains(dbName, "-") {
 		dbName = "\"" + dbName + "\""
 	}
 	if !db.featureSupported(fetureAclExplode) {
-		query = `
-SELECT array_agg(privilege_type)
-FROM information_schema.role_table_grants
-WHERE table_schema = $1
-  AND grantee = $2;
-`
+		query = fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a;`, dbName, role)
+		if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+			return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
+		}
 	} else {
 		query = `
 SELECT array_agg(privilege_type)
@@ -300,11 +302,9 @@ FROM (
 ) as privileges
 WHERE grantee = $2
 `
-	}
-
-	var privileges pq.ByteaArray
-	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
-		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
+		if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
+			return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
+		}
 	}
 
 	d.Set("privileges", pgArrayToSet(privileges))
