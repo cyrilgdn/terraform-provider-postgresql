@@ -245,9 +245,9 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 					} else {
 						createOpts = append(createOpts, "UNENCRYPTED")
 					}
-				} else {
-					createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
 				}
+				createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
+
 			case opt.hclKey == roleValidUntilAttr:
 				switch {
 				case v.(string) == "", strings.ToLower(v.(string)) == "infinity":
