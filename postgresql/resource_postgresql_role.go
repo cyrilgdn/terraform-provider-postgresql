@@ -297,6 +297,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	sql := fmt.Sprintf("CREATE ROLE %s%s", pq.QuoteIdentifier(roleName), createStr)
+	log.Printf("[DEBUG] create role: %s", sql)
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error creating role %s: %w", roleName, err)
 	}
@@ -567,11 +568,14 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 // or only from Terraform state.
 func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin bool) (string, error) {
 	statePassword := d.Get(rolePasswordAttr).(string)
+	stateRole := d.Get(roleNameAttr).(string)
 
 	// Role which cannot login does not have password in pg_shadow.
 	// Also, if user specifies that admin is not a superuser we don't try to read pg_shadow
 	// (only superuser can read pg_shadow)
 	if !roleCanLogin || !db.client.config.Superuser || db.dbType == dbTypeCockroachdb {
+		log.Printf("[DEBUG] state pass: %s ", statePassword)
+		log.Printf("[DEBUG] state role: %s ", stateRole)
 		return statePassword, nil
 	}
 
@@ -745,6 +749,7 @@ func setRolePassword(txn *sql.Tx, d *schema.ResourceData) error {
 	password := d.Get(rolePasswordAttr).(string)
 
 	sql := fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(password))
+	log.Printf("[DEBUG] alter role password: %s", sql)
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating role password: %w", err)
 	}
