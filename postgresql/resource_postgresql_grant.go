@@ -479,7 +479,18 @@ GROUP BY pg_proc.proname
 		return readColumnRolePrivileges(txn, d)
 
 	default:
-		query = `
+		if !db.featureSupported(fetureAclExplode) {
+			//var inSchema string
+			//var pgSchema = d.Get("schema").(string)
+			//// If a schema is specified we need to build the part of the query string to action this
+			//if pgSchema != "" {
+			//	inSchema = fmt.Sprintf("IN SCHEMA %s", pq.QuoteIdentifier(pgSchema))
+			//}
+			query = fmt.Sprintf("with a as (show tables from %s) , b as (show grants on table * for %s) select a.table_name,  array_agg(privilege_type) from a inner join b on a.table_name=b.table_name and a.schema_name = b.schema_name  where a.type='%s'  and grantee= '%s' group by a.table_name;", d.Get("schema"), role, objectType, role)
+			rows, err = txn.Query(
+				query)
+		} else {
+			query = `
 SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)
 FROM pg_class
 JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
@@ -493,9 +504,11 @@ USING (relname, relnamespace, relkind)
 WHERE nspname = $2 AND relkind = $3
 GROUP BY pg_class.relname
 `
-		rows, err = txn.Query(
-			query, roleOID, d.Get("schema"), objectTypes[objectType],
-		)
+
+			rows, err = txn.Query(
+				query, roleOID, d.Get("schema"), objectTypes[objectType],
+			)
+		}
 	}
 
 	// This returns, for the specified role (rolname),
