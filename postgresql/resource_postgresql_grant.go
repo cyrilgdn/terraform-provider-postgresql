@@ -730,6 +730,8 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 		return false, nil
 	}
 
+	deferredRollback(txn)
+
 	pgSchema := d.Get("schema").(string)
 
 	if !sliceContainsStr([]string{"database", "foreign_data_wrapper", "foreign_server"}, d.Get("object_type").(string)) && pgSchema != "" {
