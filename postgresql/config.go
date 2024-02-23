@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -265,6 +266,35 @@ func (c *Config) getDatabaseUsername() string {
 	return c.Username
 }
 
+// Retry connection to PostgreSQL server 5 times
+const connectionRetries = 5
+
+func (c *Client) retryConnect(dsn string) (*sql.DB, error) {
+	var db *sql.DB
+	var err error
+
+	for i := int64(0); i < connectionRetries; i++ {
+		if c.config.Scheme == "postgres" {
+			db, err = sql.Open(proxyDriverName, dsn)
+		} else {
+			db, err = postgres.Open(context.Background(), dsn)
+		}
+		if err == nil {
+			err = db.Ping()
+		}
+		if err != nil {
+			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
+			if i > connectionRetries {
+				return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
+			}
+			fmt.Fprintf(os.Stderr, "attempt %d/%d: Error connecting to PostgreSQL server %s (scheme: %s): %s\n", i+1, connectionRetries, c.config.Host, c.config.Scheme, errString)
+			continue
+		}
+		break
+	}
+	return db, nil
+}
+
 // Connect returns a copy to an sql.Open()'ed database connection wrapped in a DBConnection struct.
 // Callers must return their database resources. Use of QueryRow() or Exec() is encouraged.
 // Query() must have their rows.Close()'ed.
@@ -278,18 +308,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 		var db *sql.DB
 		var err error
-		if c.config.Scheme == "postgres" {
-			db, err = sql.Open(proxyDriverName, dsn)
-		} else {
-			db, err = postgres.Open(context.Background(), dsn)
-		}
 
-		if err == nil {
-			err = db.Ping()
-		}
+		db, err = c.retryConnect(dsn)
 		if err != nil {
-			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
+			return nil, err
 		}
 
 		// We don't want to retain connection
