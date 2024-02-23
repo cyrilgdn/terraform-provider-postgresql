@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -287,7 +287,7 @@ func (c *Client) retryConnect(dsn string) (*sql.DB, error) {
 			if i > connectionRetries {
 				return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 			}
-			fmt.Fprintf(os.Stderr, "attempt %d/%d: Error connecting to PostgreSQL server %s (scheme: %s): %s\n", i+1, connectionRetries, c.config.Host, c.config.Scheme, errString)
+			tflog.Warn(context.Background(), fmt.Sprintf("attempt %d/%d: Error connecting to PostgreSQL server %s (scheme: %s): %s", i+1, connectionRetries, c.config.Host, c.config.Scheme, errString))
 			continue
 		}
 		break
