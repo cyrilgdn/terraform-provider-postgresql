@@ -166,6 +166,7 @@ The following arguments are supported:
 * `clientcert` - (Optional) - Configure the SSL client certificate.
   * `cert` - (Required) - The SSL client certificate file path. The file must contain PEM encoded data.
   * `key` - (Required) - The SSL client certificate private key file path. The file must contain PEM encoded data.
+  * `sslinline` - (Optional) - If set to `true`, arguments accept inline ssl cert and key rather than a filename. Defaults to `false`.
 * `sslrootcert` - (Optional) - The SSL server root certificate file path. The file must contain PEM encoded data.
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
