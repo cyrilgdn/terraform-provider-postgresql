@@ -153,7 +153,7 @@ The following arguments are supported:
 * `password` - (Optional) Password for the server connection.
 * `database_username` - (Optional) Username of the user in the database if different than connection username (See [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)).
 * `superuser` - (Optional) Should be set to `false` if the user to connect is not a PostgreSQL superuser (as is the case in AWS RDS or GCP SQL).
-*                          In this case, some features might be disabled (e.g.: Refreshing state password from database).
+  In this case, some features might be disabled (e.g.: Refreshing state password from database).
 * `sslmode` - (Optional) Set the priority for an SSL connection to the server.
   Valid values for `sslmode` are (note: `prefer` is not supported by Go's
   [`lib/pq`][libpq])):
@@ -166,6 +166,7 @@ The following arguments are supported:
 * `clientcert` - (Optional) - Configure the SSL client certificate.
   * `cert` - (Required) - The SSL client certificate file path. The file must contain PEM encoded data.
   * `key` - (Required) - The SSL client certificate private key file path. The file must contain PEM encoded data.
+  * `sslinline` - (Optional) - If set to `true`, arguments accept inline ssl cert and key rather than a filename. Defaults to `false`.
 * `sslrootcert` - (Optional) - The SSL server root certificate file path. The file must contain PEM encoded data.
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
