@@ -27,7 +27,7 @@ resource "postgresql_grant_role" "grant_root" {
 ~> **Note:** If you use `postgresql_grant_role` for a role that you also manage with a `postgresql_role` resource, you need to ignore the changes of the `roles` attribute in the `postgresql_role` resource or they will fight over what your role grants should be. e.g.:
 ```hcl
 resource "postgresql_role" "bob" {
-  role = "bob"
+  name = "bob"
 
   lifecycle {
     ignore_changes = [
