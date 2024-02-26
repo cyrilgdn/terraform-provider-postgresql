@@ -60,7 +60,7 @@ func TestArePrivilegesEqual(t *testing.T) {
 		{
 			buildResourceData("database", t),
 			buildPrivilegesSet("CONNECT", "CREATE", "TEMPORARY"),
-			all(),
+			buildPrivilegesSet("ALL"),
 			true,
 		},
 		{
@@ -72,7 +72,7 @@ func TestArePrivilegesEqual(t *testing.T) {
 		{
 			buildResourceData("table", t),
 			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
-			all(),
+			buildPrivilegesSet("ALL"),
 			true,
 		},
 		{
@@ -84,19 +84,21 @@ func TestArePrivilegesEqual(t *testing.T) {
 		{
 			buildResourceData("schema", t),
 			buildPrivilegesSet("CREATE", "USAGE"),
-			all(),
+			buildPrivilegesSet("ALL"),
 			true,
 		},
 		{
 			buildResourceData("schema", t),
 			buildPrivilegesSet("CREATE"),
-			all(),
+			buildPrivilegesSet("ALL"),
 			false,
 		},
 	}
 
 	for _, configuration := range tt {
-		equal := arePrivilegesEqual(configuration.granted, configuration.wanted, configuration.d)
+		err := configuration.d.Set("privileges", configuration.wanted)
+		assert.NoError(t, err)
+		equal := resourcePrivilegesEqual(configuration.granted, configuration.d)
 		assert.Equal(t, configuration.assertion, equal)
 	}
 }
@@ -105,16 +107,17 @@ func buildPrivilegesSet(grants ...interface{}) *schema.Set {
 	return schema.NewSet(schema.HashString, grants)
 }
 
-func all() *schema.Set {
-	return buildPrivilegesSet("ALL")
-}
-
 func buildResourceData(objectType string, t *testing.T) *schema.ResourceData {
 	var testSchema = map[string]*schema.Schema{
 		"object_type": {Type: schema.TypeString},
+		"privileges": {
+			Type: schema.TypeSet,
+			Elem: &schema.Schema{Type: schema.TypeString},
+			Set:  schema.HashString,
+		},
 	}
-	m := make(map[string]interface{})
+
+	m := make(map[string]any)
 	m["object_type"] = objectType
 	return schema.TestResourceDataRaw(t, testSchema, m)
 }
-

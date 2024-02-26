@@ -267,8 +267,9 @@ func validatePrivileges(d *schema.ResourceData) error {
 	return nil
 }
 
-func arePrivilegesEqual(granted *schema.Set, wanted *schema.Set, d *schema.ResourceData) bool {
+func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
 	objectType := d.Get("object_type").(string)
+	wanted := d.Get("privileges").(*schema.Set)
 
 	if granted.Equal(wanted) {
 		return true

@@ -108,9 +108,6 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 	if err := validateFeatureSupport(db, d); err != nil {
 		return fmt.Errorf("feature is not supported: %v", err)
 	}
-	if true {
-		//return fmt.Errorf("hello world! %v", "you")
-	}
 	exists, err := checkRoleDBSchemaExists(db.client, d)
 	if err != nil {
 		return err
@@ -273,7 +270,7 @@ WHERE grantee = $2
 	}
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := arePrivilegesEqual(granted, wanted, d)
+	equal := resourcePrivilegesEqual(granted, d)
 	if !equal {
 		return d.Set("privileges", wanted)
 	}
@@ -297,7 +294,7 @@ WHERE grantee = $2
 
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := arePrivilegesEqual(granted, wanted, d)
+	equal := resourcePrivilegesEqual(granted, d)
 	if !equal {
 		return d.Set("privileges", wanted)
 	}
@@ -322,7 +319,7 @@ WHERE grantee = $2
 
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := arePrivilegesEqual(granted, wanted, d)
+	equal := resourcePrivilegesEqual(granted, d)
 	if !equal {
 		return d.Set("privileges", wanted)
 	}
@@ -347,7 +344,7 @@ WHERE grantee = $2
 
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := arePrivilegesEqual(granted, wanted, d)
+	equal := resourcePrivilegesEqual(granted, d)
 	if !equal {
 		return d.Set("privileges", wanted)
 	}
@@ -436,9 +433,6 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
 	objects := d.Get("objects").(*schema.Set)
-	for _, entry := range objects.List() {
-		log.Printf("this is a entry: %v", entry)
-	}
 
 	roleOID, err := getRoleOID(txn, role)
 	if err != nil {
@@ -526,8 +520,7 @@ GROUP BY pg_class.relname
 		}
 
 		privilegesSet := pgArrayToSet(privileges)
-		privilegesEqual := arePrivilegesEqual(privilegesSet, d.Get("privileges").(*schema.Set), d)
-		if !privilegesEqual {
+		if !resourcePrivilegesEqual(privilegesSet, d) {
 			// If any object doesn't have the same privileges as saved in the state,
 			// we return its privileges to force an update.
 			log.Printf(
