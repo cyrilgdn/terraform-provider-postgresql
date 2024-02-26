@@ -634,3 +634,16 @@ func findStringSubmatchMap(expression string, text string) map[string]string {
 func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	return old == new
 }
+
+// quoteTable can quote a table name with or without a schema prefix
+// Example:
+//
+//	my_table -> "my_table"
+//	public.my_table -> "public"."my_table"
+func quoteTableName(tableName string) string {
+	parts := strings.Split(tableName, ".")
+	for i := range parts {
+		parts[i] = pq.QuoteIdentifier(parts[i])
+	}
+	return strings.Join(parts, ".")
+}
