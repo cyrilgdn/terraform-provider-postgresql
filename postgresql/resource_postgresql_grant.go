@@ -270,8 +270,7 @@ WHERE grantee = $2
 	}
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := resourcePrivilegesEqual(granted, d)
-	if !equal {
+	if !resourcePrivilegesEqual(granted, d) {
 		return d.Set("privileges", wanted)
 	}
 	return nil
@@ -294,8 +293,7 @@ WHERE grantee = $2
 
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := resourcePrivilegesEqual(granted, d)
-	if !equal {
+	if !resourcePrivilegesEqual(granted, d) {
 		return d.Set("privileges", wanted)
 	}
 	return nil
@@ -319,8 +317,7 @@ WHERE grantee = $2
 
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := resourcePrivilegesEqual(granted, d)
-	if !equal {
+	if !resourcePrivilegesEqual(granted, d) {
 		return d.Set("privileges", wanted)
 	}
 	return nil
@@ -344,8 +341,7 @@ WHERE grantee = $2
 
 	granted := pgArrayToSet(privileges)
 	wanted := d.Get("privileges").(*schema.Set)
-	equal := resourcePrivilegesEqual(granted, d)
-	if !equal {
+	if !resourcePrivilegesEqual(granted, d) {
 		return d.Set("privileges", wanted)
 	}
 	return nil
