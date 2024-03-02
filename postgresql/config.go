@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -306,6 +307,15 @@ func (c *Client) Connect() (*DBConnection, error) {
 			if err != nil {
 				_ = db.Close()
 				return nil, fmt.Errorf("error detecting capabilities: %w", err)
+			}
+		}
+
+		if semver.MustParseRange(">=16.0.0")(*version) {
+			// Configure createrole_self_grant so the provider user will be able to set role on roles it creates
+			//
+			log.Printf()
+			if _, err := db.Exec("SET createrole_self_grant TO set"); err != nil {
+				return nil, fmt.Errorf("could not set createrole_self_grant: %w", err)
 			}
 		}
 

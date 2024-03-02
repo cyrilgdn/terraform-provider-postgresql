@@ -444,13 +444,13 @@ FROM pg_proc
 JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
 LEFT JOIN (
     select acls.*
-    from (
-             SELECT proname, pronamespace, (aclexplode(proacl)).* FROM pg_proc
-         ) acls
-    WHERE grantee = $1
+  from (
+           SELECT proname, pronamespace, (aclexplode(proacl)).* FROM pg_proc
+       ) acls
+  WHERE grantee = $1
 ) privs
 USING (proname, pronamespace)
-      WHERE nspname = $2
+    WHERE nspname = $2
 GROUP BY pg_proc.proname
 `
 		rows, err = txn.Query(

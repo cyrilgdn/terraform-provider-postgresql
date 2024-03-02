@@ -119,6 +119,7 @@ func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) 
 func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
+	log.Printf("PLOP: owner: %s", owner)
 
 	var err error
 	if owner != "" {
@@ -139,6 +140,7 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		if err != nil {
 			return err
 		}
+		log.Printf("PLOP: owner granted: %v", ownerGranted)
 		if ownerGranted {
 			defer func() {
 				_, err = revokeRoleMembership(db, owner, currentUser)

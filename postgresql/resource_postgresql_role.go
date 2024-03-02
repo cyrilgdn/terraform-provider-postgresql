@@ -177,13 +177,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) error {
-	txn, err := startTransaction(db.client, "")
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
+func getCreateOpts(db *DBConnection, d *schema.ResourceData) []string {
 	stringOpts := []struct {
 		hclKey string
 		sqlKey string
@@ -274,6 +268,18 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		}
 		createOpts = append(createOpts, valStr)
 	}
+
+	return createOpts
+}
+
+func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) error {
+	txn, err := startTransaction(db.client, "")
+	if err != nil {
+		return err
+	}
+	defer deferredRollback(txn)
+
+	createOpts := getCreateOpts(db, d)
 
 	roleName := d.Get(roleNameAttr).(string)
 	createStr := strings.Join(createOpts, " ")

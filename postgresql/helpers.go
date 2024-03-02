@@ -91,7 +91,7 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 	log.Printf("grantRoleMembership: granting %s to %s", role, member)
 
-	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
+	sql := fmt.Sprintf("GRANT %s TO %s WITH SET true", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
 		return false, fmt.Errorf("Error granting role %s to %s: %w", role, member, err)
 	}
