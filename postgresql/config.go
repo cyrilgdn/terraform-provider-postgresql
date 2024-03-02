@@ -17,6 +17,13 @@ import (
 	_ "gocloud.dev/postgres/gcppostgres"
 )
 
+type dbTypes uint
+
+const (
+	dbTypeCockroachdb dbTypes = iota
+	dbTypePostgresql
+)
+
 type featureName uint
 
 const (
@@ -24,6 +31,8 @@ const (
 	featureDatabaseOwnerRole
 	featureDBAllowConnections
 	featureDBIsTemplate
+	featureDBTablespace
+	featureUseDBTemplate
 	featureFallbackApplicationName
 	featureRLS
 	featureSchemaCreateIfNotExist
@@ -41,6 +50,14 @@ const (
 	featurePubWithoutTruncate
 	featureFunction
 	featureServer
+	fetureAclExplode
+	fetureAclItem
+	fetureTerminateBackendFunc
+	fetureRoleConnectionLimit
+	fetureRoleSuperuser
+	featureRoleroleInherit
+	fetureRoleEncryptedPass
+	featureAdvisoryXactLock
 )
 
 var (
@@ -48,7 +65,7 @@ var (
 	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
 
 	// Mapping of feature flags to versions
-	featureSupported = map[featureName]semver.Range{
+	featureSupportedPostgres = map[featureName]semver.Range{
 		// CREATE ROLE WITH
 		featureCreateRoleWith: semver.MustParseRange(">=8.1.0"),
 
@@ -57,6 +74,12 @@ var (
 
 		// CREATE DATABASE has IS_TEMPLATE support
 		featureDBIsTemplate: semver.MustParseRange(">=9.5.0"),
+
+		// CREATE DATABASE use template
+		featureUseDBTemplate: semver.MustParseRange(">=7.1.0"),
+
+		// CREATE DATABASE in tablespace
+		featureDBTablespace: semver.MustParseRange(">=8.0.0"),
 
 		// https://www.postgresql.org/docs/9.0/static/libpq-connect.html
 		featureFallbackApplicationName: semver.MustParseRange(">=9.0.0"),
@@ -112,6 +135,132 @@ var (
 		featureServer: semver.MustParseRange(">=10.0.0"),
 
 		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
+
+		fetureAclExplode: semver.MustParseRange(">=9.0.0"),
+
+		fetureAclItem: semver.MustParseRange(">=12.0.0"),
+
+		fetureTerminateBackendFunc: semver.MustParseRange(">=8.0.0"),
+
+		fetureRoleConnectionLimit: semver.MustParseRange(">=8.1.0"),
+
+		fetureRoleSuperuser: semver.MustParseRange(">=8.1.0"),
+
+		featureRoleroleInherit: semver.MustParseRange(">=8.1.0"),
+
+		fetureRoleEncryptedPass: semver.MustParseRange(">=8.1.0"),
+
+		featureAdvisoryXactLock: semver.MustParseRange(">=9.1.0"),
+	}
+
+	// Mapping of feature flags to versions
+	featureSupportedCockroachdb = map[featureName]semver.Range{
+		// CREATE ROLE WITH
+		featureCreateRoleWith: semver.MustParseRange(">=1.0.0"),
+
+		// CREATE DATABASE has ALLOW_CONNECTIONS support
+		featureDBAllowConnections: semver.MustParseRange("<1.0.0"),
+
+		// CREATE DATABASE has IS_TEMPLATE support
+		featureDBIsTemplate: semver.MustParseRange("<1.0.0"),
+
+		// CREATE DATABASE use template
+		featureUseDBTemplate: semver.MustParseRange("<1.0.0"),
+
+		// CREATE DATABASE in tablespace
+		featureDBTablespace: semver.MustParseRange("<1.0.0"),
+
+		// https://www.postgresql.org/docs/9.0/static/libpq-connect.html
+		// not supported in Cockroachdb
+		featureFallbackApplicationName: semver.MustParseRange("<1.0.0"),
+
+		// CREATE SCHEMA IF NOT EXISTS
+		featureSchemaCreateIfNotExist: semver.MustParseRange(">=1.0.0"),
+
+		// row-level security
+		featureRLS: semver.MustParseRange("<1.0.0"),
+
+		// CREATE ROLE has REPLICATION support.
+		// not supported in Cockroachdb
+		featureReplication: semver.MustParseRange("<1.0.0"),
+
+		// CREATE EXTENSION support.
+		// not supported in Cockroachdb
+		featureExtension: semver.MustParseRange("<1.0.0"),
+
+		// We do not support postgresql_grant and postgresql_default_privileges
+		// for Cockroachdb < 21.2.17
+		featurePrivileges: semver.MustParseRange(">=21.2.17"),
+
+		// Object PROCEDURE support
+		// not supported in Cockroachdb
+		featureProcedure: semver.MustParseRange("<1.0.0"),
+
+		// Object ROUTINE support
+		// not supported in Cockroachdb
+		featureRoutine: semver.MustParseRange("<1.0.0"),
+
+		// ALTER DEFAULT PRIVILEGES has ON SCHEMAS support
+		// for Cockroachdb < 21.2.17
+		featurePrivilegesOnSchemas: semver.MustParseRange(">=21.2.17"),
+
+		// DROP DATABASE WITH FORCE
+		// not supported in Cockroachdb
+		featureForceDropDatabase: semver.MustParseRange("<1.0.0"),
+
+		// for CockroachDB pg_catalog >= 20.2.19 and above
+		featurePid: semver.MustParseRange(">=20.2.19"),
+
+		// attribute publish_via_partition_root for partition is supported
+		// not supported in Cockroachdb
+		featurePublishViaRoot: semver.MustParseRange("<1.0.0"),
+
+		// attribute pubtruncate for publications is supported
+		// not supported in Cockroachdb
+		featurePubTruncate: semver.MustParseRange("<1.0.0"),
+
+		// attribute pubtruncate for publications is supported
+		// not supported in Cockroachdb
+		featurePubWithoutTruncate: semver.MustParseRange("<1.0.0"),
+
+		// publication is Supported
+		// not supported in Cockroachdb
+		featurePublication: semver.MustParseRange("<1.0.0"),
+
+		// We do not support CREATE FUNCTION for Cockroachdb < 22.2.17
+		featureFunction: semver.MustParseRange(">=22.2.17"),
+
+		// CREATE SERVER support
+		// not supported in Cockroachdb
+		featureServer: semver.MustParseRange("<1.0.0"),
+
+		featureDatabaseOwnerRole: semver.MustParseRange(">=20.2.19"),
+
+		//aclexplode function not supported in Cockroachdb
+		// see https://www.cockroachlabs.com/docs/stable/functions-and-operators
+		fetureAclExplode: semver.MustParseRange("<1.0.0"),
+
+		//cockroachdb does not support aclitem
+		fetureAclItem: semver.MustParseRange("<1.0.0"),
+
+		//pg_terminate_backend function not supported in Cockroachdb
+		fetureTerminateBackendFunc: semver.MustParseRange("<1.0.0"),
+
+		//Cockroachdb does not support connection limit
+		fetureRoleConnectionLimit: semver.MustParseRange("<1.0.0"),
+
+		//Cockroachdb does not support superuser
+		fetureRoleSuperuser: semver.MustParseRange("<1.0.0"),
+
+		//Cockroachdb does not role inherit
+		featureRoleroleInherit: semver.MustParseRange("<1.0.0"),
+
+		//Cockroachdb does not encrypt password
+		fetureRoleEncryptedPass: semver.MustParseRange("<1.0.0"),
+
+		// cockroach does not support pg_advisory_xact_lock
+		// https://github.com/cockroachdb/cockroach/issues/13546
+		featureAdvisoryXactLock: semver.MustParseRange("<1.0.0"),
 	}
 )
 
@@ -123,13 +272,20 @@ type DBConnection struct {
 	// version is the version number of the database as determined by parsing the
 	// output of `SELECT VERSION()`.x
 	version semver.Version
+	dbType  dbTypes
 }
 
 // featureSupported returns true if a given feature is supported or not. This is
 // slightly different from Config's featureSupported in that here we're
 // evaluating against the fingerprinted version, not the expected version.
 func (db *DBConnection) featureSupported(name featureName) bool {
-	fn, found := featureSupported[name]
+	var fn semver.Range
+	var found bool
+	if db.dbType == dbTypeCockroachdb {
+		fn, found = featureSupportedCockroachdb[name]
+	} else {
+		fn, found = featureSupportedPostgres[name]
+	}
 	if !found {
 		// panic'ing because this is a provider-only bug
 		panic(fmt.Sprintf("unknown feature flag %v", name))
@@ -194,7 +350,7 @@ func (c *Config) NewClient(database string) *Client {
 // is slightly different from Client's featureSupported in that here we're
 // evaluating against the expected version, not the fingerprinted version.
 func (c *Config) featureSupported(name featureName) bool {
-	fn, found := featureSupported[name]
+	fn, found := featureSupportedPostgres[name]
 	if !found {
 		// panic'ing because this is a provider-only bug
 		panic(fmt.Sprintf("unknown feature flag %v", name))
@@ -278,6 +434,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 		var db *sql.DB
 		var err error
+		var dbType dbTypes
 		if c.config.Scheme == "postgres" {
 			db, err = sql.Open(proxyDriverName, dsn)
 		} else {
@@ -302,7 +459,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 		version := &c.config.ExpectedVersion
 		if defaultVersion.Equals(c.config.ExpectedVersion) {
 			// Version hint not set by user, need to fingerprint
-			version, err = fingerprintCapabilities(db)
+			version, dbType, err = fingerprintCapabilities(db)
 			if err != nil {
 				_ = db.Close()
 				return nil, fmt.Errorf("error detecting capabilities: %w", err)
@@ -313,6 +470,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 			db,
 			c,
 			*version,
+			dbType,
 		}
 		dbRegistry[dsn] = conn
 	}
@@ -322,11 +480,13 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
 // capabilities.  This is only run once per Client.
-func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
+func fingerprintCapabilities(db *sql.DB) (*semver.Version, dbTypes, error) {
 	var pgVersion string
+	var dbType dbTypes
+	var version semver.Version
 	err := db.QueryRow(`SELECT VERSION()`).Scan(&pgVersion)
 	if err != nil {
-		return nil, fmt.Errorf("error PostgreSQL version: %w", err)
+		return nil, dbType, fmt.Errorf("error PostgreSQL version: %w", err)
 	}
 
 	// PostgreSQL 9.2.21 on x86_64-apple-darwin16.5.0, compiled by Apple LLVM version 8.1.0 (clang-802.0.42), 64-bit
@@ -335,13 +495,23 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 		return unicode.IsSpace(c) || c == ','
 	})
 	if len(fields) < 2 {
-		return nil, fmt.Errorf("error determining the server version: %q", pgVersion)
+		return nil, dbType, fmt.Errorf("error determining the server version: %q", pgVersion)
 	}
 
-	version, err := semver.ParseTolerant(fields[1])
+	//version, err = semver.ParseTolerant(fields[1])
+	dbTypeStr := fields[0]
+	if dbTypeStr == "CockroachDB" {
+		dbType = dbTypeCockroachdb
+		version, err = semver.ParseTolerant(fields[2])
+		version = semver.MustParse(strings.TrimPrefix(version.String(), "v"))
+	} else {
+		dbType = dbTypePostgresql
+		version, err = semver.ParseTolerant(fields[1])
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("error parsing version: %w", err)
+		return nil, dbType, fmt.Errorf("error parsing version: %w", err)
 	}
 
-	return &version, nil
+	return &version, dbType, nil
 }
