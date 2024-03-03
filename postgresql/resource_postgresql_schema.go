@@ -239,38 +239,44 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 
 	schemaName := d.Get(schemaNameAttr).(string)
 
-	exists, err := schemaExists(txn, schemaName)
-	if err != nil {
-		return err
-	}
-	if !exists {
+	if schemaName != "public" {
+
+		exists, err := schemaExists(txn, schemaName)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			d.SetId("")
+			return nil
+		}
+
+		owner := d.Get("owner").(string)
+
+		if err = withRolesGranted(txn, []string{owner}, func() error {
+			dropMode := "RESTRICT"
+			if d.Get(schemaDropCascade).(bool) {
+				dropMode = "CASCADE"
+			}
+
+			sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
+			if _, err = txn.Exec(sql); err != nil {
+				return fmt.Errorf("Error deleting schema: %w", err)
+			}
+
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		if err := txn.Commit(); err != nil {
+			return fmt.Errorf("Error committing schema: %w", err)
+		}
+
 		d.SetId("")
-		return nil
+
+	} else {
+		log.Printf("cannot delete schema %s", schemaName)
 	}
-
-	owner := d.Get("owner").(string)
-
-	if err = withRolesGranted(txn, []string{owner}, func() error {
-		dropMode := "RESTRICT"
-		if d.Get(schemaDropCascade).(bool) {
-			dropMode = "CASCADE"
-		}
-
-		sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
-		if _, err = txn.Exec(sql); err != nil {
-			return fmt.Errorf("Error deleting schema: %w", err)
-		}
-
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
-	}
-
-	d.SetId("")
 
 	return nil
 }
@@ -322,7 +328,12 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 
 	var schemaOwner string
 	var schemaACLs []string
-	err = txn.QueryRow("SELECT pg_catalog.pg_get_userbyid(n.nspowner), COALESCE(n.nspacl, '{}'::aclitem[])::TEXT[] FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaName).Scan(&schemaOwner, pq.Array(&schemaACLs))
+
+	if !db.featureSupported(fetureAclItem) {
+		err = txn.QueryRow("SELECT pg_catalog.pg_get_userbyid(n.nspowner) FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaName).Scan(&schemaOwner)
+	} else {
+		err = txn.QueryRow("SELECT pg_catalog.pg_get_userbyid(n.nspowner), COALESCE(n.nspacl, '{}'::aclitem[])::TEXT[] FROM pg_catalog.pg_namespace n WHERE n.nspname=$1", schemaName).Scan(&schemaOwner, pq.Array(&schemaACLs))
+	}
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL schema (%s) not found in database %s", schemaName, database)
@@ -332,26 +343,28 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 		return fmt.Errorf("Error reading schema: %w", err)
 	default:
 		type RoleKey string
-		schemaPolicies := make(map[RoleKey]acl.Schema, len(schemaACLs))
-		for _, aclStr := range schemaACLs {
-			aclItem, err := acl.Parse(aclStr)
-			if err != nil {
-				return fmt.Errorf("Error parsing aclitem: %w", err)
-			}
+		if db.featureSupported(fetureAclItem) {
+			schemaPolicies := make(map[RoleKey]acl.Schema, len(schemaACLs))
+			for _, aclStr := range schemaACLs {
+				aclItem, err := acl.Parse(aclStr)
+				if err != nil {
+					return fmt.Errorf("Error parsing aclitem: %w", err)
+				}
 
-			schemaACL, err := acl.NewSchema(aclItem)
-			if err != nil {
-				return fmt.Errorf("invalid perms for schema: %w", err)
-			}
+				schemaACL, err := acl.NewSchema(aclItem)
+				if err != nil {
+					return fmt.Errorf("invalid perms for schema: %w", err)
+				}
 
-			roleKey := RoleKey(strings.ToLower(schemaACL.Role))
-			var mergedPolicy acl.Schema
-			if existingRolePolicy, ok := schemaPolicies[roleKey]; ok {
-				mergedPolicy = existingRolePolicy.Merge(schemaACL)
-			} else {
-				mergedPolicy = schemaACL
+				roleKey := RoleKey(strings.ToLower(schemaACL.Role))
+				var mergedPolicy acl.Schema
+				if existingRolePolicy, ok := schemaPolicies[roleKey]; ok {
+					mergedPolicy = existingRolePolicy.Merge(schemaACL)
+				} else {
+					mergedPolicy = schemaACL
+				}
+				schemaPolicies[roleKey] = mergedPolicy
 			}
-			schemaPolicies[roleKey] = mergedPolicy
 		}
 
 		d.Set(schemaNameAttr, schemaName)
