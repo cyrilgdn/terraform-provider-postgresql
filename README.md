@@ -79,3 +79,11 @@ TF_LOG=INFO go test -v ./postgresql -run ^TestAccPostgresqlRole_Basic$
 # cleans the env and tears down the postgres container
 make testacc_cleanup 
 ```
+
+The Azure identity role test can only run against an actual Azure postgres instance, also only a Microsoft Entra administrator is allowed to manage Microsoft Entra roles
+In order to run the Azure identity test, run the following commands:
+```sh
+source tests/
+
+TF_LOG=INFO go test -v ./postgresql -run ^TestAccPostgresqlRole_AzureIdentity
+```

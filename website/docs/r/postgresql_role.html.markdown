@@ -118,6 +118,10 @@ resource "postgresql_role" "my_replication_role" {
 
 * `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
 
+* `azure_identity_id` - (Optional) Unique object identifier of the Microsoft Entra object. See [how to manage azure ad users](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-manage-azure-ad-users) for more details.
+
+* `azure_identity_type` - (Optional) Type of the Microsoft Entra object to link to this role: service, user or group.
+
 ## Import Example
 
 `postgresql_role` supports importing resources.  Supposing the following

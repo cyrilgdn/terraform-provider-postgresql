@@ -228,6 +228,39 @@ resource "postgresql_role" "test_role" {
 	})
 }
 
+func TestAccPostgresqlRole_AzureIdentity(t *testing.T) {
+	// This test needs an Azure PostgreSQL Flexible instance and an existing identity
+	if os.Getenv("AZURE") == "" {
+		t.Skip("Skipping azure identity test")
+	}
+	roleConfig := `
+resource "postgresql_role" "id-test" {
+  name = "id-test"
+  azure_identity_id = "00000000-0000-0000-0000-000000000000"
+  azure_identity_type = "service"
+  skip_reassign_owned = true
+  login = true
+}`
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: roleConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleAzureExists("id-test", nil, nil),
+					testAccCheckPostgresqlRoleExists("id-test", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.id-test", "name", "id-test"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlRoleDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
@@ -248,6 +281,23 @@ func testAccCheckPostgresqlRoleDestroy(s *terraform.State) error {
 	}
 
 	return nil
+}
+
+func testAccCheckPostgresqlRoleAzureExists(roleName string, grantedRoles []string, searchPath []string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		client := testAccProvider.Meta().(*Client)
+
+		exists, err := checkRoleAzureExists(client, roleName)
+		if err != nil {
+			return fmt.Errorf("Error checking role %s", err)
+		}
+
+		if !exists {
+			return fmt.Errorf("Azure role not found")
+		}
+
+		return nil
+	}
 }
 
 func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string, searchPath []string) resource.TestCheckFunc {
@@ -278,6 +328,22 @@ func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string, se
 	}
 }
 
+func checkRoleAzureExists(client *Client, roleName string) (bool, error) {
+	db, err := client.Connect()
+	if err != nil {
+		return false, err
+	}
+	var _rez int
+	err = db.QueryRow("SELECT 1 FROM pgaadauth_list_principals(false) WHERE rolname=$1", roleName).Scan(&_rez)
+	switch {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("Error reading info about azure role: %s", err)
+	}
+	return true, nil
+}
+
 func checkRoleExists(client *Client, roleName string) (bool, error) {
 	db, err := client.Connect()
 	if err != nil {
@@ -291,7 +357,6 @@ func checkRoleExists(client *Client, roleName string) (bool, error) {
 	case err != nil:
 		return false, fmt.Errorf("Error reading info about role: %s", err)
 	}
-
 	return true, nil
 }
 

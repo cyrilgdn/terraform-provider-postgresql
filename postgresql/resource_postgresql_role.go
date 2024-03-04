@@ -35,6 +35,8 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleAzureIdentityIdAttr                 = "azure_identity_id"
+	roleAzureIdentityTypeAttr               = "azure_identity_type"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +175,17 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleAzureIdentityIdAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Allow usage of role via this Azure identity",
+			},
+			roleAzureIdentityTypeAttr: {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Type of Azure identity: user, group or service",
+				ValidateFunc: validation.StringInSlice([]string{"user", "group", "service"}, false),
+			},
 		},
 	}
 }
@@ -289,6 +302,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	sql := fmt.Sprintf("CREATE ROLE %s%s", pq.QuoteIdentifier(roleName), createStr)
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error creating role %s: %w", roleName, err)
+	}
+
+	if err = azureIdentity(txn, d); err != nil {
+		return err
 	}
 
 	if err = grantRoles(txn, d); err != nil {
@@ -474,12 +491,14 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.SetId(roleName)
 
-	password, err := readRolePassword(db, d, roleCanLogin)
-	if err != nil {
-		return err
-	}
+	if d.Get(roleAzureIdentityIdAttr).(string) == "" {
+		password, err := readRolePassword(db, d, roleCanLogin)
+		if err != nil {
+			return err
+		}
 
-	d.Set(rolePasswordAttr, password)
+		d.Set(rolePasswordAttr, password)
+	}
 	return nil
 }
 
@@ -944,6 +963,21 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 		}
 	}
 
+	return nil
+}
+
+func azureIdentity(txn *sql.Tx, d *schema.ResourceData) error {
+	role := d.Get(roleNameAttr).(string)
+	azureIdentityId := d.Get(roleAzureIdentityIdAttr).(string)
+	azureIdentityType := d.Get(roleAzureIdentityTypeAttr).(string)
+	if azureIdentityId != "" {
+		query := fmt.Sprintf(
+			"SECURITY LABEL for \"pgaadauth\" on role %s is 'aadauth,oid=%s,type=%s'", pq.QuoteIdentifier(role), azureIdentityId, azureIdentityType,
+		)
+		if _, err := txn.Exec(query); err != nil {
+			return fmt.Errorf("could not set identity %s on role %s %w", azureIdentityId, role, err)
+		}
+	}
 	return nil
 }
 
