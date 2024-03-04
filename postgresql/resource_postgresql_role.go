@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -329,7 +330,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if db.featureSupported(featureTransactionIsolation) {
-		if err = setTransactionIsolation(txn, d); err != nil {
+		if err = setDefaultTransactionIsolation(txn, d); err != nil {
 			return err
 		}
 	}
@@ -486,7 +487,6 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
-	d.Set(defaultTransactionIsolationAttr, readDefaultTransactionIsolationAttr(roleConfig))
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
@@ -504,32 +504,24 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.SetId(roleName)
 
+	defaultTransactionIsolation, err := readDefaultTransactionIsolation(db, d)
+	if err != nil {
+		return err
+	}
+
+	d.Set(defaultTransactionIsolationAttr, defaultTransactionIsolation)
+
 	password, err := readRolePassword(db, d, roleCanLogin)
 	if err != nil {
 		return err
 	}
 
 	d.Set(rolePasswordAttr, password)
+
 	return nil
 }
 
-// readDefaultTransactionIsolation searches for a search_path entry in the rolconfig array.
-// In case no such value is present, it returns nil.
-func readDefaultTransactionIsolationAttr(roleConfig pq.ByteaArray) []string {
-	for _, v := range roleConfig {
-		config := string(v)
-		if strings.HasPrefix(config, defaultTransactionIsolationAttr) {
-			var result = strings.Split(strings.TrimPrefix(config, defaultTransactionIsolationAttr+"="), ", ")
-			for i := range result {
-				result[i] = strings.Trim(result[i], `"`)
-			}
-			return result
-		}
-	}
-	return nil
-}
-
-// readSearchPath searches for a default_transaction_isolation entry in the rolconfig array.
+// readSearchPath searches for a search_path entry in the rolconfig array.
 // In case no such value is present, it returns nil.
 func readSearchPath(roleConfig pq.ByteaArray) []string {
 	for _, v := range roleConfig {
@@ -591,6 +583,33 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 		}
 	}
 	return res
+}
+
+func readDefaultTransactionIsolation(db *DBConnection, d *schema.ResourceData) (string, error) {
+	stateDefaultTransactionIsolation := d.Get(defaultTransactionIsolationAttr).(string)
+	var roleDefaultTransactionIsolation string
+	sql2 := fmt.Sprintf("SELECT setconfig FROM pg_db_role_setting role_setting LEFT JOIN pg_roles role ON role.oid = role_setting.setrole where role.rolname= "+
+		"'%s'", d.Id())
+	_ = sql2
+	err := db.QueryRow(sql2).Scan(&roleDefaultTransactionIsolation)
+	switch {
+	case err == sql.ErrNoRows:
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("Error reading role: %w", err)
+	}
+
+	re := regexp.MustCompile(`default_transaction_isolation\s*=\s*([A-Z ]+)`)
+	match := re.FindStringSubmatch(roleDefaultTransactionIsolation)
+	if len(match) > 1 {
+		roleDefaultTransactionIsolation = match[1]
+		if roleDefaultTransactionIsolation == stateDefaultTransactionIsolation {
+			return stateDefaultTransactionIsolation, nil
+		} else {
+			return roleDefaultTransactionIsolation, nil
+		}
+	}
+	return stateDefaultTransactionIsolation, nil
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -736,7 +755,7 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if db.featureSupported(featureTransactionIsolation) {
-		if err = setTransactionIsolation(txn, d); err != nil {
+		if err = setDefaultTransactionIsolation(txn, d); err != nil {
 			return err
 		}
 	}
@@ -1121,7 +1140,7 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
+func setDefaultTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
 	if !d.HasChange(defaultTransactionIsolationAttr) {
 		return nil
 	}
