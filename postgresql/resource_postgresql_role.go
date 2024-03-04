@@ -1152,7 +1152,7 @@ func setDefaultTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
 			"ALTER ROLE %s SET default_transaction_isolation = %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(defaultTransactionIsolation),
 		)
 		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not set default_transaction_isolation %d for %s: %w", defaultTransactionIsolation, roleName, err)
+			return fmt.Errorf("could not set default_transaction_isolation %s for %s: %w", defaultTransactionIsolation, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
