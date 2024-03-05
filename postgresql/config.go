@@ -58,6 +58,7 @@ const (
 	featureRoleroleInherit
 	fetureRoleEncryptedPass
 	featureAdvisoryXactLock
+	featureTransactionIsolation
 )
 
 var (
@@ -151,6 +152,8 @@ var (
 		fetureRoleEncryptedPass: semver.MustParseRange(">=8.1.0"),
 
 		featureAdvisoryXactLock: semver.MustParseRange(">=9.1.0"),
+		//Postgresql do not support transaction isolation in Role level
+		featureTransactionIsolation: semver.MustParseRange("<1.0.0"),
 	}
 
 	// Mapping of feature flags to versions
@@ -261,6 +264,8 @@ var (
 		// cockroach does not support pg_advisory_xact_lock
 		// https://github.com/cockroachdb/cockroach/issues/13546
 		featureAdvisoryXactLock: semver.MustParseRange("<1.0.0"),
+
+		featureTransactionIsolation: semver.MustParseRange(">=23.2.0"),
 	}
 )
 

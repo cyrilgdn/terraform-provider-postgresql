@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -35,6 +36,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	defaultTransactionIsolationAttr         = "default_transaction_isolation"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -172,6 +174,11 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role to switch to at login",
+			},
+			defaultTransactionIsolationAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Role default_transaction_isolation",
 			},
 		},
 	}
@@ -320,6 +327,12 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 
 	if err = setAssumeRole(txn, d); err != nil {
 		return err
+	}
+
+	if db.featureSupported(featureTransactionIsolation) {
+		if err = setDefaultTransactionIsolation(txn, d); err != nil {
+			return err
+		}
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -491,12 +504,20 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.SetId(roleName)
 
+	defaultTransactionIsolation, err := readDefaultTransactionIsolation(db, d)
+	if err != nil {
+		return err
+	}
+
+	d.Set(defaultTransactionIsolationAttr, defaultTransactionIsolation)
+
 	password, err := readRolePassword(db, d, roleCanLogin)
 	if err != nil {
 		return err
 	}
 
 	d.Set(rolePasswordAttr, password)
+
 	return nil
 }
 
@@ -562,6 +583,32 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 		}
 	}
 	return res
+}
+
+func readDefaultTransactionIsolation(db *DBConnection, d *schema.ResourceData) (string, error) {
+	stateDefaultTransactionIsolation := d.Get(defaultTransactionIsolationAttr).(string)
+	var roleSetting string
+	query := fmt.Sprintf("SELECT setconfig FROM pg_db_role_setting role_setting LEFT JOIN pg_roles role ON role.oid = role_setting.setrole where role.rolname= "+
+		"'%s'", d.Id())
+	err := db.QueryRow(query).Scan(&roleSetting)
+	switch {
+	case err == sql.ErrNoRows:
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("Error reading role: %w", err)
+	}
+
+	re := regexp.MustCompile(`default_transaction_isolation\s*=\s*([A-Z ]+)`)
+	match := re.FindStringSubmatch(roleSetting)
+	if len(match) > 1 {
+		roleDefaultTransactionIsolation := match[1]
+		if roleDefaultTransactionIsolation == stateDefaultTransactionIsolation {
+			return stateDefaultTransactionIsolation, nil
+		} else {
+			return roleDefaultTransactionIsolation, nil
+		}
+	}
+	return stateDefaultTransactionIsolation, nil
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -704,6 +751,12 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 
 	if err = setAssumeRole(txn, d); err != nil {
 		return err
+	}
+
+	if db.featureSupported(featureTransactionIsolation) {
+		if err = setDefaultTransactionIsolation(txn, d); err != nil {
+			return err
+		}
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -1081,6 +1134,31 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setDefaultTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(defaultTransactionIsolationAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	defaultTransactionIsolation := d.Get(defaultTransactionIsolationAttr).(string)
+	if defaultTransactionIsolation != "" {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET default_transaction_isolation = %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(defaultTransactionIsolation),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set default_transaction_isolation %s for %s: %w", defaultTransactionIsolation, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET default_transaction_isolation", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset default_transaction_isolation for %s: %w", roleName, err)
 		}
 	}
 	return nil
