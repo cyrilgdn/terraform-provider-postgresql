@@ -269,9 +269,8 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 	granted := pgArrayToSet(privileges)
-	wanted := d.Get("privileges").(*schema.Set)
 	if !resourcePrivilegesEqual(granted, d) {
-		return d.Set("privileges", wanted)
+		return d.Set("privileges", granted)
 	}
 	return nil
 }
@@ -292,9 +291,8 @@ WHERE grantee = $2
 	}
 
 	granted := pgArrayToSet(privileges)
-	wanted := d.Get("privileges").(*schema.Set)
 	if !resourcePrivilegesEqual(granted, d) {
-		return d.Set("privileges", wanted)
+		return d.Set("privileges", granted)
 	}
 	return nil
 }
@@ -316,9 +314,8 @@ WHERE grantee = $2
 	}
 
 	granted := pgArrayToSet(privileges)
-	wanted := d.Get("privileges").(*schema.Set)
 	if !resourcePrivilegesEqual(granted, d) {
-		return d.Set("privileges", wanted)
+		return d.Set("privileges", granted)
 	}
 	return nil
 }
@@ -340,9 +337,8 @@ WHERE grantee = $2
 	}
 
 	granted := pgArrayToSet(privileges)
-	wanted := d.Get("privileges").(*schema.Set)
 	if !resourcePrivilegesEqual(granted, d) {
-		return d.Set("privileges", wanted)
+		return d.Set("privileges", granted)
 	}
 	return nil
 }
