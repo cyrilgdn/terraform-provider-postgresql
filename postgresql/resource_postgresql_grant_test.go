@@ -1163,7 +1163,7 @@ func TestAccPostgresqlImplicitGrants(t *testing.T) {
 	}
 	`, dbName, roleName)
 
-	var testCheckFunc = func(grants ...string) resource.TestCheckFunc {
+	var testCheckTableGrants = func(grants ...string) resource.TestCheckFunc {
 		return func(*terraform.State) error {
 			return testCheckTablesPrivileges(t, dbName, roleName, []string{testTables[0]}, grants)
 		}
@@ -1183,7 +1183,7 @@ func TestAccPostgresqlImplicitGrants(t *testing.T) {
 					),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					testCheckFunc("SELECT", "INSERT", "UPDATE", "DELETE"),
+					testCheckTableGrants("SELECT", "INSERT", "UPDATE", "DELETE"),
 				),
 			},
 			{
@@ -1191,7 +1191,7 @@ func TestAccPostgresqlImplicitGrants(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					testCheckFunc("SELECT"),
+					testCheckTableGrants("SELECT"),
 				),
 			},
 			{
@@ -1200,7 +1200,7 @@ func TestAccPostgresqlImplicitGrants(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					testCheckFunc("SELECT", "INSERT", "UPDATE", "DELETE"),
+					testCheckTableGrants("SELECT", "INSERT", "UPDATE", "DELETE"),
 				),
 			},
 			{
@@ -1209,7 +1209,7 @@ func TestAccPostgresqlImplicitGrants(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
-					testCheckFunc(""),
+					testCheckTableGrants(""),
 				),
 			},
 		},
