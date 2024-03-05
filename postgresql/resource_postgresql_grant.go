@@ -254,7 +254,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readDatabaseRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("database").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -275,7 +275,7 @@ WHERE grantee = $2
 	return nil
 }
 
-func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readSchemaRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("schema").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -436,10 +436,10 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	switch objectType {
 	case "database":
-		return readDatabaseRolePriviges(txn, d, roleOID)
+		return readDatabaseRolePrivileges(txn, d, roleOID)
 
 	case "schema":
-		return readSchemaRolePriviges(txn, d, roleOID)
+		return readSchemaRolePrivileges(txn, d, roleOID)
 
 	case "foreign_data_wrapper":
 		return readForeignDataWrapperRolePrivileges(txn, d, roleOID)

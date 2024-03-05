@@ -1493,22 +1493,6 @@ func testCheckDatabasesPrivileges(t *testing.T, canCreate bool) func(*terraform.
 	}
 }
 
-func testCheckTablePrivileges(t *testing.T, canCreate bool, tableName string, grantee string) func(*terraform.State) error {
-	return func(*terraform.State) error {
-		db := connectAsTestRole(t, "test_grant_role", "test_grant_db")
-		defer db.Close()
-
-		result, err := db.Exec(fmt.Sprintf("SELECT grantee, privilege_type FROM information_schema.role_table_grants WHERE table_name=%s AND grantee = %s", tableName, grantee))
-		t.Log("res", result)
-		if err != nil {
-			panic(err)
-		}
-		t.Log("res", result)
-
-		return nil
-	}
-}
-
 func testCheckFunctionExecutable(t *testing.T, role, function string) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		db := connectAsTestRole(t, role, "postgres")
