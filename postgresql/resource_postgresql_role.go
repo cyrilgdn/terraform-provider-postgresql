@@ -588,10 +588,9 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 func readDefaultTransactionIsolation(db *DBConnection, d *schema.ResourceData) (string, error) {
 	stateDefaultTransactionIsolation := d.Get(defaultTransactionIsolationAttr).(string)
 	var roleDefaultTransactionIsolation string
-	sql2 := fmt.Sprintf("SELECT setconfig FROM pg_db_role_setting role_setting LEFT JOIN pg_roles role ON role.oid = role_setting.setrole where role.rolname= "+
+	query := fmt.Sprintf("SELECT setconfig FROM pg_db_role_setting role_setting LEFT JOIN pg_roles role ON role.oid = role_setting.setrole where role.rolname= "+
 		"'%s'", d.Id())
-	_ = sql2
-	err := db.QueryRow(sql2).Scan(&roleDefaultTransactionIsolation)
+	err := db.QueryRow(query).Scan(&roleDefaultTransactionIsolation)
 	switch {
 	case err == sql.ErrNoRows:
 		return "", nil
