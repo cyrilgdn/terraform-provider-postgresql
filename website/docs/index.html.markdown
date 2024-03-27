@@ -214,6 +214,8 @@ To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres` and `host` to the c
 For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file.
 These credentials can be created here: https://console.cloud.google.com/iam-admin/serviceaccounts
 
+In order to use IAM Auth to connect to the instance simply omit the password. The username should be the email of your service account, make sure to omit the `.gserviceaccount.com` from the email.
+
 See also: https://cloud.google.com/docs/authentication/production
 
 ---
@@ -262,6 +264,43 @@ provider "postgresql" {
   host     = google_sql_database_instance.test.connection_name
   username = google_sql_user.postgres.name
   password = google_sql_user.postgres.password
+}
+
+resource postgresql_database "test_db" {
+  name = "test_db"
+}
+```
+
+Example with GCP resources and IAM Auth enabled:
+
+```hcl
+resource "google_sql_database_instance" "test" {
+  project          = "test-project"
+  name             = "test-instance"
+  database_version = "POSTGRES_13"
+  region           = "europe-west3"
+
+  settings {
+    tier            = "db-f1-micro"
+  }
+}
+
+resource "google_service_account" "test" {
+  account_id   = "test-service-account"
+  project      = "test-project"
+}
+
+
+resource "google_sql_user" "postgres" {
+  project  = "test-project"
+  name     = trimsuffix(google_service_account.test.email, ".gserviceaccount.com")
+  instance = google_sql_database_instance.test.name
+}
+
+provider "postgresql" {
+  scheme   = "gcppostgres"
+  host     = google_sql_database_instance.test.connection_name
+  username = google_sql_user.postgres.name
 }
 
 resource postgresql_database "test_db" {
