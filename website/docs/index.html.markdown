@@ -150,6 +150,7 @@ The following arguments are supported:
 * `port` - (Optional) The port for the postgresql server connection. The default is `5432`.
 * `database` - (Optional) Database to connect to. The default is `postgres`.
 * `username` - (Required) Username for the server connection.
+* `assume_role` - (Optional) Role which will be assumed by the provider upon connecting to the database.
 * `password` - (Optional) Password for the server connection.
 * `database_username` - (Optional) Username of the user in the database if different than connection username (See [user name maps](https://www.postgresql.org/docs/current/auth-username-maps.html)).
 * `superuser` - (Optional) Should be set to `false` if the user to connect is not a PostgreSQL superuser (as is the case in AWS RDS or GCP SQL).
