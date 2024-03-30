@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq" // PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
@@ -300,7 +301,8 @@ func (c *Client) Connect() (*DBConnection, error) {
 		}
 
 		if c.config.AssumeRole != "" {
-			_, err = db.Exec("SET ROLE $1", c.config.AssumeRole)
+			setRolqSql := fmt.Sprintf("SET ROLE %s;", pq.QuoteIdentifier(c.config.AssumeRole))
+			_, err = db.Exec(setRolqSql)
 		}
 		if err != nil {
 			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
