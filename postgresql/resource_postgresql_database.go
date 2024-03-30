@@ -220,6 +220,11 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	sql := b.String()
+	if db.client.config.AssumeRole != "" {
+		setRolqSql := fmt.Sprintf("SET ROLE %s;", pq.QuoteIdentifier(db.client.config.AssumeRole))
+		_, err = db.Exec(setRolqSql)
+	}
+
 	if _, err := db.Exec(sql); err != nil {
 		return fmt.Errorf("Error creating database %q: %w", dbName, err)
 	}
