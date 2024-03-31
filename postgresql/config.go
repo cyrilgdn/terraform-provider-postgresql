@@ -300,7 +300,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 		}
 
 		if c.config.AssumeRole != "" {
-			_, err = db.Exec("SET ROLE $1", c.config.AssumeRole)
+			_, err = db.Exec("SET ROLE %s", c.config.AssumeRole)
 		}
 		if err != nil {
 			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
