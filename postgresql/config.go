@@ -300,6 +300,15 @@ func (c *Client) Connect() (*DBConnection, error) {
 			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
+		if c.config.AssumeRole != "" {
+			setRolqSql := fmt.Sprintf("SET ROLE %s;", pq.QuoteIdentifier(c.config.AssumeRole))
+			_, err = db.Exec(setRolqSql)
+		}
+		if err != nil {
+			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
+			return nil, fmt.Errorf("Error setting role %s: %s", c.config.AssumeRole, errString)
+		}
+
 		// We don't want to retain connection
 		// So when we connect on a specific database which might be managed by terraform,
 		// we don't keep opened connection in case of the db has to be dopped in the plan.
