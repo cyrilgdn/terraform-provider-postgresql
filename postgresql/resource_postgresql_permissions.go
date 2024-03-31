@@ -65,6 +65,9 @@ func resourcePostgreSQLPermissionsCreate(db *DBConnection, d *schema.ResourceDat
 	createRole := d.Get("create_role").(bool)
 
 	var queries []string
+	// Remove the role from the database if it already exists
+	queries = append(queries, fmt.Sprintf("ALTER ROLE %s NOCREATEDB;", pq.QuoteIdentifier(roleName)))
+	queries = append(queries, fmt.Sprintf("ALTER ROLE %s NOCREATEROLE;", pq.QuoteIdentifier(roleName)))
 	if createDb {
 		queries = append(queries, fmt.Sprintf("ALTER ROLE %s CREATEDB;", pq.QuoteIdentifier(roleName)))
 	}
