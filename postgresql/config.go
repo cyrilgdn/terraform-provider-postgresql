@@ -161,7 +161,6 @@ type Config struct {
 	Host              string
 	Port              int
 	Username          string
-	AssumeRole        string
 	Password          string
 	DatabaseUsername  string
 	Superuser         bool
@@ -297,14 +296,6 @@ func (c *Client) Connect() (*DBConnection, error) {
 		if err != nil {
 			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
 			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
-		}
-
-		if c.config.AssumeRole != "" {
-			_, err = db.Exec("SET ROLE %s", c.config.AssumeRole)
-		}
-		if err != nil {
-			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
-			return nil, fmt.Errorf("Error setting role %s: %s", c.config.AssumeRole, errString)
 		}
 
 		// We don't want to retain connection

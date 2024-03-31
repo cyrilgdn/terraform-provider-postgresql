@@ -60,12 +60,6 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PGUSER", "postgres"),
 				Description: "PostgreSQL user name to connect as",
 			},
-			"assume_role": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Default:     "",
-				Description: "The role to assume when connecting to the database.",
-			},
 			"password": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -304,7 +298,6 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	host := d.Get("host").(string)
 	port := d.Get("port").(int)
 	username := d.Get("username").(string)
-	assumeRole := d.Get("assume_role").(string)
 
 	var password string
 	if d.Get("aws_rds_iam_auth").(bool) {
@@ -334,7 +327,6 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		Host:              host,
 		Port:              port,
 		Username:          username,
-		AssumeRole:        assumeRole,
 		Password:          password,
 		DatabaseUsername:  d.Get("database_username").(string),
 		Superuser:         d.Get("superuser").(bool),
