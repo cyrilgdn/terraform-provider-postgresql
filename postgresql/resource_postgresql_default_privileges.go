@@ -87,7 +87,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 		)
 	}
 
-	exists, err := checkRoleDBSchemaExists(db.client, d)
+	exists, err := checkRoleDBSchemaExists(db, d)
 	if err != nil {
 		return err
 	}

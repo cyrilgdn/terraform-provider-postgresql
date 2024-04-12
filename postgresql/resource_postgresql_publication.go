@@ -183,12 +183,12 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	added := arrayDifference(newList, oldList)
 
 	for _, p := range added {
-		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, p.(string))
+		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, quoteTableName(p.(string)))
 		queries = append(queries, query)
 	}
 
 	for _, p := range dropped {
-		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, p.(string))
+		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, quoteTableName(p.(string)))
 		queries = append(queries, query)
 	}
 
@@ -461,7 +461,7 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
 		for _, t := range tables {
-			tlist = append(tlist, t.(string))
+			tlist = append(tlist, quoteTableName(t.(string)))
 		}
 		tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
 	}
