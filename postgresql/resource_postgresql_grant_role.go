@@ -135,8 +135,8 @@ func readGrantRole(db *DBConnection, d *schema.ResourceData) error {
 		&grantRoleName,
 		&withAdminOption,
 	}
+	var query string
 	if db.dbType == dbTypeCockroachdb {
-		var query string
 		query = fmt.Sprintf(` with a as (show grants on role %s for %s) select member as role , role_name as grant_role, is_admin as with_admin_option from a;
 `, d.Get("grant_role"), d.Get("role"))
 		if err := db.QueryRow(query).Scan(values...); err != nil {
