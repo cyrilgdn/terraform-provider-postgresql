@@ -124,7 +124,7 @@ func resourcePostgreSQLGrantRoleDelete(db *DBConnection, d *schema.ResourceData)
 	return nil
 }
 
-func readGrantRole(db QueryAble, d *schema.ResourceData) error {
+func readGrantRole(db *DBConnection, d *schema.ResourceData) error {
 	var roleName, grantRoleName string
 	var withAdminOption bool
 
@@ -135,23 +135,30 @@ func readGrantRole(db QueryAble, d *schema.ResourceData) error {
 		&grantRoleName,
 		&withAdminOption,
 	}
+	if db.dbType == dbTypeCockroachdb {
+		var query string
+		query = fmt.Sprintf(` with a as (show grants on role %s for %s) select member as role , role_name as grant_role, is_admin as with_admin_option from a;
+`, d.Get("grant_role"), d.Get("role"))
+		if err := db.QueryRow(query).Scan(values...); err != nil {
+			return fmt.Errorf("Error to show grants on role %s for %s :%w ", d.Get("grant_role"), d.Get("role"), err)
+		}
+	} else {
+		err := db.QueryRow(getGrantRoleQuery, d.Get("role"), d.Get("grant_role")).Scan(values...)
+		switch {
+		case err == sql.ErrNoRows:
+			log.Printf("[WARN] PostgreSQL grant role (%q) not found", grantRoleID)
+			d.SetId("")
+			return nil
+		case err != nil:
+			return fmt.Errorf("Error reading grant role: %w", err)
+		}
 
-	err := db.QueryRow(getGrantRoleQuery, d.Get("role"), d.Get("grant_role")).Scan(values...)
-	switch {
-	case err == sql.ErrNoRows:
-		log.Printf("[WARN] PostgreSQL grant role (%q) not found", grantRoleID)
-		d.SetId("")
-		return nil
-	case err != nil:
-		return fmt.Errorf("Error reading grant role: %w", err)
+		d.Set("role", roleName)
+		d.Set("grant_role", grantRoleName)
+		d.Set("with_admin_option", withAdminOption)
+
+		d.SetId(generateGrantRoleID(d))
 	}
-
-	d.Set("role", roleName)
-	d.Set("grant_role", grantRoleName)
-	d.Set("with_admin_option", withAdminOption)
-
-	d.SetId(generateGrantRoleID(d))
-
 	return nil
 }
 
