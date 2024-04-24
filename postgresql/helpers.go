@@ -534,16 +534,18 @@ func pgLockRole(txn *sql.Tx, role string) error {
 	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
 		return fmt.Errorf("could not disable statement_timeout: %w", err)
 	}
-	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
-		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
-	}
+	/*
+		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
+			return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
+		}
 
-	if _, err := txn.Exec(
-		"SELECT pg_advisory_xact_lock(member::bigint) FROM pg_auth_members JOIN pg_roles ON roleid = pg_roles.oid WHERE rolname = $1",
-		role,
-	); err != nil {
-		return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
-	}
+		if _, err := txn.Exec(
+			"SELECT pg_advisory_xact_lock(member::bigint) FROM pg_auth_members JOIN pg_roles ON roleid = pg_roles.oid WHERE rolname = $1",
+			role,
+		); err != nil {
+			return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
+		}
+	*/
 
 	return nil
 }
@@ -554,9 +556,11 @@ func pgLockDatabase(txn *sql.Tx, database string) error {
 	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
 		return fmt.Errorf("could not disable statement_timeout: %w", err)
 	}
-	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", database); err != nil {
-		return fmt.Errorf("could not get advisory lock for database %s: %w", database, err)
-	}
+	/*
+		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", database); err != nil {
+			return fmt.Errorf("could not get advisory lock for database %s: %w", database, err)
+		}
+	*/
 
 	return nil
 }
