@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -12,22 +14,24 @@ import (
 )
 
 const (
-	viewNameAttr        = "name"
-	viewSchemaAttr      = "schema"
-	viewDatabaseAttr    = "database"
-	viewRecursiveAttr   = "recursive"
-	viewColumnNamesAttr = "column_names"
-	viewQueryAttr       = "query"
-	viewCheckOptionAttr = "check_option"
+	viewNameAttr                = "name"
+	viewSchemaAttr              = "schema"
+	viewDatabaseAttr            = "database"
+	viewQueryAttr               = "query"
+	viewWithCheckOptionAttr     = "with_check_option"
+	viewWithSecurityBarrierAttr = "with_security_barrier"
+	viewWithSecurityInvokerAttr = "with_security_invoker"
+
+	viewDropCascadeAttr = "drop_cascade"
 )
 
 func resourcePostgreSQLView() *schema.Resource {
 	return &schema.Resource{
 		Create: PGResourceFunc(resourcePostgreSQLViewCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLViewCreate),
-		Update: PGResourceFunc(resourcePostgreSQLViewCreate),
-		Delete: PGResourceFunc(resourcePostgreSQLViewCreate),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLFunctionExists),
+		Read:   PGResourceFunc(resourcePostgreSQLViewRead),
+		Update: PGResourceFunc(resourcePostgreSQLViewUpdate),
+		Delete: PGResourceFunc(resourcePostgreSQLViewDelete),
+		Exists: PGResourceExistsFunc(resourcePostgreSQLViewExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -57,18 +61,6 @@ func resourcePostgreSQLView() *schema.Resource {
 				ForceNew:    true,
 				Description: "The name of the view.",
 			},
-			viewRecursiveAttr: {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Default:     false,
-				Description: "If the view is a recursive view.",
-			},
-			viewColumnNamesAttr: {
-				Type:        schema.TypeSet,
-				Optional:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Description: "The optional list of names to be used for columns of the view. If not given, the column names are deduced from the query.",
-			},
 			viewQueryAttr: {
 				Type:        schema.TypeString,
 				Required:    true,
@@ -81,12 +73,30 @@ func resourcePostgreSQLView() *schema.Resource {
 					return normalizeFunctionBody(val.(string))
 				},
 			},
-			viewCheckOptionAttr: {
+			viewWithCheckOptionAttr: {
 				Type:             schema.TypeString,
 				Optional:         true,
 				DiffSuppressFunc: defaultDiffSuppressFunc,
 				ValidateFunc:     validation.StringInSlice([]string{"CASCADED", "LOCAL"}, true),
 				Description:      "The check option which controls the behavior of automatically updatable views. One of: CASCADED, LOCAL",
+			},
+			viewWithSecurityBarrierAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "This should be used if the view is intended to provide row-level security.",
+			},
+			viewWithSecurityInvokerAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "This option causes the underlying base relations to be checked against the privileges of the user of the view rather than the view owner.",
+			},
+			viewDropCascadeAttr: {
+				Type:        schema.TypeBool,
+				Description: "Automatically drop objects that depend on the view (such as other views), and in turn all objects that depend on those objects.",
+				Optional:    true,
+				Default:     false,
 			},
 		},
 	}
@@ -107,6 +117,120 @@ func resourcePostgreSQLViewCreate(db *DBConnection, d *schema.ResourceData) erro
 	return resourcePostgreSQLViewReadImpl(db, d)
 }
 
+func resourcePostgreSQLViewRead(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_view resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
+	return resourcePostgreSQLViewReadImpl(db, d)
+}
+
+func resourcePostgreSQLViewUpdate(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_view resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
+	if err := createView(db, d, true); err != nil {
+		return err
+	}
+
+	return resourcePostgreSQLViewReadImpl(db, d)
+}
+
+func resourcePostgreSQLViewDelete(db *DBConnection, d *schema.ResourceData) error {
+	if !db.featureSupported(featureFunction) {
+		return fmt.Errorf(
+			"postgresql_view resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
+	dropMode := "RESTRICT"
+	if v, ok := d.GetOk(viewDropCascadeAttr); ok && v.(bool) {
+		dropMode = "CASCADE"
+	}
+
+	viewParts := strings.Split(d.Id(), ".")
+	databaseName, schemaName, viewName := viewParts[0], viewParts[1], viewParts[2]
+	viewIdentifier := fmt.Sprintf("%s.%s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(viewName))
+
+	sql := fmt.Sprintf("DROP VIEW IF EXISTS %s %s", viewIdentifier, dropMode)
+	txn, err := startTransaction(db.client, databaseName)
+	if err != nil {
+		return err
+	}
+	defer deferredRollback(txn)
+
+	if _, err := txn.Exec(sql); err != nil {
+		return err
+	}
+
+	if err := txn.Commit(); err != nil {
+		return err
+	}
+
+	d.SetId("")
+
+	return nil
+}
+
+func resourcePostgreSQLViewExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	if !db.featureSupported(featureFunction) {
+		return false, fmt.Errorf(
+			"postgresql_view resource is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
+	viewParts := strings.Split(d.Id(), ".")
+	databaseName, schemaName, viewName := viewParts[0], viewParts[1], viewParts[2]
+	viewIdentifier := fmt.Sprintf("%s.%s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(viewName))
+
+	var viewExists bool
+
+	txn, err := startTransaction(db.client, databaseName)
+	if err != nil {
+		return false, err
+	}
+	defer deferredRollback(txn)
+
+	query := fmt.Sprintf("SELECT to_regclass('%s') IS NOT NULL AS viewExists", viewIdentifier)
+
+	if err := txn.QueryRow(query).Scan(&viewExists); err != nil {
+		return false, err
+	}
+
+	if err := txn.Commit(); err != nil {
+		return false, err
+	}
+
+	return viewExists, nil
+}
+
+type PGView struct {
+	Database            string
+	Schema              string
+	Name                string
+	Query               string
+	WithCheckOption     string
+	WithSecurityBarrier bool
+	WithSecurityInvoker bool
+}
+
+type ViewInfo struct {
+	Database string
+	Schema   string
+	Name     string
+	Query    string
+	Option   []string
+}
+
 func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	viewID := d.Id()
 	if viewID == "" {
@@ -123,39 +247,87 @@ func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) er
 		databaseName = databaseAttr.(string)
 	}
 
-	query := ``
+	query := `SELECT current_database() AS database, ` +
+		`n.nspname AS schema, ` +
+		`c.relname AS name, ` +
+		`pg_get_viewdef(c.oid, true) AS query, ` +
+		`c.reloptions AS options ` +
+		`FROM pg_class c ` +
+		`JOIN pg_namespace n ON c.relnamespace = n.oid ` +
+		`WHERE c.relkind = 'v' AND n.nspname = '$1' AND c.relname = '$2'`
 	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
 
-	var viewQuery string
-	err = txn.QueryRow(query).Scan(&viewQuery)
+	viewIDParts := strings.Split(viewID, ".")
+	var viewInfo ViewInfo
+	err = txn.QueryRow(query, viewIDParts[1], viewIDParts[2]).Scan(&viewInfo)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL view: %s", viewID)
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading view: %w", err)
+		return fmt.Errorf("error reading view: %w", err)
 	}
 
 	if err := txn.Commit(); err != nil {
 		return err
 	}
 
-	d.Set(viewDatabaseAttr, databaseName)
-	d.Set(viewSchemaAttr, "")
-	d.Set(viewNameAttr, "")
-	d.Set(viewRecursiveAttr, false)
-	d.Set(viewColumnNamesAttr, "")
-	d.Set(viewQuery, "")
-	d.Set(viewCheckOptionAttr, "")
+	pgView, err := parseView(viewInfo)
+	if err != nil {
+		return err
+	}
+
+	d.Set(viewDatabaseAttr, pgView.Database)
+	d.Set(viewSchemaAttr, pgView.Schema)
+	d.Set(viewNameAttr, pgView.Name)
+	d.Set(viewQueryAttr, pgView.Query)
+	d.Set(viewWithCheckOptionAttr, pgView.WithCheckOption)
+	d.Set(viewWithSecurityBarrierAttr, pgView.WithSecurityBarrier)
+	d.Set(viewWithCheckOptionAttr, pgView.WithSecurityInvoker)
 
 	d.SetId(viewID)
 
 	return nil
+}
+
+func parseView(viewInfo ViewInfo) (PGView, error) {
+	var pgView PGView
+	pgView.Database = viewInfo.Database
+	pgView.Schema = viewInfo.Schema
+	pgView.Name = viewInfo.Name
+	pgView.Query = viewInfo.Query
+
+	// Parse options. There are 3 options:
+	// 1. check_option (enum) - [LOCAL | CASCADED]
+	// 2. security_barrier (boolean)
+	// 3. security_invoker (boolean)
+	options := viewInfo.Option
+	if viewInfo.Option != nil && len(options) > 0 {
+		for _, option := range options {
+			parts := strings.Split(option, "=")
+			if len(parts) != 2 {
+				return pgView, fmt.Errorf("invalid view option: %s", option)
+			}
+			switch parts[0] {
+			case "check_option":
+				pgView.WithCheckOption = parts[1]
+			case "security_barrier":
+				val, _ := strconv.ParseBool(parts[1])
+				pgView.WithSecurityBarrier = val
+			case "security_invoker":
+				val, _ := strconv.ParseBool(parts[1])
+				pgView.WithSecurityInvoker = val
+			default:
+				log.Printf("[WARN] Unsupported option: %s", parts[0])
+			}
+		}
+	}
+	return pgView, nil
 }
 
 func genViewID(db *DBConnection, d *schema.ResourceData) (string, error) {
@@ -184,22 +356,7 @@ func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
 	}
 
 	name := d.Get(viewNameAttr).(string)
-	recursive := false
-	if v, ok := d.GetOk(viewRecursiveAttr); ok {
-		recursive = v.(bool)
-	}
-
-	var columnNames []string
-	if v, ok := d.GetOk(viewColumnNamesAttr); ok {
-		columnNames = v.([]string)
-	}
-
 	query := d.Get(viewQueryAttr).(string)
-
-	var checkOption string
-	if v, ok := d.GetOk(viewCheckOptionAttr); ok {
-		checkOption = v.(string)
-	}
 
 	// Construct the view
 	b := bytes.NewBufferString("CREATE ")
@@ -207,31 +364,28 @@ func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
 		b.WriteString("OR REPLACE ")
 	}
 
-	if recursive {
-		b.WriteString("RECURSIVE ")
-	}
 	b.WriteString("VIEW ")
 
 	fmt.Fprint(b, pq.QuoteIdentifier(schemaName), ".")
 	fmt.Fprint(b, pq.QuoteIdentifier(name))
 
-	for idx, columnName := range columnNames {
-		if idx <= 0 {
-			b.WriteRune('(')
-		}
-		if idx > 0 {
-			b.WriteRune(',')
-		}
-		b.WriteString(columnName)
+	// With options
+	var withOptions []string
+	if v, ok := d.GetOk(viewWithCheckOptionAttr); ok {
+		withOptions = append(withOptions, fmt.Sprintf("check_option=%s", v.(string)))
 	}
-	if len(columnNames) > 0 {
-		b.WriteRune(')')
+	if v, ok := d.GetOk(viewWithSecurityBarrierAttr); ok {
+		withOptions = append(withOptions, fmt.Sprintf("security_barrier=%v", v.(bool)))
+	}
+	if v, ok := d.GetOk(viewWithSecurityInvokerAttr); ok {
+		withOptions = append(withOptions, fmt.Sprintf("security_invoker=%v", v.(bool)))
+	}
+	if len(withOptions) > 0 {
+		fmt.Fprint(b, "WITH (", strings.Join(withOptions[:], ","), ")")
 	}
 
+	// Query
 	fmt.Fprint(b, " AS\n", query)
-	if checkOption == "" {
-		fmt.Fprint(b, "\nWITH ", checkOption, " CHECK OPTION")
-	}
 	b.WriteRune(';')
 
 	sql := b.String()
