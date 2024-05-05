@@ -41,6 +41,7 @@ const (
 	featurePubWithoutTruncate
 	featureFunction
 	featureServer
+	featureView
 )
 
 var (
@@ -112,6 +113,8 @@ var (
 		featureServer: semver.MustParseRange(">=10.0.0"),
 
 		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
+
+		featureView: semver.MustParseRange(">12.0.0"),
 	}
 )
 

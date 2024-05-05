@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -199,6 +200,7 @@ func Provider() *schema.Provider {
 			"postgresql_function":                  resourcePostgreSQLFunction(),
 			"postgresql_server":                    resourcePostgreSQLServer(),
 			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
+			"postgresql_view":                      resourcePostgreSQLView(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{

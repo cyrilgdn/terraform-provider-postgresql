@@ -23,6 +23,9 @@ const (
 	viewWithSecurityInvokerAttr = "with_security_invoker"
 
 	viewDropCascadeAttr = "drop_cascade"
+
+	// The private attributes for storing internal states of a view
+	internalStatesAttr = "internal_states"
 )
 
 func resourcePostgreSQLView() *schema.Resource {
@@ -51,7 +54,7 @@ func resourcePostgreSQLView() *schema.Resource {
 				Optional:    true,
 				Computed:    true,
 				ForceNew:    true,
-				Description: "The schema where the view is located. If not specified, the provider default is used.",
+				Description: "The schema where the view is located. If not specified, the provider default schema is used.",
 
 				DiffSuppressFunc: defaultDiffSuppressFunc,
 			},
@@ -67,10 +70,11 @@ func resourcePostgreSQLView() *schema.Resource {
 				Description: "The query of the view.",
 
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return normalizeFunctionBody(new) == old
+					internalStates := d.Get(internalStatesAttr).(map[string]interface{})
+					return internalStates["original_tf_view_query"] == new && internalStates["original_pg_view_query"] == old
 				},
 				StateFunc: func(val interface{}) string {
-					return normalizeFunctionBody(val.(string))
+					return val.(string)
 				},
 			},
 			viewWithCheckOptionAttr: {
@@ -98,27 +102,44 @@ func resourcePostgreSQLView() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 			},
+			internalStatesAttr: {
+				Type:     schema.TypeMap,
+				Computed: true,
+			},
 		},
 	}
 }
 
 func resourcePostgreSQLViewCreate(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureFunction) {
+	if !db.featureSupported(featureView) {
 		return fmt.Errorf(
 			"postgresql_view resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
 
+	originalViewQuery := d.Get(viewQueryAttr).(string)
+
 	if err := createView(db, d, false); err != nil {
 		return err
 	}
 
-	return resourcePostgreSQLViewReadImpl(db, d)
+	if err := resourcePostgreSQLViewReadImpl(db, d); err != nil {
+		return err
+	}
+
+	// Set internal states
+	pgViewQuery := d.Get(viewQueryAttr).(string)
+	internalStates := map[string]interface{}{
+		"original_tf_view_query": originalViewQuery,
+		"original_pg_view_query": pgViewQuery,
+	}
+	d.Set(internalStatesAttr, internalStates)
+	return nil
 }
 
 func resourcePostgreSQLViewRead(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureFunction) {
+	if !db.featureSupported(featureView) {
 		return fmt.Errorf(
 			"postgresql_view resource is not supported for this Postgres version (%s)",
 			db.version,
@@ -129,22 +150,35 @@ func resourcePostgreSQLViewRead(db *DBConnection, d *schema.ResourceData) error 
 }
 
 func resourcePostgreSQLViewUpdate(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureFunction) {
+	if !db.featureSupported(featureView) {
 		return fmt.Errorf(
 			"postgresql_view resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
 
+	originalViewQuery := d.Get(viewQueryAttr).(string)
+
 	if err := createView(db, d, true); err != nil {
 		return err
 	}
 
-	return resourcePostgreSQLViewReadImpl(db, d)
+	if err := resourcePostgreSQLViewReadImpl(db, d); err != nil {
+		return err
+	}
+
+	// Set internal states
+	pgViewQuery := d.Get(viewQueryAttr).(string)
+	internalStates := map[string]interface{}{
+		"original_tf_view_query": originalViewQuery,
+		"original_pg_view_query": pgViewQuery,
+	}
+	d.Set(internalStatesAttr, internalStates)
+	return nil
 }
 
 func resourcePostgreSQLViewDelete(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureFunction) {
+	if !db.featureSupported(featureView) {
 		return fmt.Errorf(
 			"postgresql_view resource is not supported for this Postgres version (%s)",
 			db.version,
@@ -181,7 +215,7 @@ func resourcePostgreSQLViewDelete(db *DBConnection, d *schema.ResourceData) erro
 }
 
 func resourcePostgreSQLViewExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featureFunction) {
+	if !db.featureSupported(featureView) {
 		return false, fmt.Errorf(
 			"postgresql_view resource is not supported for this Postgres version (%s)",
 			db.version,
@@ -221,14 +255,16 @@ type PGView struct {
 	WithCheckOption     string
 	WithSecurityBarrier bool
 	WithSecurityInvoker bool
+
+	DropCascade bool
 }
 
 type ViewInfo struct {
-	Database string
-	Schema   string
-	Name     string
-	Query    string
-	Option   []string
+	Database string   `db:"database"`
+	Schema   string   `db:"schema"`
+	Name     string   `db:"name"`
+	Query    string   `db:"query"`
+	Options  []string `db:"options"`
 }
 
 func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) error {
@@ -254,7 +290,7 @@ func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) er
 		`c.reloptions AS options ` +
 		`FROM pg_class c ` +
 		`JOIN pg_namespace n ON c.relnamespace = n.oid ` +
-		`WHERE c.relkind = 'v' AND n.nspname = '$1' AND c.relname = '$2'`
+		`WHERE c.relkind = 'v' AND n.nspname = $1 AND c.relname = $2`
 	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
@@ -263,7 +299,7 @@ func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	viewIDParts := strings.Split(viewID, ".")
 	var viewInfo ViewInfo
-	err = txn.QueryRow(query, viewIDParts[1], viewIDParts[2]).Scan(&viewInfo)
+	err = txn.QueryRow(query, viewIDParts[1], viewIDParts[2]).Scan(&viewInfo.Database, &viewInfo.Schema, &viewInfo.Name, &viewInfo.Query, pq.Array(&viewInfo.Options))
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL view: %s", viewID)
@@ -288,7 +324,10 @@ func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(viewQueryAttr, pgView.Query)
 	d.Set(viewWithCheckOptionAttr, pgView.WithCheckOption)
 	d.Set(viewWithSecurityBarrierAttr, pgView.WithSecurityBarrier)
-	d.Set(viewWithCheckOptionAttr, pgView.WithSecurityInvoker)
+	d.Set(viewWithSecurityInvokerAttr, pgView.WithSecurityInvoker)
+	if dropCascadeAttr, ok := d.GetOk(viewDropCascadeAttr); ok {
+		d.Set(viewDropCascadeAttr, dropCascadeAttr.(bool))
+	}
 
 	d.SetId(viewID)
 
@@ -306,8 +345,8 @@ func parseView(viewInfo ViewInfo) (PGView, error) {
 	// 1. check_option (enum) - [LOCAL | CASCADED]
 	// 2. security_barrier (boolean)
 	// 3. security_invoker (boolean)
-	options := viewInfo.Option
-	if viewInfo.Option != nil && len(options) > 0 {
+	options := viewInfo.Options
+	if len(options) > 0 {
 		for _, option := range options {
 			parts := strings.Split(option, "=")
 			if len(parts) != 2 {
@@ -315,7 +354,7 @@ func parseView(viewInfo ViewInfo) (PGView, error) {
 			}
 			switch parts[0] {
 			case "check_option":
-				pgView.WithCheckOption = parts[1]
+				pgView.WithCheckOption = strings.ToUpper(parts[1])
 			case "security_barrier":
 				val, _ := strconv.ParseBool(parts[1])
 				pgView.WithSecurityBarrier = val
