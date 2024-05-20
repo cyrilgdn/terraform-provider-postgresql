@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 export TF_ACC=true
 export PGHOST=localhost
