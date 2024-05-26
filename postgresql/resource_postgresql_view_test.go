@@ -290,8 +290,8 @@ func testAccCheckPostgresqlViewDestroy(s *terraform.State) error {
 }
 
 func checkViewExists(txn *sql.Tx, signature string) (bool, error) {
-	var _rez bool
-	err := txn.QueryRow(fmt.Sprintf("SELECT to_regclass('%s') IS NOT NULL", signature)).Scan(&_rez)
+	var exists bool
+	err := txn.QueryRow(fmt.Sprintf("SELECT to_regclass('%s') IS NOT NULL", signature)).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -299,5 +299,5 @@ func checkViewExists(txn *sql.Tx, signature string) (bool, error) {
 		return false, fmt.Errorf("Error reading info about view: %s", err)
 	}
 
-	return _rez, nil
+	return exists, nil
 }

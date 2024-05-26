@@ -24,8 +24,15 @@ const (
 
 	viewDropCascadeAttr = "drop_cascade"
 
-	// The private attributes for storing internal states of a view
-	internalStatesAttr = "internal_states"
+	// Postgres may parse and rewrite the view query with its own rules.
+	// So the value in viewQueryAttr is enough to detect if a query has been
+	// modified in Postgres without Terraform's awareness. These two additional
+	// states need to be stored for the detection:
+	//
+	// Stores the current parsed/rewritten query in Postgres.
+	internalPGParsedQueryAttr = "internal_pg_parsed_query"
+	// Stores the last updated parsed/rewritten query has been recorded in Terraform.
+	internalTFParsedQueryAttr = "internal_tf_parsed_query"
 )
 
 func resourcePostgreSQLView() *schema.Resource {
@@ -68,14 +75,6 @@ func resourcePostgreSQLView() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				Description: "The query of the view.",
-
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					internalStates := d.Get(internalStatesAttr).(map[string]interface{})
-					return internalStates["original_tf_view_query"] == new && internalStates["original_pg_view_query"] == old
-				},
-				StateFunc: func(val interface{}) string {
-					return val.(string)
-				},
 			},
 			viewWithCheckOptionAttr: {
 				Type:             schema.TypeString,
@@ -102,8 +101,12 @@ func resourcePostgreSQLView() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 			},
-			internalStatesAttr: {
-				Type:     schema.TypeMap,
+			internalPGParsedQueryAttr: {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			internalTFParsedQueryAttr: {
+				Type:     schema.TypeString,
 				Computed: true,
 			},
 		},
@@ -118,8 +121,6 @@ func resourcePostgreSQLViewCreate(db *DBConnection, d *schema.ResourceData) erro
 		)
 	}
 
-	originalViewQuery := d.Get(viewQueryAttr).(string)
-
 	if err := createView(db, d, false); err != nil {
 		return err
 	}
@@ -128,13 +129,7 @@ func resourcePostgreSQLViewCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	// Set internal states
-	pgViewQuery := d.Get(viewQueryAttr).(string)
-	internalStates := map[string]interface{}{
-		"original_tf_view_query": originalViewQuery,
-		"original_pg_view_query": pgViewQuery,
-	}
-	d.Set(internalStatesAttr, internalStates)
+	d.Set(internalTFParsedQueryAttr, d.Get(internalPGParsedQueryAttr).(string))
 	return nil
 }
 
@@ -146,7 +141,19 @@ func resourcePostgreSQLViewRead(db *DBConnection, d *schema.ResourceData) error 
 		)
 	}
 
-	return resourcePostgreSQLViewReadImpl(db, d)
+	err := resourcePostgreSQLViewReadImpl(db, d)
+	if err != nil {
+		return err
+	}
+
+	// Detect if the query has been modified in Postgres without Terraform's awareness.
+	// For this kind of error, the users must consolidate manually.
+	tfQuery := d.Get(internalTFParsedQueryAttr).(string)
+	pgQuery := d.Get(internalPGParsedQueryAttr).(string)
+	if tfQuery != pgQuery {
+		return fmt.Errorf("the view: '%s' has been modified in Postgres", d.Get(viewNameAttr).(string))
+	}
+	return nil
 }
 
 func resourcePostgreSQLViewUpdate(db *DBConnection, d *schema.ResourceData) error {
@@ -157,8 +164,6 @@ func resourcePostgreSQLViewUpdate(db *DBConnection, d *schema.ResourceData) erro
 		)
 	}
 
-	originalViewQuery := d.Get(viewQueryAttr).(string)
-
 	if err := createView(db, d, true); err != nil {
 		return err
 	}
@@ -167,13 +172,7 @@ func resourcePostgreSQLViewUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	// Set internal states
-	pgViewQuery := d.Get(viewQueryAttr).(string)
-	internalStates := map[string]interface{}{
-		"original_tf_view_query": originalViewQuery,
-		"original_pg_view_query": pgViewQuery,
-	}
-	d.Set(internalStatesAttr, internalStates)
+	d.Set(internalTFParsedQueryAttr, d.Get(internalPGParsedQueryAttr).(string))
 	return nil
 }
 
@@ -321,13 +320,15 @@ func resourcePostgreSQLViewReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(viewDatabaseAttr, pgView.Database)
 	d.Set(viewSchemaAttr, pgView.Schema)
 	d.Set(viewNameAttr, pgView.Name)
-	d.Set(viewQueryAttr, pgView.Query)
+	d.Set(viewQueryAttr, d.Get(viewQueryAttr).(string))
 	d.Set(viewWithCheckOptionAttr, pgView.WithCheckOption)
 	d.Set(viewWithSecurityBarrierAttr, pgView.WithSecurityBarrier)
 	d.Set(viewWithSecurityInvokerAttr, pgView.WithSecurityInvoker)
 	if dropCascadeAttr, ok := d.GetOk(viewDropCascadeAttr); ok {
 		d.Set(viewDropCascadeAttr, dropCascadeAttr.(bool))
 	}
+	// Internal states
+	d.Set(internalPGParsedQueryAttr, pgView.Query)
 
 	d.SetId(viewID)
 
@@ -397,6 +398,11 @@ func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
 	name := d.Get(viewNameAttr).(string)
 	query := d.Get(viewQueryAttr).(string)
 
+	fullViewNameBuffer := bytes.NewBufferString(pq.QuoteIdentifier(schemaName))
+	fullViewNameBuffer.WriteString(".")
+	fullViewNameBuffer.WriteString(pq.QuoteIdentifier(name))
+	fullViewName := fullViewNameBuffer.String()
+
 	// Construct the view
 	b := bytes.NewBufferString("CREATE ")
 	if replace {
@@ -405,8 +411,7 @@ func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
 
 	b.WriteString("VIEW ")
 
-	fmt.Fprint(b, pq.QuoteIdentifier(schemaName), ".")
-	fmt.Fprint(b, pq.QuoteIdentifier(name))
+	fmt.Fprint(b, fullViewName)
 
 	// With options
 	var withOptions []string
@@ -427,12 +432,23 @@ func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
 	fmt.Fprint(b, " AS\n", query)
 	b.WriteRune(';')
 
+	// Drop view command
+	dropViewSqlBuffer := bytes.NewBufferString("DROP VIEW IF EXISTS ")
+	dropViewSqlBuffer.WriteString(fullViewName)
+	dropViewSqlBuffer.WriteString(" RESTRICT;")
+	dropViewSql := dropViewSqlBuffer.String()
+
 	sql := b.String()
 	txn, err := startTransaction(db.client, d.Get(viewDatabaseAttr).(string))
 	if err != nil {
 		return err
 	}
 	defer deferredRollback(txn)
+
+	// Drop view if exist
+	if _, err := txn.Exec(dropViewSql); err != nil {
+		return err
+	}
 
 	if _, err := txn.Exec(sql); err != nil {
 		return err
