@@ -51,6 +51,88 @@ resource "postgresql_view" "basic_view" {
 	})
 }
 
+func TestAccPostgresqlView_CaseSensitiveViewName(t *testing.T) {
+	config := `
+resource "postgresql_view" "case_sensitive_view_name" {
+	name = "Case_Sensitive_View_Name"
+	query = <<-EOF
+		SELECT 1 AS one;
+	EOF
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureView)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlViewDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlViewExists("postgresql_view.case_sensitive_view_name", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.case_sensitive_view_name", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.case_sensitive_view_name", "name", "Case_Sensitive_View_Name"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.case_sensitive_view_name", "with_check_option", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.case_sensitive_view_name", "with_security_barrier", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.case_sensitive_view_name", "with_security_invoker", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.case_sensitive_view_name", "drop_cascade", "false"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlView_QueryWithDoubleQuotes(t *testing.T) {
+	config := `
+resource "postgresql_view" "double_quotes_query_view" {
+    name = "double_quotes_query_view"
+    query = <<-EOF
+SELECT 1 AS "One", 2 AS two;
+	EOF
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureView)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlViewDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlViewExists("postgresql_view.double_quotes_query_view", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "name", "double_quotes_query_view"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "query", "SELECT 1 AS \"One\", 2 AS two;\n"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "with_check_option", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "with_security_barrier", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "with_security_invoker", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.double_quotes_query_view", "drop_cascade", "false"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccPostgresqlView_SpecificDatabase(t *testing.T) {
 	skipIfNotAcc(t)
 
@@ -223,6 +305,124 @@ resource "postgresql_view" "pg_view" {
 	})
 }
 
+func TestAccPostgresqlView_QuerySelectColumnChange(t *testing.T) {
+	configCreate := `
+resource "postgresql_view" "pg_view" {
+    name = "pg_view"
+	query = "SELECT 1 as one;"
+}
+`
+
+	configUpdateAddColumn := `
+resource "postgresql_view" "pg_view" {
+    name = "pg_view"
+	query = "SELECT 1 as one, 2 as two;"
+}`
+
+	configUpdateReplaceColumn := `
+resource "postgresql_view" "pg_view" {
+    name = "pg_view"
+	query = "SELECT 1 as one, 3 as three;"
+}`
+
+	configUpdateDeleteColumn := `
+resource "postgresql_view" "pg_view" {
+    name = "pg_view"
+	query = "SELECT 1 as one;"
+}`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureView)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlViewDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: configCreate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlViewExists("postgresql_view.pg_view", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "name", "pg_view"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "query", "SELECT 1 as one;"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_check_option", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_barrier", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_invoker", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "drop_cascade", "false"),
+				),
+			},
+			{
+				Config: configUpdateAddColumn,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlViewExists("postgresql_view.pg_view", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "name", "pg_view"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "query", "SELECT 1 as one, 2 as two;"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_check_option", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_barrier", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_invoker", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "drop_cascade", "false"),
+				),
+			},
+			{
+				Config: configUpdateReplaceColumn,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlViewExists("postgresql_view.pg_view", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "name", "pg_view"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "query", "SELECT 1 as one, 3 as three;"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_check_option", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_barrier", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_invoker", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "drop_cascade", "false"),
+				),
+			},
+			{
+				Config: configUpdateDeleteColumn,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlViewExists("postgresql_view.pg_view", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "schema", "public"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "name", "pg_view"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "query", "SELECT 1 as one;"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_check_option", ""),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_barrier", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "with_security_invoker", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_view.pg_view", "drop_cascade", "false"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlViewExists(n string, database string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -265,15 +465,13 @@ func testAccCheckPostgresqlViewDestroy(s *terraform.State) error {
 			continue
 		}
 
+		viewIdentifier := rs.Primary.ID
+
 		txn, err := startTransaction(client, "")
 		if err != nil {
 			return err
 		}
 		defer deferredRollback(txn)
-
-		viewParts := strings.Split(rs.Primary.ID, ".")
-		_, schemaName, viewName := viewParts[0], viewParts[1], viewParts[2]
-		viewIdentifier := fmt.Sprintf("%s.%s", schemaName, viewName)
 
 		exists, err := checkViewExists(txn, viewIdentifier)
 
@@ -291,7 +489,10 @@ func testAccCheckPostgresqlViewDestroy(s *terraform.State) error {
 
 func checkViewExists(txn *sql.Tx, signature string) (bool, error) {
 	var exists bool
-	err := txn.QueryRow(fmt.Sprintf("SELECT to_regclass('%s') IS NOT NULL", signature)).Scan(&exists)
+	signatureParts := strings.Split(signature, ".")
+	schema := signatureParts[1]
+	viewName := signatureParts[2]
+	err := txn.QueryRow(fmt.Sprintf("SELECT viewname IS NOT NULL FROM pg_views where schemaname = '%s' AND viewname = '%s'", schema, viewName)).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil

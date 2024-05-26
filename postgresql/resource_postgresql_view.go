@@ -121,7 +121,7 @@ func resourcePostgreSQLViewCreate(db *DBConnection, d *schema.ResourceData) erro
 		)
 	}
 
-	if err := createView(db, d, false); err != nil {
+	if err := createView(db, d); err != nil {
 		return err
 	}
 
@@ -164,7 +164,7 @@ func resourcePostgreSQLViewUpdate(db *DBConnection, d *schema.ResourceData) erro
 		)
 	}
 
-	if err := createView(db, d, true); err != nil {
+	if err := createView(db, d); err != nil {
 		return err
 	}
 
@@ -389,7 +389,7 @@ func genViewID(db *DBConnection, d *schema.ResourceData) (string, error) {
 	return b.String(), nil
 }
 
-func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
+func createView(db *DBConnection, d *schema.ResourceData) error {
 	schemaName := "public"
 	if v, ok := d.GetOk(viewSchemaAttr); ok {
 		schemaName = v.(string)
@@ -404,13 +404,7 @@ func createView(db *DBConnection, d *schema.ResourceData, replace bool) error {
 	fullViewName := fullViewNameBuffer.String()
 
 	// Construct the view
-	b := bytes.NewBufferString("CREATE ")
-	if replace {
-		b.WriteString("OR REPLACE ")
-	}
-
-	b.WriteString("VIEW ")
-
+	b := bytes.NewBufferString("CREATE VIEW ")
 	fmt.Fprint(b, fullViewName)
 
 	// With options
