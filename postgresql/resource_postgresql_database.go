@@ -22,6 +22,7 @@ const (
 	dbIsTemplateAttr = "is_template"
 	dbNameAttr       = "name"
 	dbOwnerAttr      = "owner"
+	dbObjectsOwnedBy = "objects_owned_by"
 	dbTablespaceAttr = "tablespace_name"
 	dbTemplateAttr   = "template"
 )
@@ -48,6 +49,12 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Optional:    true,
 				Computed:    true,
 				Description: "The ROLE which owns the database",
+			},
+			dbObjectsOwnedBy: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "The ROLE which owns the objects in the database",
 			},
 			dbTemplateAttr: {
 				Type:        schema.TypeString,
@@ -278,6 +285,13 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 	// Drop with force only for psql 13+
 	if db.featureSupported(featureForceDropDatabase) {
 		dropWithForce = "WITH ( FORCE )"
+	}
+
+	if d.Get(dbObjectsOwnedBy) != "" {
+		var sql = fmt.Sprintf("DROP OWNED BY %s CASCADE", pq.QuoteIdentifier(d.Get(dbObjectsOwnedBy).(string)))
+		if _, err := db.Exec(sql); err != nil {
+			return fmt.Errorf("Error dropping objects owned by: %w", err)
+		}
 	}
 
 	sql := fmt.Sprintf("DROP DATABASE %s %s", pq.QuoteIdentifier(dbName), dropWithForce)
