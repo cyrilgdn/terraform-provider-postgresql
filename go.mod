@@ -16,6 +16,7 @@ require (
 	gocloud.dev v0.34.0
 	golang.org/x/net v0.26.0
 	golang.org/x/oauth2 v0.10.0
+	google.golang.org/api v0.134.0
 )
 
 require (
@@ -91,7 +92,6 @@ require (
 	golang.org/x/sys v0.21.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/api v0.134.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230731193218-e0aa005b6bdf // indirect
 	google.golang.org/grpc v1.57.0 // indirect
