@@ -13,7 +13,7 @@ setup() {
 
 run() {
   go test -count=1 ./postgresql -v -timeout 120m
-  
+
   # keep the return value for the scripts to fail and clean properly
   return $?
 }
@@ -31,4 +31,5 @@ run_suite() {
 }
 
 run_suite "superuser"
+run_suite "proxy"
 run_suite "rds"

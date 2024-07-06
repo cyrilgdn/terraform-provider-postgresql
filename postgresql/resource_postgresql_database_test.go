@@ -270,7 +270,7 @@ func checkUserMembership(
 	t *testing.T, dsn, member, role string, shouldHaveRole bool,
 ) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		db, err := sql.Open("postgres", dsn)
+		db, err := sql.Open(proxyDriverName, dsn)
 		if err != nil {
 			t.Fatalf("could to create connection pool: %v", err)
 		}

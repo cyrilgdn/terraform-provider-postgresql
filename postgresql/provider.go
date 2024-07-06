@@ -182,6 +182,12 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"proxy_url": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "SOCKS5 proxy URL.",
+				ValidateFunc: validation.IsURLWithScheme([]string{"socks5", "socks5h"}),
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -336,6 +342,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		MaxConns:          d.Get("max_connections").(int),
 		ExpectedVersion:   version,
 		SSLRootCertPath:   d.Get("sslrootcert").(string),
+		ProxyURL:          d.Get("proxy_url").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
