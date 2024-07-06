@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -199,6 +200,12 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"proxy_url": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "SOCKS5 proxy URL.",
+				ValidateFunc: validation.IsURLWithScheme([]string{"socks5", "socks5h"}),
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -382,6 +389,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
+		ProxyURL:                        d.Get("proxy_url").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

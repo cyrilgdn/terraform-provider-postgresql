@@ -141,7 +141,7 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 
 func checkGrantRole(t *testing.T, dsn, role string, grantRole string, withAdmin bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		db, err := sql.Open("postgres", dsn)
+		db, err := sql.Open(proxyDriverName, dsn)
 		if err != nil {
 			t.Fatalf("could to create connection pool: %v", err)
 		}

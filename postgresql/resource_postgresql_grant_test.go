@@ -1442,7 +1442,7 @@ func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
 			// Change the owner to the new pg_database_owner role
 			func() {
 				config := getTestConfig(t)
-				db, err := sql.Open("postgres", config.connStr(dbName))
+				db, err := sql.Open(proxyDriverName, config.connStr(dbName))
 				if err != nil {
 					t.Fatalf("could not connect to database %s: %v", dbName, err)
 				}
