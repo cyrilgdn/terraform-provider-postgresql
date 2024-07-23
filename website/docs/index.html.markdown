@@ -134,7 +134,7 @@ data "aws_secretsmanager_secret_version" "postgres_password" {
 
 provider "postgresql" {
    [...]
-   password = jsondecode(data.aws_secretsmanager_secret_version.db_secret.secret_string)["password"]
+   password = jsondecode(data.aws_secretsmanager_secret_version.postgres_password.secret_string)["password"]
 }
 ```
 
