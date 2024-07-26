@@ -14,16 +14,17 @@ import (
 )
 
 const (
-	dbAllowConnsAttr = "allow_connections"
-	dbCTypeAttr      = "lc_ctype"
-	dbCollationAttr  = "lc_collate"
-	dbConnLimitAttr  = "connection_limit"
-	dbEncodingAttr   = "encoding"
-	dbIsTemplateAttr = "is_template"
-	dbNameAttr       = "name"
-	dbOwnerAttr      = "owner"
-	dbTablespaceAttr = "tablespace_name"
-	dbTemplateAttr   = "template"
+	dbAllowConnsAttr       = "allow_connections"
+	dbCTypeAttr            = "lc_ctype"
+	dbCollationAttr        = "lc_collate"
+	dbConnLimitAttr        = "connection_limit"
+	dbEncodingAttr         = "encoding"
+	dbIsTemplateAttr       = "is_template"
+	dbNameAttr             = "name"
+	dbOwnerAttr            = "owner"
+	dbTablespaceAttr       = "tablespace_name"
+	dbTemplateAttr         = "template"
+	dbAlterObjectOwnership = "alter_object_ownership"
 )
 
 func resourcePostgreSQLDatabase() *schema.Resource {
@@ -101,6 +102,12 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Optional:    true,
 				Computed:    true,
 				Description: "If true, then this database can be cloned by any user with CREATEDB privileges",
+			},
+			dbAlterObjectOwnership: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "If true, the owner of already existing objects will change if the owner changes",
 			},
 		},
 	}
@@ -393,6 +400,10 @@ func resourcePostgreSQLDatabaseUpdate(db *DBConnection, d *schema.ResourceData) 
 		return err
 	}
 
+	if err := setAlterOwnership(db, d); err != nil {
+		return err
+	}
+
 	if err := setDBOwner(db, d); err != nil {
 		return err
 	}
@@ -468,12 +479,61 @@ func setDBOwner(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	dbName := d.Get(dbNameAttr).(string)
+
 	sql := fmt.Sprintf("ALTER DATABASE %s OWNER TO %s", pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(owner))
 	if _, err := db.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating database OWNER: %w", err)
 	}
 
 	return err
+}
+
+func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
+	if d.HasChange(dbOwnerAttr) || d.HasChange(dbAlterObjectOwnership) {
+		owner := d.Get(dbOwnerAttr).(string)
+		if owner == "" {
+			return nil
+		}
+
+		alterOwnership := d.Get(dbAlterObjectOwnership).(bool)
+		if !alterOwnership {
+			return nil
+		}
+		currentUser := db.client.config.getDatabaseUsername()
+
+		dbName := d.Get(dbNameAttr).(string)
+
+		lockTxn, err := startTransaction(db.client, dbName)
+		if err := pgLockRole(lockTxn, currentUser); err != nil {
+			return err
+		}
+		defer lockTxn.Commit()
+
+		currentOwner, err := getDatabaseOwner(db, dbName)
+		if err != nil {
+			return fmt.Errorf("Error getting current database OWNER: %w", err)
+		}
+
+		currentOwnerGranted, err := grantRoleMembership(db, currentOwner, currentUser)
+		if err != nil {
+			return err
+		}
+		if currentOwnerGranted {
+			defer func() {
+				_, err = revokeRoleMembership(db, currentOwner, currentUser)
+			}()
+		}
+
+		newOwner := d.Get(dbOwnerAttr).(string)
+
+		sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
+		if _, err := lockTxn.Exec(sql); err != nil {
+			return fmt.Errorf("Error reassigning objects owned by '%s': %w", currentOwner, err)
+		}
+		return nil
+	}
+
+	return nil
 }
 
 func setDBTablespace(db QueryAble, d *schema.ResourceData) error {
