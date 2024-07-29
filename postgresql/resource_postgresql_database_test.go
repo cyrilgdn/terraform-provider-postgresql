@@ -294,7 +294,10 @@ func TestAccPostgresqlDatabase_AlterObjectOwnership(t *testing.T) {
 	}
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
 		Steps: []resource.TestStep{
