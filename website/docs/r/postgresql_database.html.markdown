@@ -17,12 +17,13 @@ within a PostgreSQL server instance.
 
 ```hcl
 resource "postgresql_database" "my_db" {
-  name              = "my_db"
-  owner             = "my_role"
-  template          = "template0"
-  lc_collate        = "C"
-  connection_limit  = -1
-  allow_connections = true
+  name                   = "my_db"
+  owner                  = "my_role"
+  template               = "template0"
+  lc_collate             = "C"
+  connection_limit       = -1
+  allow_connections      = true
+  alter_object_ownership = true
 }
 ```
 
@@ -81,6 +82,14 @@ resource "postgresql_database" "my_db" {
   classification of the specified `template` database.  Changing this value will
   force the creation of a new resource as this value can only be changed when a
   database is created.
+
+* `alter_object_ownership` - (Optional) If `true`, the change of the database
+  `owner` will also include a reassignment of the ownership of preexisting
+  objects like tables or sequences from the previous owner to the new one.
+  If set to `false` (the default), then the previous database `owner` will still
+  hold the ownership of the objects in that database. To alter existing objects in
+  the database, you must be a direct or indirect member of the specified role, or
+  the username in the provider is a superuser.
 
 ## Import Example
 
