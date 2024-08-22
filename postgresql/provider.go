@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -190,6 +191,7 @@ func Provider() *schema.Provider {
 			"postgresql_extension":                 resourcePostgreSQLExtension(),
 			"postgresql_grant":                     resourcePostgreSQLGrant(),
 			"postgresql_grant_role":                resourcePostgreSQLGrantRole(),
+			"postgresql_event_trigger":             resourcePostgreSQLEventTrigger(),
 			"postgresql_replication_slot":          resourcePostgreSQLReplicationSlot(),
 			"postgresql_publication":               resourcePostgreSQLPublication(),
 			"postgresql_subscription":              resourcePostgreSQLSubscription(),
