@@ -139,7 +139,7 @@ resource "postgresql_event_trigger" "event_trigger" {
   function = postgresql_function.function.name
   on = "ddl_command_end"
   owner = "postgres"
-  enabled = "enable"
+  status = "enable"
 
   filter {
     variable = "TAG"

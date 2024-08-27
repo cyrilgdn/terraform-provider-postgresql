@@ -21,7 +21,7 @@ const (
 	eventTriggerDatabaseAttr       = "database"
 	eventTriggerSchemaAttr         = "schema"
 	eventTriggerOwnerAttr          = "owner"
-	eventTriggerEnabledAttr        = "enabled"
+	eventTriggerStatusAttr         = "status"
 )
 
 func resourcePostgreSQLEventTrigger() *schema.Resource {
@@ -102,7 +102,7 @@ func resourcePostgreSQLEventTrigger() *schema.Resource {
 				ForceNew:    true,
 				Description: "Schema where the function is located. If not specified, the provider default schema is used.",
 			},
-			eventTriggerEnabledAttr: {
+			eventTriggerStatusAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Default:     "enable",
@@ -129,87 +129,9 @@ func resourcePostgreSQLEventTrigger() *schema.Resource {
 }
 
 func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceData) error {
-	if err := createEventTrigger(db, d); err != nil {
-		return err
-	}
-
-	d.SetId(d.Get(eventTriggerNameAttr).(string))
-
-	return nil
-}
-
-func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceData) error {
-	if err := updateEventTrigger(db, d); err != nil {
-		return err
-	}
-
-	d.SetId(d.Get(eventTriggerNameAttr).(string))
-
-	return nil
-}
-
-func resourcePostgreSQLEventTriggerDelete(db *DBConnection, d *schema.ResourceData) error {
-	if err := deleteEventTrigger(db, d); err != nil {
-		return err
-	}
-
-	d.SetId(d.Get(eventTriggerNameAttr).(string))
-
-	return nil
-}
-
-func resourcePostgreSQLEventTriggerRead(db *DBConnection, d *schema.ResourceData) error {
-	return readEventTrigger(db, d)
-}
-
-func resourcePostgreSQLEventTriggerExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	database, eventTriggerName, err := getDBEventTriggerName(d, db.client.databaseName)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	err = txn.QueryRow("SELECT evtname FROM pg_event_trigger WHERE evtname=$1", eventTriggerName).Scan(&eventTriggerName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("Error reading schema: %w", err)
-	}
-
-	return true, nil
-}
-
-func getDBEventTriggerName(d *schema.ResourceData, databaseName string) (string, string, error) {
-	database := getDatabase(d, databaseName)
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
+	d.SetId(eventTriggerName)
 
-	// When importing, we have to parse the ID to find event trigger and database names.
-	if eventTriggerName == "" {
-		parsed := strings.Split(d.Id(), ".")
-		if len(parsed) != 2 {
-			return "", "", fmt.Errorf("schema ID %s has not the expected format 'database.event_trigger': %v", d.Id(), parsed)
-		}
-		database = parsed[0]
-		eventTriggerName = parsed[1]
-	}
-
-	return database, eventTriggerName, nil
-}
-
-func createEventTrigger(db *DBConnection, d *schema.ResourceData) error {
-	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
 	b := bytes.NewBufferString("CREATE EVENT TRIGGER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
@@ -252,7 +174,7 @@ func createEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 	b = bytes.NewBufferString("ALTER EVENT TRIGGER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
-	eventTriggerEnabled := d.Get(eventTriggerEnabledAttr).(string)
+	eventTriggerEnabled := d.Get(eventTriggerStatusAttr).(string)
 	fmt.Fprint(b, " ", eventTriggerEnabled)
 
 	statusSql := b.String()
@@ -290,14 +212,15 @@ func createEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 	return nil
 }
 
-func updateEventTrigger(db *DBConnection, d *schema.ResourceData) error {
+func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceData) error {
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
+	d.SetId(eventTriggerName)
 
 	// Enable or disable the event trigger
 	b := bytes.NewBufferString("ALTER EVENT TRIGGER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
-	eventTriggerEnabled := d.Get(eventTriggerEnabledAttr).(string)
+	eventTriggerEnabled := d.Get(eventTriggerStatusAttr).(string)
 	fmt.Fprint(b, " ", eventTriggerEnabled)
 
 	statusSql := b.String()
@@ -330,8 +253,10 @@ func updateEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 	return nil
 }
 
-func deleteEventTrigger(db *DBConnection, d *schema.ResourceData) error {
+func resourcePostgreSQLEventTriggerDelete(db *DBConnection, d *schema.ResourceData) error {
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
+	d.SetId(eventTriggerName)
+
 	b := bytes.NewBufferString("DROP EVENT TRIGGER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
@@ -354,7 +279,7 @@ func deleteEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 	return nil
 }
 
-func readEventTrigger(db *DBConnection, d *schema.ResourceData) error {
+func resourcePostgreSQLEventTriggerRead(db *DBConnection, d *schema.ResourceData) error {
 	database, eventTriggerName, err := getDBEventTriggerName(d, db.client.databaseName)
 	if err != nil {
 		return err
@@ -367,8 +292,7 @@ func readEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 		`JOIN pg_catalog.pg_namespace on pg_catalog.pg_proc.pronamespace = pg_catalog.pg_namespace.oid ` +
 		`WHERE evtname=$1`
 
-	var name, on, owner, function, schema string
-	var enabled string
+	var name, on, owner, function, schema, status string
 	var tags []string
 
 	values := []interface{}{
@@ -376,7 +300,7 @@ func readEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 		&on,
 		&function,
 		&schema,
-		&enabled,
+		&status,
 		(*pq.StringArray)(&tags),
 		&owner,
 	}
@@ -401,34 +325,29 @@ func readEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	d.SetId(name)
-	d.Set("name", name)
-	d.Set("on", on)
-	d.Set("function", function)
-	d.Set("owner", owner)
-	d.Set("database", database)
-	d.Set("schema", schema)
+	d.Set(eventTriggerNameAttr, name)
+	d.Set(eventTriggerOnAttr, on)
+	d.Set(eventTriggerFunctionAttr, function)
+	d.Set(eventTriggerOwnerAttr, owner)
+	d.Set(eventTriggerDatabaseAttr, database)
+	d.Set(eventTriggerSchemaAttr, schema)
 
-	switch enabled {
+	switch status {
 	case "D":
-		d.Set("enabled", "disable")
+		d.Set(eventTriggerStatusAttr, "disable")
 	case "O":
-		d.Set("enabled", "enable")
+		d.Set(eventTriggerStatusAttr, "enable")
 	case "R":
-		d.Set("enabled", "enable_replica")
+		d.Set(eventTriggerStatusAttr, "enable_replica")
 	case "A":
-		d.Set("enabled", "enable_always")
+		d.Set(eventTriggerStatusAttr, "enable_always")
 	}
 
-	// TODO: maybe it's better to add a struct
-	// with types instead of an interface{}?
 	var filters []interface{}
 
 	if len(tags) > 0 {
 		var values []string
-
-		for _, tag := range tags {
-			values = append(values, tag)
-		}
+		values = append(values, tags...)
 
 		filter := map[string]interface{}{
 			"variable": "TAG",
@@ -438,7 +357,53 @@ func readEventTrigger(db *DBConnection, d *schema.ResourceData) error {
 		filters = append(filters, filter)
 	}
 
-	d.Set("filter", filters)
+	d.Set(eventTriggerFilterAttr, filters)
 
 	return nil
+}
+
+func resourcePostgreSQLEventTriggerExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	database, eventTriggerName, err := getDBEventTriggerName(d, db.client.databaseName)
+	if err != nil {
+		return false, err
+	}
+
+	// Check if the database exists
+	exists, err := dbExists(db, database)
+	if err != nil || !exists {
+		return false, err
+	}
+
+	txn, err := startTransaction(db.client, database)
+	if err != nil {
+		return false, err
+	}
+	defer deferredRollback(txn)
+
+	err = txn.QueryRow("SELECT evtname FROM pg_event_trigger WHERE evtname=$1", eventTriggerName).Scan(&eventTriggerName)
+	switch {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("error reading schema: %w", err)
+	}
+
+	return true, nil
+}
+
+func getDBEventTriggerName(d *schema.ResourceData, databaseName string) (string, string, error) {
+	database := getDatabase(d, databaseName)
+	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
+
+	// When importing, we have to parse the ID to find event trigger and database names.
+	if eventTriggerName == "" {
+		parsed := strings.Split(d.Id(), ".")
+		if len(parsed) != 2 {
+			return "", "", fmt.Errorf("schema ID %s has not the expected format 'database.event_trigger': %v", d.Id(), parsed)
+		}
+		database = parsed[0]
+		eventTriggerName = parsed[1]
+	}
+
+	return database, eventTriggerName, nil
 }
