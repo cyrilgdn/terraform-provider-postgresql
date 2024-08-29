@@ -291,6 +291,10 @@ func TestAccPostgresqlDatabase_AlterObjectOwnership(t *testing.T) {
 			t, dsn,
 			fmt.Sprintf("CREATE ROLE %s;", role),
 		)
+		defer func(role string) {
+			dbExecute(t, dsn, fmt.Sprintf("DROP ROLE %s", role))
+		}(role)
+
 	}
 
 	resource.Test(t, resource.TestCase{
