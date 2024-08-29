@@ -89,7 +89,7 @@ resource "postgresql_database" "my_db" {
   If set to `false` (the default), then the previous database `owner` will still
   hold the ownership of the objects in that database. To alter existing objects in
   the database, you must be a direct or indirect member of the specified role, or
-  the username in the provider is a superuser.
+  the username in the provider must be superuser.
 
 ## Import Example
 
