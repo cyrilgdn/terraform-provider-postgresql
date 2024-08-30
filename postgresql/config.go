@@ -244,11 +244,17 @@ func (c *Config) connStr(database string) string {
 		host = strings.ReplaceAll(host, ":", "/")
 	}
 
+	var userInfo string
+	if c.Password == "" {
+		userInfo = url.PathEscape(c.Username)
+	} else {
+		userInfo = fmt.Sprintf("%s:%s", url.PathEscape(c.Username), url.PathEscape(c.Password))
+	}
+
 	connStr := fmt.Sprintf(
-		"%s://%s:%s@%s:%d/%s?%s",
+		"%s://%s@%s:%d/%s?%s",
 		c.Scheme,
-		url.PathEscape(c.Username),
-		url.PathEscape(c.Password),
+		userInfo,
 		host,
 		c.Port,
 		database,
