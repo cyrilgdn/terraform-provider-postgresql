@@ -514,6 +514,12 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 			return fmt.Errorf("Error getting current database OWNER: %w", err)
 		}
 
+		newOwner := d.Get(dbOwnerAttr).(string)
+
+		if currentOwner == newOwner {
+			return nil
+		}
+
 		currentOwnerGranted, err := grantRoleMembership(db, currentOwner, currentUser)
 		if err != nil {
 			return err
@@ -523,9 +529,6 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 				_, err = revokeRoleMembership(db, currentOwner, currentUser)
 			}()
 		}
-
-		newOwner := d.Get(dbOwnerAttr).(string)
-
 		sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
 		if _, err := lockTxn.Exec(sql); err != nil {
 			return fmt.Errorf("Error reassigning objects owned by '%s': %w", currentOwner, err)
