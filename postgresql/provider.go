@@ -42,6 +42,11 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
 				Description: "Name of PostgreSQL server address to connect to",
 			},
+			"hostaddr": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Numeric IP address of host to connect to",
+			},
 			"port": {
 				Type:        schema.TypeInt,
 				Optional:    true,
@@ -325,6 +330,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	config := Config{
 		Scheme:            d.Get("scheme").(string),
 		Host:              host,
+		HostAddr:          d.Get("hostaddr").(string),
 		Port:              port,
 		Username:          username,
 		Password:          password,
