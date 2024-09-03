@@ -214,7 +214,28 @@ To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres` and `host` to the c
 For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file.
 These credentials can be created here: https://console.cloud.google.com/iam-admin/serviceaccounts
 
-See also: https://cloud.google.com/docs/authentication/production
+In addition, the provider supports service account impersonation with the `gcp_iam_impersonate_service_account` option. You must ensure:
+
+- The IAM database user has sufficient permissions to connect to the database, e.g., `roles/cloudsql.instanceUser`
+- The principal (IAM user or IAM service account) behind the `GOOGLE_APPLICATION_CREDENTIALS` has sufficient permissions to impersonate the provided service account. Learn more from [roles for service account authentication](https://cloud.google.com/iam/docs/service-account-permissions).
+
+```hcl
+provider "postgresql" {
+  scheme   = "gcppostgres"
+  host     = "test-project/europe-west3/test-instance"
+  port     = 5432
+
+  username                            = "service_account_id@$project_id.iam"
+  gcp_iam_impersonate_service_account = "service_account_id@$project_id.iam.gserviceaccount.com"
+
+  superuser = false
+}
+```
+
+See also: 
+
+- https://cloud.google.com/docs/authentication/production
+- https://cloud.google.com/sql/docs/postgres/iam-logins
 
 ---
 **Note**
