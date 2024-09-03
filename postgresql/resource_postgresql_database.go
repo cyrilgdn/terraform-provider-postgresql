@@ -489,53 +489,52 @@ func setDBOwner(db *DBConnection, d *schema.ResourceData) error {
 }
 
 func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
-	if d.HasChange(dbOwnerAttr) || d.HasChange(dbAlterObjectOwnership) {
-		owner := d.Get(dbOwnerAttr).(string)
-		if owner == "" {
-			return nil
-		}
-
-		alterOwnership := d.Get(dbAlterObjectOwnership).(bool)
-		if !alterOwnership {
-			return nil
-		}
-		currentUser := db.client.config.getDatabaseUsername()
-
-		dbName := d.Get(dbNameAttr).(string)
-
-		lockTxn, err := startTransaction(db.client, dbName)
-		if err := pgLockRole(lockTxn, currentUser); err != nil {
-			return err
-		}
-		defer lockTxn.Commit()
-
-		currentOwner, err := getDatabaseOwner(db, dbName)
-		if err != nil {
-			return fmt.Errorf("Error getting current database OWNER: %w", err)
-		}
-
-		newOwner := d.Get(dbOwnerAttr).(string)
-
-		if currentOwner == newOwner {
-			return nil
-		}
-
-		currentOwnerGranted, err := grantRoleMembership(db, currentOwner, currentUser)
-		if err != nil {
-			return err
-		}
-		if currentOwnerGranted {
-			defer func() {
-				_, err = revokeRoleMembership(db, currentOwner, currentUser)
-			}()
-		}
-		sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
-		if _, err := lockTxn.Exec(sql); err != nil {
-			return fmt.Errorf("Error reassigning objects owned by '%s': %w", currentOwner, err)
-		}
+	if !d.HasChange(dbOwnerAttr) && !d.HasChange(dbAlterObjectOwnership) {
+		return nil
+	}
+	owner := d.Get(dbOwnerAttr).(string)
+	if owner == "" {
 		return nil
 	}
 
+	alterOwnership := d.Get(dbAlterObjectOwnership).(bool)
+	if !alterOwnership {
+		return nil
+	}
+	currentUser := db.client.config.getDatabaseUsername()
+
+	dbName := d.Get(dbNameAttr).(string)
+
+	lockTxn, err := startTransaction(db.client, dbName)
+	if err := pgLockRole(lockTxn, currentUser); err != nil {
+		return err
+	}
+	defer lockTxn.Commit()
+
+	currentOwner, err := getDatabaseOwner(db, dbName)
+	if err != nil {
+		return fmt.Errorf("Error getting current database OWNER: %w", err)
+	}
+
+	newOwner := d.Get(dbOwnerAttr).(string)
+
+	if currentOwner == newOwner {
+		return nil
+	}
+
+	currentOwnerGranted, err := grantRoleMembership(db, currentOwner, currentUser)
+	if err != nil {
+		return err
+	}
+	if currentOwnerGranted {
+		defer func() {
+			_, err = revokeRoleMembership(db, currentOwner, currentUser)
+		}()
+	}
+	sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
+	if _, err := lockTxn.Exec(sql); err != nil {
+		return fmt.Errorf("Error reassigning objects owned by '%s': %w", currentOwner, err)
+	}
 	return nil
 }
 
