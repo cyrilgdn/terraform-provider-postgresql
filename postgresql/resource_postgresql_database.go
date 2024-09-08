@@ -509,7 +509,7 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 	if err := pgLockRole(lockTxn, currentUser); err != nil {
 		return err
 	}
-	defer lockTxn.Commit()
+	defer deferredRollback(lockTxn)
 
 	currentOwner, err := getDatabaseOwner(db, dbName)
 	if err != nil {
@@ -534,6 +534,10 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 	sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
 	if _, err := lockTxn.Exec(sql); err != nil {
 		return fmt.Errorf("Error reassigning objects owned by '%s': %w", currentOwner, err)
+	}
+
+	if err := lockTxn.Commit(); err != nil {
+		return fmt.Errorf("error committing reassign: %w", err)
 	}
 	return nil
 }
