@@ -863,29 +863,25 @@ func getRolesToGrant(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 func validateFeatureSupport(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
-			"postgresql_grant resource is not supported for this %s version (%s)",
-			db.dbType,
+			"postgresql_grant resource is not supported for this version (%s)",
 			db.version,
 		)
 	}
 	if d.Get("object_type") == "procedure" && !db.featureSupported(featureProcedure) {
 		return fmt.Errorf(
-			"object type PROCEDURE is not supported for this %s version (%s)",
-			db.dbType,
+			"object type PROCEDURE is not supported for this version (%s)",
 			db.version,
 		)
 	}
 	if d.Get("object_type") == "routine" && !db.featureSupported(featureRoutine) {
 		return fmt.Errorf(
-			"object type ROUTINE is not supported for this %s version (%s)",
-			db.dbType,
+			"object type ROUTINE is not supported for this version (%s)",
 			db.version,
 		)
 	}
 	if d.Get("object_type") == "system" && !db.featureSupported(featureSysPrivileges) {
 		return fmt.Errorf(
-			"privelege type System is not supported for this %s version (%s)",
-			db.dbType,
+			"privelege type System is not supported for this version (%s)",
 			db.version,
 		)
 	}
