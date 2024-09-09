@@ -2,7 +2,8 @@ version: "3"
 
 services:
     postgres:
-        image: postgres:${PGVERSION:-latest}
+        build: build
+#        image: postgres:${PGVERSION:-latest}
         user: postgres
         command:
           - "postgres"
@@ -10,6 +11,8 @@ services:
           - "wal_level=logical"
           - "-c"
           - "max_replication_slots=10"
+          - "-c"
+          - "shared_preload_libraries=/opt/dummy_seclabel/dummy_seclabel"
         environment:
             POSTGRES_PASSWORD: ${PGPASSWORD}
         ports:
