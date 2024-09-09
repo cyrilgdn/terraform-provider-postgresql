@@ -14,6 +14,7 @@ import (
 )
 
 var allowedObjectTypes = []string{
+	"system",
 	"database",
 	"function",
 	"procedure",
@@ -255,6 +256,16 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
+func readSystemRolePriviges(txn *sql.Tx, role string) error {
+	var query string
+	var privileges pq.ByteaArray
+	query = fmt.Sprintf(`with a as (show system grants for %s) select array_agg(privilege_type) from a`, role)
+	if err := txn.QueryRow(query).Scan(&privileges); err != nil {
+		return fmt.Errorf("could not read system privileges: %w", err)
+	}
+	return nil
+}
+
 func readDatabaseRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32, role string) error {
 	dbName := d.Get("database").(string)
 	var query string
@@ -443,6 +454,8 @@ func readRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) e
 	var rows *sql.Rows
 
 	switch objectType {
+	case "system":
+		return readSystemRolePriviges(txn, role)
 	case "database":
 		return readDatabaseRolePriviges(txn, db, d, roleOID, role)
 
@@ -547,6 +560,12 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 	var query string
 
 	switch strings.ToUpper(d.Get("object_type").(string)) {
+	case "SYSTEM":
+		query = fmt.Sprintf(
+			"GRANT SYSTEM %s TO %s",
+			strings.Join(privileges, ","),
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
 	case "DATABASE":
 		query = fmt.Sprintf(
 			"GRANT %s ON DATABASE %s TO %s",
@@ -618,6 +637,11 @@ func createRevokeQuery(d *schema.ResourceData) string {
 	var query string
 
 	switch strings.ToUpper(d.Get("object_type").(string)) {
+	case "SYSTEM":
+		query = fmt.Sprintf(
+			"REVOKE SYSTEM ALL FROM %s",
+			pq.QuoteIdentifier(d.Get("role").(string)),
+		)
 	case "DATABASE":
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s",
@@ -839,19 +863,29 @@ func getRolesToGrant(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 func validateFeatureSupport(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featurePrivileges) {
 		return fmt.Errorf(
-			"postgresql_grant resource is not supported for this Postgres version (%s)",
+			"postgresql_grant resource is not supported for this %s version (%s)",
+			db.dbType,
 			db.version,
 		)
 	}
 	if d.Get("object_type") == "procedure" && !db.featureSupported(featureProcedure) {
 		return fmt.Errorf(
-			"object type PROCEDURE is not supported for this Postgres version (%s)",
+			"object type PROCEDURE is not supported for this %s version (%s)",
+			db.dbType,
 			db.version,
 		)
 	}
 	if d.Get("object_type") == "routine" && !db.featureSupported(featureRoutine) {
 		return fmt.Errorf(
-			"object type ROUTINE is not supported for this Postgres version (%s)",
+			"object type ROUTINE is not supported for this %s version (%s)",
+			db.dbType,
+			db.version,
+		)
+	}
+	if d.Get("object_type") == "system" && !db.featureSupported(featureSysPrivileges) {
+		return fmt.Errorf(
+			"privelege type System is not supported for this %s version (%s)",
+			db.dbType,
 			db.version,
 		)
 	}
