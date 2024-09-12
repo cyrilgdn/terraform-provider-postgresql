@@ -8,8 +8,7 @@ description: |-
 
 # postgresql\_extension
 
-The ``postgresql_extension`` resource creates and manages an extension on a PostgreSQL
-server.
+The ``postgresql_extension`` resource creates and manages an [extension](https://www.postgresql.org/docs/current/sql-createextension.html) on a PostgreSQL server. Only one `postgresql_extension` of each `name` should exist per database.
 
 
 ## Usage
@@ -23,7 +22,7 @@ resource "postgresql_extension" "my_extension" {
 ## Argument Reference
 
 * `name` - (Required) The name of the extension.
-* `schema` - (Optional) Sets the schema of an extension.
+* `schema` - (Optional) Sets the schema in which to install the extension's objects
 * `version` - (Optional) Sets the version number of the extension.
 * `database` - (Optional) Which database to create the extension on. Defaults to provider database.
 * `drop_cascade` - (Optional) When true, will also drop all the objects that depend on the extension, and in turn all objects that depend on those objects. (Default: false)
