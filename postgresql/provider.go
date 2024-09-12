@@ -207,6 +207,7 @@ func Provider() *schema.Provider {
 			"postgresql_function":                  resourcePostgreSQLFunction(),
 			"postgresql_server":                    resourcePostgreSQLServer(),
 			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
+			"postgresql_permissions":               resourcePostgreSQLPermissions(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
