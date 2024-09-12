@@ -135,7 +135,7 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		if err != nil {
 			return err
 		}
-		if err := pgLockRole(lockTxn, currentUser); err != nil {
+		if err := pgLockRole(lockTxn, db, currentUser); err != nil {
 			return err
 		}
 		defer deferredRollback(lockTxn)
@@ -159,31 +159,28 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 
 	// Handle each option individually and stream results into the query
 	// buffer.
-	switch v, ok := d.GetOk(dbOwnerAttr); {
-	case ok:
-		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(v.(string)))
-	default:
-		// No owner specified in the config, default to using
-		// the connecting username.
-		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(currentUser))
+
+	if db.featureSupported(featureUseDBTemplate) {
+		switch v, ok := d.GetOk(dbTemplateAttr); {
+		case ok && strings.ToUpper(v.(string)) == "DEFAULT":
+			fmt.Fprint(b, " TEMPLATE DEFAULT")
+		case ok:
+			fmt.Fprint(b, " TEMPLATE ", pq.QuoteIdentifier(v.(string)))
+		case v.(string) == "":
+			fmt.Fprint(b, " TEMPLATE template0")
+		}
 	}
 
-	switch v, ok := d.GetOk(dbTemplateAttr); {
-	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
-		fmt.Fprint(b, " TEMPLATE DEFAULT")
-	case ok:
-		fmt.Fprint(b, " TEMPLATE ", pq.QuoteIdentifier(v.(string)))
-	case v.(string) == "":
-		fmt.Fprint(b, " TEMPLATE template0")
-	}
-
+	//cockroachdb support only encoding = 'UTF-8' (instead of UTF8), not supports DEFAULT
 	switch v, ok := d.GetOk(dbEncodingAttr); {
-	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
-		fmt.Fprintf(b, " ENCODING DEFAULT")
+	case ok && strings.ToUpper(v.(string)) == "DEFAULT" && db.dbType == dbTypePostgresql:
+		fmt.Fprintf(b, " ENCODING = DEFAULT")
 	case ok:
-		fmt.Fprintf(b, " ENCODING '%s' ", pqQuoteLiteral(v.(string)))
-	case v.(string) == "":
-		fmt.Fprint(b, ` ENCODING 'UTF8'`)
+		fmt.Fprintf(b, " ENCODING = '%s' ", pqQuoteLiteral(v.(string)))
+	case v.(string) == "" && db.dbType == dbTypePostgresql:
+		fmt.Fprint(b, ` ENCODING = 'UTF8'`)
+	case v.(string) == "" && db.dbType == dbTypeCockroachdb:
+		fmt.Fprint(b, ` ENCODING = 'UTF-8'`)
 	}
 
 	// Don't specify LC_COLLATE if user didn't specify it
@@ -204,11 +201,13 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " LC_CTYPE '%s' ", pqQuoteLiteral(v.(string)))
 	}
 
-	switch v, ok := d.GetOk(dbTablespaceAttr); {
-	case ok && strings.ToUpper(v.(string)) == "DEFAULT":
-		fmt.Fprint(b, " TABLESPACE DEFAULT")
-	case ok:
-		fmt.Fprint(b, " TABLESPACE ", pq.QuoteIdentifier(v.(string)))
+	if db.featureSupported(featureDBTablespace) {
+		switch v, ok := d.GetOk(dbTablespaceAttr); {
+		case ok && strings.ToUpper(v.(string)) == "DEFAULT":
+			fmt.Fprint(b, " TABLESPACE DEFAULT")
+		case ok:
+			fmt.Fprint(b, " TABLESPACE ", pq.QuoteIdentifier(v.(string)))
+		}
 	}
 
 	if db.featureSupported(featureDBAllowConnections) {
@@ -224,6 +223,16 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	if db.featureSupported(featureDBIsTemplate) {
 		val := d.Get(dbIsTemplateAttr).(bool)
 		fmt.Fprint(b, " IS_TEMPLATE ", val)
+	}
+
+	//cockroachdb OWNER needs to be at the end of the command
+	switch v, ok := d.GetOk(dbOwnerAttr); {
+	case ok:
+		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(v.(string)))
+	default:
+		// No owner specified in the config, default to using
+		// the connecting username.
+		fmt.Fprint(b, " OWNER ", pq.QuoteIdentifier(currentUser))
 	}
 
 	sql := b.String()
@@ -244,7 +253,7 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 	var err error
 	if owner != "" {
 		lockTxn, err := startTransaction(db.client, "")
-		if err := pgLockRole(lockTxn, currentUser); err != nil {
+		if err := pgLockRole(lockTxn, db, currentUser); err != nil {
 			return err
 		}
 		defer deferredRollback(lockTxn)
@@ -462,7 +471,7 @@ func setDBOwner(db *DBConnection, d *schema.ResourceData) error {
 	currentUser := db.client.config.getDatabaseUsername()
 
 	lockTxn, err := startTransaction(db.client, "")
-	if err := pgLockRole(lockTxn, currentUser); err != nil {
+	if err := pgLockRole(lockTxn, db, currentUser); err != nil {
 		return err
 	}
 	defer deferredRollback(lockTxn)
@@ -636,9 +645,11 @@ func terminateBConnections(db *DBConnection, dbName string) error {
 	if db.featureSupported(featurePid) {
 		pid = "pid"
 	}
-	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
-	if _, err := db.Exec(terminateSql); err != nil {
-		return fmt.Errorf("Error terminating database connections: %w", err)
+	if db.featureSupported(fetureTerminateBackendFunc) {
+		terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
+		if _, err := db.Exec(terminateSql); err != nil {
+			return fmt.Errorf("Error terminating database connections: %w", err)
+		}
 	}
 
 	return nil
