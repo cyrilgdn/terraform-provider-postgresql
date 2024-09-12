@@ -125,7 +125,7 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 	}
 	defer deferredRollback(txn)
 
-	return readRolePrivileges(txn, d)
+	return readRolePrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -169,12 +169,12 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	defer deferredRollback(txn)
 
 	role := d.Get("role").(string)
-	if err := pgLockRole(txn, role); err != nil {
+	if err := pgLockRole(txn, db, role); err != nil {
 		return err
 	}
 
 	if objectType == "database" {
-		if err := pgLockDatabase(txn, database); err != nil {
+		if err := pgLockDatabase(txn, db, database); err != nil {
 			return err
 		}
 	}
@@ -210,7 +210,7 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 	}
 	defer deferredRollback(txn)
 
-	return readRolePrivileges(txn, d)
+	return readRolePrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -226,13 +226,13 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	defer deferredRollback(txn)
 
 	role := d.Get("role").(string)
-	if err := pgLockRole(txn, role); err != nil {
+	if err := pgLockRole(txn, db, role); err != nil {
 		return err
 	}
 
 	objectType := d.Get("object_type").(string)
 	if objectType == "database" {
-		if err := pgLockDatabase(txn, database); err != nil {
+		if err := pgLockDatabase(txn, db, database); err != nil {
 			return err
 		}
 	}
@@ -255,16 +255,21 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readDatabaseRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32, role string) error {
 	dbName := d.Get("database").(string)
-	query := `
+	var query string
+	//cockroachdb does not support aclexplode
+	if !db.featureSupported(fetureAclExplode) {
+		query = fmt.Sprintf(`with a as (show grants on database %s for %s) select array_agg(privilege_type) from a`, dbName, role)
+	} else {
+		query = `
 SELECT array_agg(privilege_type)
 FROM (
 	SELECT (aclexplode(datacl)).* FROM pg_database WHERE datname=$1
 ) as privileges
 WHERE grantee = $2
 `
-
+	}
 	var privileges pq.ByteaArray
 	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
@@ -274,15 +279,23 @@ WHERE grantee = $2
 	return nil
 }
 
-func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readSchemaRolePriviges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32, role string) error {
 	dbName := d.Get("schema").(string)
-	query := `
+	var query string
+	if strings.Contains(dbName, "-") {
+		dbName = "\"" + dbName + "\""
+	}
+	if !db.featureSupported(fetureAclExplode) {
+		query = fmt.Sprintf(`with a as ( show grants on schema %s for %s) select array_agg(privilege_type) from a;`, dbName, role)
+	} else {
+		query = `
 SELECT array_agg(privilege_type)
 FROM (
 	SELECT (aclexplode(nspacl)).* FROM pg_namespace WHERE nspname=$1
 ) as privileges
 WHERE grantee = $2
 `
+	}
 
 	var privileges pq.ByteaArray
 	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
@@ -411,7 +424,7 @@ ORDER BY col_privs.attname
 	return nil
 }
 
-func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+func readRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
 	objects := d.Get("objects").(*schema.Set)
@@ -426,10 +439,10 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	switch objectType {
 	case "database":
-		return readDatabaseRolePriviges(txn, d, roleOID)
+		return readDatabaseRolePriviges(txn, db, d, roleOID, role)
 
 	case "schema":
-		return readSchemaRolePriviges(txn, d, roleOID)
+		return readSchemaRolePriviges(txn, db, d, roleOID, role)
 
 	case "foreign_data_wrapper":
 		return readForeignDataWrapperRolePrivileges(txn, d, roleOID)
