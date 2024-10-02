@@ -268,8 +268,12 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	privilegesSet := pgArrayToSet(privileges)
-	d.Set("privileges", privilegesSet)
-	d.SetId(generateDefaultPrivilegesID(d))
+	privilegesEqual := resourcePrivilegesEqual(privilegesSet, d)
+
+	if !privilegesEqual {
+		d.Set("privileges", privilegesSet)
+		d.SetId(generateDefaultPrivilegesID(d))
+	}
 
 	return nil
 }
