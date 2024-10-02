@@ -86,9 +86,8 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Description: "The specific columns to grant privileges on for this role",
 			},
 			"privileges": {
-				Type:     schema.TypeSet,
-				Required: true,
-				//ForceNew:    true,
+				Type:        schema.TypeSet,
+				Required:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
 				Description: "The list of privileges to grant",
