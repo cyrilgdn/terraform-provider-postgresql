@@ -293,7 +293,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		out := createRevokeQuery(c.resource)
+		out := createRevokeQuery(c.resource.Get)
 		if out != c.expected {
 			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
 		}
