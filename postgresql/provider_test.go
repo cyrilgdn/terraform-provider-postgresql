@@ -29,6 +29,37 @@ func TestProvider_impl(t *testing.T) {
 	var _ *schema.Provider = Provider()
 }
 
+func TestAccProviderSetCreateRoleSelfGrant(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	client := config.NewClient("postgres")
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db.featureSupported(featureCreateRoleSelfGrant) {
+		t.Skipf("Skip tests for unsuported feature %d in Postgres %s", featureCreateRoleSelfGrant, db.version)
+	}
+
+	// Create NON superuser role
+	if _, err = db.Exec("CREATE ROLE rds_srg LOGIN CREATEDB CREATEROLE PASSWORD 'rds_srg'"); err != nil {
+		t.Fatalf("could not create role for test user paramaters: %v", err)
+	}
+	defer func() {
+		_, _ = db.Exec("DROP ROLE rds_srg")
+	}()
+
+	provider := Provider()
+	provider.Configure(context.Background(), terraform.NewResourceConfigRaw(
+		map[string]interface{}{
+			"username": "rds_srg",
+			"password": "rds_srg",
+		},
+	))
+}
+
 func testAccPreCheck(t *testing.T) {
 	var host string
 	if host = os.Getenv("PGHOST"); host == "" {

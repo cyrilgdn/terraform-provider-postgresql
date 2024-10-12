@@ -187,16 +187,25 @@ resource "postgresql_default_privileges" "test_ro" {
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.#", "1"),
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 
-					// check if connected user does not have test_owner granted anymore.
-					checkUserMembership(t, dsn, config.Username, "test_owner", false),
+					func(state *terraform.State) error {
+						connect, _ := config.NewClient("postgres").Connect()
+						if connect.featureSupported(featureCreateRoleSelfGrant) {
+							// in PG 16 all created roles have creator grant with admin option by default
+							checkUserMembership(t, dsn, config.Username, "test_owner", true)
+						} else {
+							// check if connected user does not have test_owner granted anymore.
+							checkUserMembership(t, dsn, config.Username, "test_owner", false)
+						}
+						return nil
+					},
 				),
 			},
 		},
 	})
 }
 
-// Test the case where we define default priviliges without specifying a schema. These
-// priviliges should apply to newly created resources for the named role in all schema.
+// Test the case where we define default privileges without specifying a schema. These
+// privileges should apply to newly created resources for the named role in all schema.
 func TestAccPostgresqlDefaultPrivileges_NoSchema(t *testing.T) {
 	skipIfNotAcc(t)
 

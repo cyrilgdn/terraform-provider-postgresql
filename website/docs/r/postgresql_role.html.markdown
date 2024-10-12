@@ -118,6 +118,9 @@ resource "postgresql_role" "my_replication_role" {
 
 * `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
 
+* `parameters` - (Optional) Defines role parameters as map of strings.
+  * `createrole_self_grant` - (Optional) If a user who has CREATEROLE but not SUPERUSER creates a role, and if this is set to a non-empty value, the newly-created role will be granted to the creating user with the options specified. Since Postgresql 16.
+
 ## Import Example
 
 `postgresql_role` supports importing resources.  Supposing the following
