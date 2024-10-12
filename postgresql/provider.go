@@ -2,12 +2,14 @@ package postgresql
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"os"
+	"regexp"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -363,6 +365,39 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		}
 	}
 
+	err := checkCreateRoleSelfGrant(config)
+	if err != nil {
+		return nil, err
+	}
+
 	client := config.NewClient(d.Get("database").(string))
 	return client, nil
+}
+
+func checkCreateRoleSelfGrant(config Config) error {
+	client := config.NewClient("postgres")
+	connect, err := client.Connect()
+	if err != nil {
+		return err
+	}
+
+	username := config.Username
+
+	if connect.featureSupported(featureCreateRoleSelfGrant) && !config.Superuser {
+		var paramValue string
+		query := `SELECT coalesce(replace(jsonb_path_query_first(to_jsonb(rolconfig),'$[*] ? (@ like_regex "^createrole_self_grant=")')::TEXT,'%[1]s=',''), '') FROM pg_catalog.pg_roles WHERE rolname = $1`
+		err := connect.QueryRow(query, username).Scan(&paramValue)
+		switch {
+		case err == sql.ErrNoRows:
+			// They don't have a parameter, just skip
+			break
+		case err != nil:
+			tflog.Debug(context.Background(), fmt.Sprintf("User %s parameters cannot be checked: %v", username, err))
+		}
+		if !regexp.MustCompile(`^set\s*,\s*inherit$|^inherit\s*,\s*set$`).MatchString(paramValue) {
+			msg := fmt.Sprintf("Provider user %[1]s has not configured property 'createrole_self_grant' properly. Creating new roles will not create non admin grants by default. You can set it by \"ALTER ROLE '%[1]s' SET createrole_self_grant 'set, inherit';\"", username)
+			tflog.Warn(context.Background(), msg)
+		}
+	}
+	return nil
 }

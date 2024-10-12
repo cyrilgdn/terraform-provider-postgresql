@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"github.com/blang/semver"
 	"os"
 	"strconv"
 	"strings"
@@ -26,7 +27,19 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 		t.Fatalf("could connect to database: %v", err)
 	}
 	if !db.featureSupported(feature) {
-		t.Skipf("Skip extension tests for Postgres %s", db.version)
+		t.Skipf("Skip tests for unsuported feature %d in Postgres %s", feature, db.version)
+	}
+}
+
+// Can be used in a PreCheck function to disable test based on Postgresql version range.
+func testCheckCompatibleVersionRange(t *testing.T, versionRange string) {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could connect to database: %v", err)
+	}
+	if !semver.MustParseRange(versionRange)(db.version) {
+		t.Skipf("Skip tests for unexpected version range %s in Postgres %s", versionRange, db.version)
 	}
 }
 
@@ -175,8 +188,13 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 		}
 	}
 	if owner != "" && !config.Superuser {
-		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
-			t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+		if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", adminUser)); err != nil {
+			t.Fatalf("could not set role %s : %v", adminUser, err)
+		}
+		if !createRoleSelfGrantEnabled(t) {
+			if _, err := db.Exec(fmt.Sprintf("REVOKE %s FROM %s", owner, adminUser)); err != nil {
+				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+			}
 		}
 	}
 
@@ -200,8 +218,13 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 			}
 		}
 		if owner != "" && !config.Superuser {
-			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s; REVOKE %s FROM %s", adminUser, owner, adminUser)); err != nil {
-				t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+			if _, err := db.Exec(fmt.Sprintf("SET ROLE %s", adminUser)); err != nil {
+				t.Fatalf("could not set role %s: %v", adminUser, err)
+			}
+			if !createRoleSelfGrantEnabled(t) {
+				if _, err := db.Exec(fmt.Sprintf("REVOKE %s FROM %s", owner, adminUser)); err != nil {
+					t.Fatalf("could not revoke role %s from %s: %v", owner, adminUser, err)
+				}
 			}
 		}
 
@@ -437,4 +460,13 @@ func testCheckColumnPrivileges(t *testing.T, dbName, roleName string, tables []s
 		}
 	}
 	return nil
+}
+
+func createRoleSelfGrantEnabled(t *testing.T) bool {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could connect to database: %v", err)
+	}
+	return db.featureSupported(featureCreateRoleSelfGrant)
 }

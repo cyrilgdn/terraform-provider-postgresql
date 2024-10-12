@@ -2,9 +2,11 @@ package postgresql
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -91,6 +93,109 @@ resource "postgresql_role" "role_with_superuser" {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "name", "role_with_superuser"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_superuser", "superuser", "true"),
 				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_CreateRoleSelfGrant(t *testing.T) {
+	var configCreate = `
+resource "postgresql_role" "role_with_createrole_self_grant" {
+  name = "role_with_createrole_self_grant"
+  parameters = {
+    createrole_self_grant = "set, inherit"
+  }
+}
+`
+	var configUpdate = `
+resource "postgresql_role" "role_with_createrole_self_grant" {
+  name = "role_with_createrole_self_grant"
+  parameters = {
+    createrole_self_grant = "set"
+  }
+}
+`
+	var configReset = `
+resource "postgresql_role" "role_with_createrole_self_grant" {
+  name = "role_with_createrole_self_grant"
+  parameters = {}
+}
+`
+	var configNoParams = `
+resource "postgresql_role" "role_with_createrole_self_grant" {
+  name = "role_with_createrole_self_grant"
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureCreateRoleSelfGrant)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: configCreate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_with_createrole_self_grant", nil, nil),
+					testAccCheckPostgresqlRoleParameters("role_with_createrole_self_grant", map[string]string{"createrole_self_grant": "set, inherit"}),
+				),
+			},
+			{
+				Config: configUpdate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_with_createrole_self_grant", nil, nil),
+					testAccCheckPostgresqlRoleParameters("role_with_createrole_self_grant", map[string]string{"createrole_self_grant": "set"}),
+				),
+			},
+			{
+				Config: configReset,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_with_createrole_self_grant", nil, nil),
+					testAccCheckPostgresqlRoleParameters("role_with_createrole_self_grant", map[string]string{}),
+				),
+			},
+			// check parameters are reset by deleting parameters container
+			{
+				Config: configCreate,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_with_createrole_self_grant", nil, nil),
+					testAccCheckPostgresqlRoleParameters("role_with_createrole_self_grant", map[string]string{"createrole_self_grant": "set, inherit"}),
+				),
+			},
+			{
+				Config: configNoParams,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_with_createrole_self_grant", nil, nil),
+					testAccCheckPostgresqlRoleParameters("role_with_createrole_self_grant", map[string]string{}),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_UnsupportedRoleParam(t *testing.T) {
+	var configCreate = `
+resource "postgresql_role" "role_with_unsupported_param_lol" {
+  name = "role_with_unsupported_param_lol"
+  parameters = {
+    unsupported_param_lol = "N/A"
+  }
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersion(t, featureCreateRoleSelfGrant)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:      configCreate,
+				ExpectError: regexp.MustCompile(`parameter unsupported_param_lol is not supported, only \[.+] parameters are supported yet`),
 			},
 		},
 	})
@@ -213,6 +318,7 @@ resource "postgresql_role" "test_role" {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featurePrivileges)
+			testCheckCompatibleVersionRange(t, "<16.0.0") // PG 16: Only roles with the ADMIN option on role "<admin>" may grant this role.
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
@@ -278,6 +384,25 @@ func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string, se
 	}
 }
 
+func testAccCheckPostgresqlRoleParameters(roleName string, parameters map[string]string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		client := testAccProvider.Meta().(*Client)
+
+		if parameters != nil {
+			var errs []error
+			for k, v := range parameters {
+				if err := checkRoleParameter(client, roleName, k, v); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			if len(errs) > 0 {
+				return errors.Join(errs...)
+			}
+		}
+		return nil
+	}
+}
+
 func checkRoleExists(client *Client, roleName string) (bool, error) {
 	db, err := client.Connect()
 	if err != nil {
@@ -309,6 +434,41 @@ func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.Test
 		}
 		return nil
 	}
+}
+
+func TestAccPostgresqlRole_DbOwner(t *testing.T) {
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlRoleDbOwnerConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("owned_db_owner", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_database.owned_db", "owner", "owned_db_owner"),
+					resource.TestCheckResourceAttr("postgresql_database.owned_db", "name", "owned_db"),
+
+					func(state *terraform.State) error {
+						connect, _ := config.NewClient("postgres").Connect()
+						if connect.featureSupported(featureCreateRoleSelfGrant) {
+							// in PG 16 all created roles have creator grant with admin option
+							checkUserMembership(t, dsn, config.Username, "owned_db_owner", true)
+						} else {
+							// check if connected user does not have test_owner granted anymore.
+							checkUserMembership(t, dsn, config.Username, "owned_db_owner", false)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
 }
 
 func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) error {
@@ -378,22 +538,40 @@ func checkSearchPath(client *Client, roleName string, expectedSearchPath []strin
 	return nil
 }
 
+func checkRoleParameter(client *Client, roleName string, name string, value string) error {
+	db, err := client.Connect()
+	if err != nil {
+		return err
+	}
+
+	expectedParameter := fmt.Sprintf("%s=%s", name, value)
+	query := fmt.Sprintf(`SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = $1 AND jsonb_path_exists(to_jsonb(rolconfig), '$[*] ? (@ like_regex "^%s$")')`, expectedParameter)
+	result, err := db.Query(query, roleName)
+	if err != nil {
+		return err
+	}
+	if !result.Next() {
+		return fmt.Errorf("role '%s' parameters are not set to expected value. expected '%v' but nothing found", roleName, expectedParameter)
+	}
+	return nil
+}
+
 var testAccPostgresqlRoleConfig = `
 resource "postgresql_role" "myrole2" {
-  name = "myrole2"
+  name  = "myrole2"
   login = true
 }
 
 resource "postgresql_role" "role_with_pwd" {
-  name = "role_with_pwd"
-  login = true
+  name     = "role_with_pwd"
+  login    = true
   password = "mypass"
 }
 
 resource "postgresql_role" "role_with_pwd_encr" {
-  name = "role_with_pwd_encr"
-  login = true
-  password = "mypass"
+  name               = "role_with_pwd_encr"
+  login              = true
+  password           = "mypass"
   encrypted_password = true
 }
 
@@ -402,39 +580,56 @@ resource "postgresql_role" "role_simple" {
 }
 
 resource "postgresql_role" "role_with_defaults" {
-  name = "role_default"
-  superuser = false
-  create_database = false
-  create_role = false
-  inherit = false
-  login = false
-  replication = false
-  bypass_row_level_security = false
-  connection_limit = -1
-  encrypted_password = true
-  password = ""
-  skip_drop_role = false
-  valid_until = "infinity"
-  statement_timeout = 0
+  name                                = "role_default"
+  superuser                           = false
+  create_database                     = false
+  create_role                         = false
+  inherit                             = false
+  login                               = false
+  replication                         = false
+  bypass_row_level_security           = false
+  connection_limit                    = -1
+  encrypted_password                  = true
+  password                            = ""
+  skip_drop_role                      = false
+  valid_until                         = "infinity"
+  statement_timeout                   = 0
   idle_in_transaction_session_timeout = 0
-  assume_role = ""
+  assume_role                         = ""
 }
 
 resource "postgresql_role" "role_with_create_database" {
-  name = "role_with_create_database"
+  name            = "role_with_create_database"
   create_database = true
 }
 
 resource "postgresql_role" "sub_role" {
-	name = "sub_role"
-	roles = [
-		"${postgresql_role.myrole2.id}",
-		"${postgresql_role.role_simple.id}",
-	]
+  name = "sub_role"
+  roles = [
+    "${postgresql_role.myrole2.id}",
+    "${postgresql_role.role_simple.id}",
+  ]
 }
 
 resource "postgresql_role" "role_with_search_path" {
-  name = "role_with_search_path"
+  name        = "role_with_search_path"
   search_path = ["bar", "foo-with-hyphen"]
+}
+`
+
+// based on comment for issue 407
+// https://github.com/cyrilgdn/terraform-provider-postgresql/issues/407#issue-2127498162
+var testAccPostgresqlRoleDbOwnerConfig = `
+resource "postgresql_role" "owned_db_owner" {
+  name     = "owned_db_owner"
+  login    = true
+  password = "veryS3cret"
+}
+
+resource "postgresql_database" "owned_db" {
+  name              = "owned_db"
+  owner             = postgresql_role.owned_db_owner.name
+  lc_collate        = "en_US.utf8"
+  allow_connections = true
 }
 `
