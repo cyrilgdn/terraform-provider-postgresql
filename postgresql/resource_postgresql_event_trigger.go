@@ -15,11 +15,11 @@ const (
 	eventTriggerNameAttr           = "name"
 	eventTriggerOnAttr             = "on"
 	eventTriggerFunctionAttr       = "function"
+	eventTriggerFunctionSchemaAttr = "function_schema"
 	eventTriggerFilterAttr         = "filter"
 	eventTriggerFilterVariableAttr = "variable"
 	eventTriggerFilterValueAttr    = "values"
 	eventTriggerDatabaseAttr       = "database"
-	eventTriggerSchemaAttr         = "schema"
 	eventTriggerOwnerAttr          = "owner"
 	eventTriggerStatusAttr         = "status"
 )
@@ -95,12 +95,11 @@ func resourcePostgreSQLEventTrigger() *schema.Resource {
 				ForceNew:    true,
 				Description: "The database where the event trigger is located. If not specified, the provider default database is used.",
 			},
-			eventTriggerSchemaAttr: {
+			eventTriggerFunctionSchemaAttr: {
 				Type:        schema.TypeString,
-				Optional:    true,
-				Computed:    true,
+				Required:    true,
 				ForceNew:    true,
-				Description: "Schema where the function is located. If not specified, the provider default schema is used.",
+				Description: "Schema where the function is located.",
 			},
 			eventTriggerStatusAttr: {
 				Type:        schema.TypeString,
@@ -165,7 +164,7 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 	}
 
 	eventTriggerFunction := d.Get(eventTriggerFunctionAttr).(string)
-	eventTriggerSchema := d.Get(eventTriggerSchemaAttr).(string)
+	eventTriggerSchema := d.Get(eventTriggerFunctionSchemaAttr).(string)
 	fmt.Fprint(b, " EXECUTE FUNCTION ", pq.QuoteIdentifier(eventTriggerSchema), ".", eventTriggerFunction, "()")
 
 	createSql := b.String()
@@ -330,7 +329,7 @@ func resourcePostgreSQLEventTriggerRead(db *DBConnection, d *schema.ResourceData
 	d.Set(eventTriggerFunctionAttr, function)
 	d.Set(eventTriggerOwnerAttr, owner)
 	d.Set(eventTriggerDatabaseAttr, database)
-	d.Set(eventTriggerSchemaAttr, schema)
+	d.Set(eventTriggerFunctionSchemaAttr, schema)
 
 	switch status {
 	case "D":
