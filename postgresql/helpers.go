@@ -57,7 +57,7 @@ func pqQuoteLiteral(in string) string {
 func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
 	err := db.QueryRow(
-		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
+		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2 AND set_option",
 		role, member,
 	).Scan(&_rez)
 

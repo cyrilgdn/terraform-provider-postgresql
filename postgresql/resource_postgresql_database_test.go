@@ -355,7 +355,7 @@ func checkUserMembership(
 		var _rez int
 		err = db.QueryRow(`
                        SELECT 1 FROM pg_auth_members
-                       WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2
+                       WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2 AND (set_option OR inherit_option)
                `, role, member).Scan(&_rez)
 
 		switch {
