@@ -212,7 +212,16 @@ resource "postgresql_role" "test_role" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
+			client := testAccProvider.Meta().(*Client)
+			db, err := client.Connect()
+			if err != nil {
+				t.Fatalf("could connect to database: %v", err)
+			}
+			// Requires >= 9 and <16
+			// We disable this test for >= pg16 as it makes no sense with the new createRoleSelfGrant feature
+			if !db.featureSupported(featurePrivileges) || db.featureSupported(featureCreateRoleSelfGrant) {
+				t.Skipf("Skip extension tests for Postgres %s", db.version)
+			}
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
