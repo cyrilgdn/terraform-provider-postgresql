@@ -30,18 +30,6 @@ func testCheckCompatibleVersion(t *testing.T, feature featureName) {
 	}
 }
 
-// Negative version of above check
-func testCheckNotCompatibleVersion(t *testing.T, feature featureName) {
-	client := testAccProvider.Meta().(*Client)
-	db, err := client.Connect()
-	if err != nil {
-		t.Fatalf("could connect to database: %v", err)
-	}
-	if db.featureSupported(feature) {
-		t.Skipf("Skip extension tests for Postgres %s", db.version)
-	}
-}
-
 // Some tests have to be run as a real superuser (not RDS like)
 func testSuperuserPreCheck(t *testing.T) {
 	client := testAccProvider.Meta().(*Client)
