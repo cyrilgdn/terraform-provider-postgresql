@@ -355,7 +355,7 @@ func checkUserMembership(
 		var _rez int
 		query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
 		if db.featureSupported(featureCreateRoleSelfGrant) {
-			query += "AND (set_option OR inherit_option)"
+			query += " AND (set_option OR inherit_option)"
 		}
 		err = db.QueryRow(query, role, member).Scan(&_rez)
 
