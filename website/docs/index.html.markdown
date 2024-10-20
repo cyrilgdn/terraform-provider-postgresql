@@ -71,6 +71,16 @@ resource "postgresql_database" "my_db2" {
 }
 ```
 
+In postgresql 16 was presented new role security schema and by default is not created non admin grant to newly created roles.
+[Read more](https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-CREATEROLE-SELF-GRANT).
+It can be fixed multiple way. 
+* Set user parameters on non superuser (recommended way) user by
+```postgresql
+ALTER ROLE current_user SET createrole_self_grant TO 'set, inherit';
+```
+* Set postgresql server configuration during server start (not available in most cloud providers yet) 
+* Using superuser for connect to database (not recommend)
+
 ## Injecting Credentials
 There are several methods of providing credentials to the provider without hardcoding them.
 
@@ -185,6 +195,8 @@ The following arguments are supported:
 * `aws_rds_iam_region` - (Optional) The AWS region to use while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `user_parameters` - (Optional) Set user parameters for `username` user
+  * `createrole_self_grant` - (Optional) The value must be `set`, `inherit`, or a comma-separated list of these
 
 ## GoCloud
 

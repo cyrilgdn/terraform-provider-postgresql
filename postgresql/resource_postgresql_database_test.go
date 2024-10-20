@@ -220,8 +220,17 @@ resource postgresql_database "test_db" {
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", "test_db"),
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
-					// check if connected user does not have test_owner granted anymore.
-					checkUserMembership(t, dsn, config.Username, "test_owner", false),
+					func(state *terraform.State) error {
+						connect, _ := config.NewClient("postgres").Connect()
+						if connect.featureSupported(featureCreateRoleSelfGrant) {
+							// in PG 16 all created roles have creator grant with admin option
+							checkUserMembership(t, dsn, config.Username, "test_owner", true)
+						} else {
+							// check if connected user does not have test_owner granted anymore.
+							checkUserMembership(t, dsn, config.Username, "test_owner", false)
+						}
+						return nil
+					},
 				),
 			},
 		},

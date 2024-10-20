@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -35,6 +36,8 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleParametersAttr                      = "parameters"
+	roleCreateRoleSelfGrantAttr             = "createrole_self_grant"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +176,14 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleParametersAttr: {
+				Type:        schema.TypeMap,
+				Optional:    true,
+				Description: "User parameters",
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+			},
 		},
 	}
 }
@@ -308,6 +319,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -480,6 +495,38 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	d.Set(rolePasswordAttr, password)
+
+	if err = readRoleParameters(db, d); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readRoleParameters(db *DBConnection, d *schema.ResourceData) error {
+	roleName := d.Get(roleNameAttr).(string)
+
+	if paramsSchema, ok := d.GetOk(roleParametersAttr); ok {
+		if roleParams, ok := paramsSchema.(map[string]interface{}); ok {
+			for paramKey, _ := range roleParams {
+				if !slices.Contains(supportedRoleParameters, paramKey) {
+					return fmt.Errorf("parameter %s is not supported, only %v parameters are supported yet", paramKey, supportedRoleParameters)
+				}
+				var paramValue string
+				query := fmt.Sprintf(`SELECT coalesce(trim(replace(jsonb_path_query_first(to_jsonb(rolconfig),'$[*] ? (@ like_regex "^%[1]s=")')::text,'%[1]s=',''),'"'), '') FROM pg_catalog.pg_roles WHERE rolname = $1`, paramKey)
+				err := db.QueryRow(query, roleName).Scan(&paramValue)
+				switch {
+				case err == sql.ErrNoRows:
+					// They don't have a parameter, just skip
+					break
+				case err != nil:
+					return fmt.Errorf("Error reading role parameters: %w", err)
+				default:
+					roleParams[paramKey] = paramValue
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -686,6 +733,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -1058,6 +1109,50 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setParameters(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleParametersAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	parameters := map[string]interface{}{}
+	if paramsSchema, ok := d.GetOk(roleParametersAttr); ok {
+		if roleParams, ok := paramsSchema.(map[string]interface{}); ok {
+			for paramKey, paramValue := range roleParams {
+				if !slices.Contains(supportedRoleParameters, paramKey) {
+					return fmt.Errorf("parameter %s is not supported, only %v parameters are supported yet", paramKey, supportedRoleParameters)
+				}
+				parameters[paramKey] = paramValue
+			}
+			parameters = roleParams
+		}
+	}
+
+	return setRoleParameters(txn, roleName, parameters)
+}
+
+// supportedRoleParameters user role supported parameters
+var supportedRoleParameters = []string{roleCreateRoleSelfGrantAttr}
+
+// setRoleParameters set given parameter for role
+// only string values are supported yet, others will be ignored
+func setRoleParameters(txn *sql.Tx, roleName string, parameters map[string]interface{}) error {
+	for k, v := range parameters {
+		strValue, ok := v.(string)
+		if slices.Contains(supportedRoleParameters, k) && ok {
+			valParam := pq.QuoteLiteral(strValue)
+			roleParam := pq.QuoteIdentifier(roleName)
+			query := fmt.Sprintf(
+				"ALTER ROLE %s SET %s TO %s", roleParam, k, valParam,
+			)
+			if _, err := txn.Exec(query); err != nil {
+				return fmt.Errorf("could not set %s parameter %s for %s: %w", k, valParam, roleParam, err)
+			}
 		}
 	}
 	return nil
