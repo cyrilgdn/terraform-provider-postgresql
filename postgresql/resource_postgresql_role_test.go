@@ -192,6 +192,184 @@ resource "postgresql_role" "update_role" {
 	})
 }
 
+func TestAccPostgresqlRole_ConfigurationParameters(t *testing.T) {
+
+	var configRoles = `
+resource "postgresql_role" "role" {
+  name = "role1"
+  %s
+}
+
+resource "postgresql_role" "role_created_with_params" {
+  name = "role2"
+
+  parameter {
+    name  = "client_min_messages"
+    value = "debug"
+  }
+}
+`
+	configParameterA := `
+  parameter {
+    name  = "client_min_messages"
+    value = "%s"
+  }
+`
+	configParameterB := `
+  parameter {
+    name  = "maintenance_work_mem"
+    value = "10000"
+    quote = false
+  }
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(configRoles, ""),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "name", "role2"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.0.value", "debug"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{}),
+					testAccCheckRoleHasConfigurationParameters("role2", map[string]string{"client_min_messages": "debug"}),
+				),
+			},
+			{
+				Config: fmt.Sprintf(configRoles, fmt.Sprintf(configParameterA, "notice")+configParameterB),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.value", "notice"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.1.name", "maintenance_work_mem"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.1.value", "10000"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "name", "role2"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.#", "1"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{
+						"client_min_messages":  "notice",
+						"maintenance_work_mem": "10000",
+					}),
+				),
+			},
+			{
+				Config: fmt.Sprintf(configRoles, fmt.Sprintf(configParameterA, "error")),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.value", "error"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "name", "role2"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.#", "1"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{"client_min_messages": "error"}),
+				),
+			},
+			{
+				Config: fmt.Sprintf(configRoles, ""),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "name", "role2"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role_created_with_params", "parameter.0.value", "debug"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{}),
+					testAccCheckRoleHasConfigurationParameters("role2", map[string]string{"client_min_messages": "debug"}),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_ConfigurationParameters_WithExplicitParameterAttrs(t *testing.T) {
+	var configRole = `
+resource "postgresql_role" "role" {
+  name = "role1"
+  search_path = ["here","there"]
+  idle_in_transaction_session_timeout = 300
+  statement_timeout = 100
+  assume_role = "other_role"
+  %s
+}
+`
+	configParameterA := `
+  parameter {
+    name  = "client_min_messages"
+    value = "%s"
+  }
+`
+	configParameterB := `
+  parameter {
+    name  = "maintenance_work_mem"
+    value = "10000"
+	quote = false
+  }
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(configRole, fmt.Sprintf(configParameterA, "debug")),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.value", "debug"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{"client_min_messages": "debug"}),
+				),
+			},
+			{
+				Config: fmt.Sprintf(configRole, fmt.Sprintf(configParameterA, "notice")+configParameterB),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.value", "notice"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.1.name", "maintenance_work_mem"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.1.value", "10000"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{
+						"client_min_messages":  "notice",
+						"maintenance_work_mem": "10000",
+					}),
+				),
+			},
+			{
+				Config: fmt.Sprintf(configRole, fmt.Sprintf(configParameterA, "error")),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.name", "client_min_messages"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.0.value", "error"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{"client_min_messages": "error"}),
+				),
+			},
+			{
+				Config: fmt.Sprintf(configRole, ""),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.role", "name", "role1"),
+					resource.TestCheckResourceAttr("postgresql_role.role", "parameter.#", "0"),
+					testAccCheckRoleHasConfigurationParameters("role1", map[string]string{}),
+				),
+			},
+		},
+	})
+}
+
 // Test to create a role with admin user (usually postgres) granted to it
 // There were a bug on RDS like setup (with a non-superuser postgres role)
 // where it couldn't delete the role in this case.
@@ -293,6 +471,42 @@ func checkRoleExists(client *Client, roleName string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func testAccCheckRoleHasConfigurationParameters(roleName string, parameters map[string]string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		client := testAccProvider.Meta().(*Client)
+		db, err := client.Connect()
+		if err != nil {
+			return err
+		}
+		rows, err := db.Query("SELECT UNNEST(rolconfig) FROM pg_roles WHERE rolname=$1", roleName)
+		if err != nil {
+			return err
+		}
+		setParameters := make(map[string]string)
+		for rows.Next() {
+			var param string
+			if err := rows.Scan(&param); err != nil {
+				return err
+			}
+			split := strings.Split(param, "=")
+			if !sliceContainsStr(ignoredRoleConfigurationParameters, split[0]) {
+				setParameters[split[0]] = split[1]
+			}
+		}
+		if len(parameters) != len(setParameters) {
+			return fmt.Errorf("expected role %s to have %d configuration parameters, found %d", roleName, len(parameters), len(setParameters))
+		}
+		for k := range parameters {
+			if parameters[k] != setParameters[k] {
+				return fmt.Errorf(
+					"expected configuration parameter %s for role %s to have value \"%s\", found \"%s\"",
+					k, roleName, parameters[k], setParameters[k])
+			}
+		}
+		return nil
+	}
 }
 
 func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.TestCheckFunc {
