@@ -346,17 +346,18 @@ func checkUserMembership(
 	t *testing.T, dsn, member, role string, shouldHaveRole bool,
 ) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		db, err := sql.Open("postgres", dsn)
+		client := testAccProvider.Meta().(*Client)
+		db, err := client.Connect()
 		if err != nil {
 			t.Fatalf("could to create connection pool: %v", err)
 		}
-		defer db.Close()
 
 		var _rez int
-		err = db.QueryRow(`
-                       SELECT 1 FROM pg_auth_members
-                       WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2
-               `, role, member).Scan(&_rez)
+		query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
+		if db.featureSupported(featureCreateRoleSelfGrant) {
+			query += " AND (set_option OR inherit_option)"
+		}
+		err = db.QueryRow(query, role, member).Scan(&_rez)
 
 		switch {
 		case err == sql.ErrNoRows:
