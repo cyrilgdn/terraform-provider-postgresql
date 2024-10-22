@@ -109,7 +109,7 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 		return fmt.Errorf("feature is not supported: %v", err)
 	}
 
-	exists, err := checkRoleDBSchemaExists(db.client, d)
+	exists, err := checkRoleDBSchemaExists(db, d)
 	if err != nil {
 		return err
 	}
@@ -699,8 +699,19 @@ func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, error) {
-	txn, err := startTransaction(client, "")
+func checkRoleDBSchemaExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
+	// Check the database exists
+	database := d.Get("database").(string)
+	exists, err := dbExists(db, database)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		log.Printf("[DEBUG] database %s does not exists", database)
+		return false, nil
+	}
+
+	txn, err := startTransaction(db.client, database)
 	if err != nil {
 		return false, err
 	}
@@ -719,29 +730,10 @@ func checkRoleDBSchemaExists(client *Client, d *schema.ResourceData) (bool, erro
 		}
 	}
 
-	// Check the database exists
-	database := d.Get("database").(string)
-	exists, err := dbExists(txn, database)
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		log.Printf("[DEBUG] database %s does not exists", database)
-		return false, nil
-	}
-
+	// Check the schema exists (the SQL connection needs to be on the right database)
 	pgSchema := d.Get("schema").(string)
-
 	if !sliceContainsStr([]string{"database", "foreign_data_wrapper", "foreign_server"}, d.Get("object_type").(string)) && pgSchema != "" {
-		// Connect on this database to check if schema exists
-		dbTxn, err := startTransaction(client, database)
-		if err != nil {
-			return false, err
-		}
-		defer deferredRollback(dbTxn)
-
-		// Check the schema exists (the SQL connection needs to be on the right database)
-		exists, err = schemaExists(dbTxn, pgSchema)
+		exists, err = schemaExists(txn, pgSchema)
 		if err != nil {
 			return false, err
 		}

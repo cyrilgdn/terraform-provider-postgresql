@@ -3,7 +3,7 @@ name: test
 on:
   push:
     branches:
-    - master
+    - main
   pull_request:
 
 jobs:
@@ -12,19 +12,19 @@ jobs:
 
     strategy:
       matrix:
-        pgversion: [15, 14, 13, 12, 11]
+        pgversion: [16, 15, 14, 13, 12, 11]
 
     env:
       PGVERSION: ${{ matrix.pgversion }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.23'
 
       - name: test
         run: make test
