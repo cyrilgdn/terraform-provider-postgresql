@@ -81,11 +81,6 @@ func resourcePostgreSQLGrantRoleCreate(db *DBConnection, d *schema.ResourceData)
 	}
 	defer deferredRollback(txn)
 
-	// Revoke the granted roles before granting them again.
-	if err = revokeRole(txn, d); err != nil {
-		return err
-	}
-
 	if err = grantRole(txn, d); err != nil {
 		return err
 	}
