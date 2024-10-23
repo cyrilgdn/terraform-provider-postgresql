@@ -56,11 +56,25 @@ func pqQuoteLiteral(in string) string {
 
 func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
+	setOption := true
+
 	err := db.QueryRow(
-		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
-		role, member,
+		"SELECT 1 FROM information_schema.columns WHERE table_name='pg_auth_members' AND column_name = 'set_option'",
 	).Scan(&_rez)
 
+	switch {
+	case err == sql.ErrNoRows:
+		setOption = false
+	case err != nil:
+		return false, fmt.Errorf("could not read setOption column: %w", err)
+	}
+
+	query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
+	if setOption {
+		query += " AND set_option"
+	}
+
+	err = db.QueryRow(query, role, member).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
