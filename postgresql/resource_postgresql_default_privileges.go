@@ -272,8 +272,8 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	if !privilegesEqual {
 		d.Set("privileges", privilegesSet)
-		d.SetId(generateDefaultPrivilegesID(d))
 	}
+	d.SetId(generateDefaultPrivilegesID(d))
 
 	return nil
 }
