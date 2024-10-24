@@ -295,7 +295,7 @@ func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
 
 	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
 	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitely")
-	implicits :=[]interface{}{}
+	implicits := []interface{}{}
 	for _, p := range allowedPrivileges[objectType] {
 		if p != "ALL" {
 			implicits = append(implicits, p)
