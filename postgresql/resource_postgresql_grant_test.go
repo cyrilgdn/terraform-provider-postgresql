@@ -1139,6 +1139,83 @@ resource "postgresql_grant" "test" {
 	})
 }
 
+func TestAccPostgresqlImplicitGrants(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// create a TF config with placeholder for privileges
+	// it will be filled in each step.
+	var testGrant = fmt.Sprintf(`
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		objects     = ["test_table"]
+		privileges  = %%s
+	}
+	`, dbName, roleName)
+
+	var testCheckTableGrants = func(grants ...string) resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			return testCheckTablesPrivileges(t, dbName, roleName, []string{testTables[0]}, grants)
+		}
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(testGrant, `["ALL"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"postgresql_grant.test", "id", fmt.Sprintf("%s_%s_test_schema_table_test_table", roleName, dbName),
+					),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					testCheckTableGrants("SELECT", "INSERT", "UPDATE", "DELETE"),
+				),
+			},
+			{
+				Config: fmt.Sprintf(testGrant, `["SELECT"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					testCheckTableGrants("SELECT"),
+				),
+			},
+			{
+				// Empty list means that privileges will be applied on all tables.
+				Config: fmt.Sprintf(testGrant, `["SELECT", "INSERT", "UPDATE", "DELETE"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					testCheckTableGrants("SELECT", "INSERT", "UPDATE", "DELETE"),
+				),
+			},
+			{
+				Config:  fmt.Sprintf(testGrant, `[]`),
+				Destroy: true,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					testCheckTableGrants(""),
+				),
+			},
+		},
+	})
+}
+
 func TestAccPostgresqlGrantSchema(t *testing.T) {
 	// create a TF config with placeholder for privileges
 	// it will be filled in each step.
