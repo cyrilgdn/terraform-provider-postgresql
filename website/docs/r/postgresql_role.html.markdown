@@ -16,7 +16,7 @@ automatically run a [`REASSIGN
 OWNED`](https://www.postgresql.org/docs/current/static/sql-reassign-owned.html)
 and [`DROP
 OWNED`](https://www.postgresql.org/docs/current/static/sql-drop-owned.html) to
-the `CURRENT_USER` (normally the connected user for the provider).  If the
+the `CURRENT_USER` (normally the connected user for the provider). If the
 specified PostgreSQL ROLE owns objects in multiple PostgreSQL databases in the
 same PostgreSQL Cluster, one PostgreSQL provider per database must be created
 and all but the final ``postgresql_role`` must specify a `skip_drop_role`.
@@ -40,6 +40,17 @@ resource "postgresql_role" "my_replication_role" {
   connection_limit = 5
   password         = "md5c98cbfeb6a347a47eb8e96cfb4c4b890"
 }
+
+resource "postgresql_role" "my_audited_role" {
+  name     = "audited_role"
+  login    = true
+  password = "mypas"
+
+  parameter {
+    name  = "pgaudit.log"
+    value = "all"
+  }
+}
 ```
 
 ## Argument Reference
@@ -48,36 +59,36 @@ resource "postgresql_role" "my_replication_role" {
   server instance where it is configured.
 
 * `superuser` - (Optional) Defines whether the role is a "superuser", and
-  therefore can override all access restrictions within the database.  Default
+  therefore can override all access restrictions within the database. Default
   value is `false`.
 
 * `create_database` - (Optional) Defines a role's ability to execute `CREATE
-  DATABASE`.  Default value is `false`.
+  DATABASE`. Default value is `false`.
 
 * `create_role` - (Optional) Defines a role's ability to execute `CREATE ROLE`.
-  A role with this privilege can also alter and drop other roles.  Default value
+  A role with this privilege can also alter and drop other roles. Default value
   is `false`.
 
 * `inherit` - (Optional) Defines whether a role "inherits" the privileges of
-  roles it is a member of.  Default value is `true`.
+  roles it is a member of. Default value is `true`.
 
-* `login` - (Optional) Defines whether role is allowed to log in.  Roles without
+* `login` - (Optional) Defines whether role is allowed to log in. Roles without
   this attribute are useful for managing database privileges, but are not users
-  in the usual sense of the word.  Default value is `false`.
+  in the usual sense of the word. Default value is `false`.
 
 * `replication` - (Optional) Defines whether a role is allowed to initiate
-  streaming replication or put the system in and out of backup mode.  Default
+  streaming replication or put the system in and out of backup mode. Default
   value is `false`
 
 * `bypass_row_level_security` - (Optional) Defines whether a role bypasses every
-  row-level security (RLS) policy.  Default value is `false`.
+  row-level security (RLS) policy. Default value is `false`.
 
 * `connection_limit` - (Optional) If this role can log in, this specifies how
   many concurrent connections the role can establish. `-1` (the default) means no
   limit.
 
 * `encrypted_password` - (Optional) Defines whether the password is stored
-  encrypted in the system catalogs.  Default value is `true`.  NOTE: this value
+  encrypted in the system catalogs. Default value is `true`. NOTE: this value
   is always set (to the conservative and safe value), but may interfere with the
   behavior of
   [PostgreSQL's `password_encryption` setting](https://www.postgresql.org/docs/current/static/runtime-config-connection.html#GUC-PASSWORD-ENCRYPTION).
@@ -92,16 +103,16 @@ resource "postgresql_role" "my_replication_role" {
   `", "`.
 
 * `valid_until` - (Optional) Defines the date and time after which the role's
-  password is no longer valid.  Established connections past this `valid_time`
-  will have to be manually terminated.  This value corresponds to a PostgreSQL
+  password is no longer valid. Established connections past this `valid_time`
+  will have to be manually terminated. This value corresponds to a PostgreSQL
   datetime. If omitted or the magic value `NULL` is used, `valid_until` will be
-  set to `infinity`.  Default is `NULL`, therefore `infinity`.
+  set to `infinity`. Default is `NULL`, therefore `infinity`.
 
 * `skip_drop_role` - (Optional) When a PostgreSQL ROLE exists in multiple
   databases and the ROLE is dropped, the
   [cleanup of ownership of objects](https://www.postgresql.org/docs/current/static/role-removal.html)
   in each of the respective databases must occur before the ROLE can be dropped
-  from the catalog.  Set this option to true when there are multiple databases
+  from the catalog. Set this option to true when there are multiple databases
   in a PostgreSQL cluster using the same PostgreSQL ROLE for object ownership.
   This is the third and final step taken when removing a ROLE from a database.
 
@@ -109,18 +120,37 @@ resource "postgresql_role" "my_replication_role" {
   databases and the ROLE is dropped, a
   [`REASSIGN OWNED`](https://www.postgresql.org/docs/current/static/sql-reassign-owned.html) in
   must be executed on each of the respective databases before the `DROP ROLE`
-  can be executed to dropped the ROLE from the catalog.  This is the first and
+  can be executed to dropped the ROLE from the catalog. This is the first and
   second steps taken when removing a ROLE from a database (the second step being
   an implicit
   [`DROP OWNED`](https://www.postgresql.org/docs/current/static/sql-drop-owned.html)).
 
-* `statement_timeout` - (Optional) Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) setting for this role which allows to abort any statement that takes more than the specified amount of time.
+* `statement_timeout` - (Optional)
+  Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT)
+  setting for this role which allows to abort any statement that takes more than the specified amount of time.
 
-* `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
+* `assume_role` - (Optional) Defines the role to switch to at login
+  via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
+
+* `parameter` - (Optional) A list of configuration parameter objects. Their keys are documented below.
+
+### parameter Argument Reference
+
+~> **NOTE:** Configuration parameters that can be defined as explicit arguments
+cannot be declared using `parameter`. You must use the `search_path`, `statement_timeout`,
+`idle_in_transaction_session_timeout`, and `assume_role` arguments to set those
+configuration parameters.
+
+* `name` - (Required) Name of a configuration parameter.
+
+* `value` - (Required) Value to set for the configuration parameter.
+
+* `quote` - (Optional) Quote the value of the parameter as a literal.
+  Defaults value is `true`.
 
 ## Import Example
 
-`postgresql_role` supports importing resources.  Supposing the following
+`postgresql_role` supports importing resources. Supposing the following
 Terraform:
 
 ```hcl
