@@ -67,7 +67,7 @@ func resourcePostgreSQLSecurityLabelCreate(db *DBConnection, d *schema.ResourceD
 	}
 	log.Printf("[DEBUG] PostgreSQL security label Create")
 	label := d.Get(securityLabelLabelAttr).(string)
-	if err := resourcePostgreSQLSecurityLabelUpdateImpl(db, d, label); err != nil {
+	if err := resourcePostgreSQLSecurityLabelUpdateImpl(db, d, pq.QuoteLiteral(label)); err != nil {
 		return err
 	}
 
@@ -116,11 +116,11 @@ func resourcePostgreSQLSecurityLabelReadImpl(db *DBConnection, d *schema.Resourc
 	}
 	defer deferredRollback(txn)
 
-	query := "SELECT objtype, provider, label FROM pg_seclabels WHERE objtype = $1 and objname = $2 and provider = $3"
+	query := "SELECT objtype, provider, objname, label FROM pg_seclabels WHERE objtype = $1 and objname = $2 and provider = $3"
 	row := db.QueryRow(query, objectType, quoteIdentifier(objectName), quoteIdentifier(provider))
 
-	var label string
-	err = row.Scan(&objectType, &provider, &label)
+	var label, newObjectName, newProvider string
+	err = row.Scan(&objectType, &newProvider, &newObjectName, &label)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL security label for (%s '%s') with provider %s not found", objectType, objectName, provider)
@@ -130,6 +130,12 @@ func resourcePostgreSQLSecurityLabelReadImpl(db *DBConnection, d *schema.Resourc
 		return fmt.Errorf("Error reading security label: %w", err)
 	}
 
+	if quoteIdentifier(objectName) != newObjectName || quoteIdentifier(provider) != newProvider {
+		// In reality, this should never happen, but if it does, we want to make sure that the state is in sync with the remote system
+		// This will trigger a TF error saying that the provider has a bug if it ever happens
+		objectName = newObjectName
+		provider = newProvider
+	}
 	d.Set(securityLabelObjectTypeAttr, objectType)
 	d.Set(securityLabelObjectNameAttr, objectName)
 	d.Set(securityLabelProviderAttr, provider)
@@ -146,7 +152,7 @@ func resourcePostgreSQLSecurityLabelDelete(db *DBConnection, d *schema.ResourceD
 			db.version,
 		)
 	}
-	log.Printf("[WARN] PostgreSQL security label Delete")
+	log.Printf("[DEBUG] PostgreSQL security label Delete")
 
 	if err := resourcePostgreSQLSecurityLabelUpdateImpl(db, d, "NULL"); err != nil {
 		return err
@@ -164,7 +170,7 @@ func resourcePostgreSQLSecurityLabelUpdate(db *DBConnection, d *schema.ResourceD
 			db.version,
 		)
 	}
-	log.Printf("[WARN] PostgreSQL security label Update")
+	log.Printf("[DEBUG] PostgreSQL security label Update")
 
 	label := d.Get(securityLabelLabelAttr).(string)
 	if err := resourcePostgreSQLSecurityLabelUpdateImpl(db, d, pq.QuoteLiteral(label)); err != nil {
