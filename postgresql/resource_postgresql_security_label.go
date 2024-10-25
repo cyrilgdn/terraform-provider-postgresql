@@ -65,9 +65,9 @@ func resourcePostgreSQLSecurityLabelCreate(db *DBConnection, d *schema.ResourceD
 			db.version,
 		)
 	}
-	log.Printf("[WARN] PostgreSQL security label Create")
+	log.Printf("[DEBUG] PostgreSQL security label Create")
 	label := d.Get(securityLabelLabelAttr).(string)
-	if err := resourcePostgreSQLSecurityLabelUpdateImpl(db, d, pq.QuoteLiteral(label)); err != nil {
+	if err := resourcePostgreSQLSecurityLabelUpdateImpl(db, d, label); err != nil {
 		return err
 	}
 
@@ -88,7 +88,7 @@ func resourcePostgreSQLSecurityLabelUpdateImpl(db *DBConnection, d *schema.Resou
 
 	if _, err := db.Exec(b.String()); err != nil {
 		log.Printf("[WARN] PostgreSQL security label Create failed %s", err)
-		return err
+		return fmt.Errorf("could not create security label: %w", err)
 	}
 	return nil
 }
@@ -100,7 +100,7 @@ func resourcePostgreSQLSecurityLabelRead(db *DBConnection, d *schema.ResourceDat
 			db.version,
 		)
 	}
-	log.Printf("[WARN] PostgreSQL security label Read")
+	log.Printf("[DEBUG] PostgreSQL security label Read")
 
 	return resourcePostgreSQLSecurityLabelReadImpl(db, d)
 }
