@@ -2,8 +2,10 @@ version: "3"
 
 services:
     postgres:
-        build: build
-#        image: postgres:${PGVERSION:-latest}
+        build: 
+          context: build
+          args:
+            - PGVERSION=${PGVERSION}
         user: postgres
         command:
           - "postgres"
