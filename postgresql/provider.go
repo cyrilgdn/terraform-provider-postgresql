@@ -264,7 +264,7 @@ func getRDSAuthToken(region string, profile string, role string, username string
 
 		roleOutput, err := stsClient.AssumeRole(ctx, roleInput)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("could not assume AWS role: %w", err)
 		}
 
 		awscfg, err = awsConfig.LoadDefaultConfig(ctx,
