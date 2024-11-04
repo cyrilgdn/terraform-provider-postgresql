@@ -259,7 +259,7 @@ func getRDSAuthToken(region string, profile string, role string, username string
 		stsClient := sts.NewFromConfig(awscfg)
 		roleInput := &sts.AssumeRoleInput{
 			RoleArn:         aws.String(role),
-			RoleSessionName: aws.String("TerraformSession"),
+			RoleSessionName: aws.String("TerraformPostgresqlProvider"),
 		}
 
 		roleOutput, err := stsClient.AssumeRole(ctx, roleInput)
