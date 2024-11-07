@@ -277,7 +277,7 @@ func getRDSAuthToken(region string, profile string, role string, username string
 			),
 		)
 		if err != nil {
-			return "", fmt.Errorf("could not load AWS default config", err)
+			return "", fmt.Errorf("could not load AWS default config: %w", err)
 		}
 	}
 
