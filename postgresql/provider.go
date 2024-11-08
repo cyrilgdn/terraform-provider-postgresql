@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -40,6 +41,12 @@ func Provider() *schema.Provider {
 				}, false),
 			},
 			"host": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
+				Description: "Name of PostgreSQL server address",
+			},
+			"connection_host": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
@@ -343,6 +350,11 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	port := d.Get("port").(int)
 	username := d.Get("username").(string)
 
+	connectionHost := d.Get("connection_host").(string)
+	if connectionHost == "" {
+		connectionHost = host
+	}
+
 	var password string
 	if d.Get("aws_rds_iam_auth").(bool) {
 		profile := d.Get("aws_rds_iam_profile").(string)
@@ -370,6 +382,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	config := Config{
 		Scheme:                          d.Get("scheme").(string),
 		Host:                            host,
+		ConnectionHost:                  connectionHost,
 		Port:                            port,
 		Username:                        username,
 		Password:                        password,

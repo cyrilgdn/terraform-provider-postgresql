@@ -169,6 +169,7 @@ type ClientCertificateConfig struct {
 type Config struct {
 	Scheme                          string
 	Host                            string
+	ConnectionHost                  string
 	Port                            int
 	Username                        string
 	Password                        string
@@ -248,7 +249,10 @@ func (c *Config) connParams() []string {
 }
 
 func (c *Config) connStr(database string) string {
-	host := c.Host
+	host := c.ConnectionHost
+	if host == "" {
+		host = c.Host
+	}
 	// For GCP, support both project/region/instance and project:region:instance
 	// (The second one allows to use the output of google_sql_database_instance as host
 	if c.Scheme == "gcppostgres" {
