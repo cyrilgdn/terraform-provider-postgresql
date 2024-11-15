@@ -244,13 +244,14 @@ func getRDSAuthToken(region string, profile string, role string, username string
 	var awscfg aws.Config
 	var err error
 
+	loadOptions := []func(*awsConfig.LoadOptions) error{}
 	if profile != "" {
-		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithSharedConfigProfile(profile))
-	} else if region != "" {
-		awscfg, err = awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(region))
-	} else {
-		awscfg, err = awsConfig.LoadDefaultConfig(ctx)
+		loadOptions = append(loadOptions, awsConfig.WithSharedConfigProfile(profile))
 	}
+	if region != "" {
+		loadOptions = append(loadOptions, awsConfig.WithRegion(region))
+	}
+	awscfg, err = awsConfig.LoadDefaultConfig(ctx, loadOptions...)
 	if err != nil {
 		return "", err
 	}
