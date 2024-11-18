@@ -35,10 +35,22 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleParameterAttr                       = "parameter"
+	roleParameterNameAttr                   = "name"
+	roleParameterValueAttr                  = "value"
+	roleParameterQuoteAttr                  = "quote"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
 )
+
+// These parameters have discrete attributes, so they are not supported by the parameter block
+var ignoredRoleConfigurationParameters = []string{
+	roleSearchPathAttr,
+	roleIdleInTransactionSessionTimeoutAttr,
+	roleStatementTimeoutAttr,
+	"role",
+}
 
 func resourcePostgreSQLRole() *schema.Resource {
 	return &schema.Resource{
@@ -172,6 +184,36 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role to switch to at login",
+			},
+			roleParameterAttr: {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Description: "Configuration parameters",
+				Elem:        resourcePostgreSQLRoleConfigurationParameter(),
+			},
+		},
+	}
+}
+
+func resourcePostgreSQLRoleConfigurationParameter() *schema.Resource {
+	return &schema.Resource{
+		Schema: map[string]*schema.Schema{
+			roleParameterNameAttr: {
+				Type:         schema.TypeString,
+				Required:     true,
+				Description:  "Name of the configuration parameter to set",
+				ValidateFunc: validation.StringNotInSlice(ignoredRoleConfigurationParameters, true),
+			},
+			roleParameterValueAttr: {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Value of the configuration parameter",
+			},
+			roleParameterQuoteAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "Quote the parameter value as a literal",
 			},
 		},
 	}
@@ -308,6 +350,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setConfigurationParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -480,6 +526,8 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	d.Set(rolePasswordAttr, password)
+
+	d.Set(roleParameterAttr, readRoleParameters(roleConfig, d.Get(roleParameterAttr).(*schema.Set)))
 	return nil
 }
 
@@ -545,6 +593,28 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 		}
 	}
 	return res
+}
+
+func readRoleParameters(roleConfig pq.ByteaArray, existingParams *schema.Set) *schema.Set {
+	params := make([]interface{}, 0)
+	for _, v := range roleConfig {
+		tokens := strings.Split(string(v), "=")
+		if !sliceContainsStr(ignoredRoleConfigurationParameters, tokens[0]) {
+			quote := true
+			for _, p := range existingParams.List() {
+				existingParam := p.(map[string]interface{})
+				if existingParam[roleParameterNameAttr].(string) == tokens[0] {
+					quote = existingParam[roleParameterQuoteAttr].(bool)
+				}
+			}
+			params = append(params, map[string]interface{}{
+				roleParameterNameAttr:  tokens[0],
+				roleParameterValueAttr: tokens[1],
+				roleParameterQuoteAttr: quote,
+			})
+		}
+	}
+	return schema.NewSet(schema.HashResource(resourcePostgreSQLRoleConfigurationParameter()), params)
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -686,6 +756,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setConfigurationParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -956,6 +1030,47 @@ func grantRoles(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(query); err != nil {
 			return fmt.Errorf("could not grant role %s to %s: %w", grantingRole, role, err)
+		}
+	}
+	return nil
+}
+
+func setConfigurationParameters(txn *sql.Tx, d *schema.ResourceData) error {
+	role := d.Get(roleNameAttr).(string)
+	if d.HasChange(roleParameterAttr) {
+		o, n := d.GetChange(roleParameterAttr)
+		oldParams := o.(*schema.Set)
+		newParams := n.(*schema.Set)
+		for _, p := range oldParams.List() {
+			if !newParams.Contains(p) {
+				param := p.(map[string]interface{})
+				query := fmt.Sprintf(
+					"ALTER ROLE %s RESET %s",
+					pq.QuoteIdentifier(role),
+					pq.QuoteIdentifier(param[roleParameterNameAttr].(string)))
+				log.Printf("[DEBUG] setConfigurationParameters: %s", query)
+				if _, err := txn.Exec(query); err != nil {
+					return err
+				}
+			}
+		}
+		for _, p := range newParams.List() {
+			if !oldParams.Contains(p) {
+				param := p.(map[string]interface{})
+				value := param[roleParameterValueAttr].(string)
+				if param[roleParameterQuoteAttr].(bool) {
+					value = pq.QuoteLiteral(value)
+				}
+				query := fmt.Sprintf(
+					"ALTER ROLE %s SET %s TO %s",
+					pq.QuoteIdentifier(role),
+					pq.QuoteIdentifier(param[roleParameterNameAttr].(string)),
+					value)
+				log.Printf("[DEBUG] setConfigurationParameters: %s", query)
+				if _, err := txn.Exec(query); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
