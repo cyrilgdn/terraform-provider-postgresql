@@ -114,6 +114,13 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	var userMappingOptions []string
 	query := "SELECT umoptions FROM information_schema._pg_user_mappings WHERE authorization_identifier = $1 and foreign_server_name = $2"
 	err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
+
+	if err != sql.ErrNoRows && err != nil {
+		// Fallback to pg_user_mappings table if information_schema._pg_user_mappings is not available
+		query := "SELECT umoptions FROM pg_user_mappings WHERE usename = $1 and srvname = $2"
+		err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
+	}
+
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL user mapping (%s) for server (%s) not found", username, serverName)
