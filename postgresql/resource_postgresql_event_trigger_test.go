@@ -10,6 +10,9 @@ import (
 )
 
 func TestAccPostgresqlEventTrigger_Basic(t *testing.T) {
+	skipIfNotAcc(t)
+	testSuperuserPreCheck(t)
+
 	// Create the database outside of resource.Test
 	// because we need to create test schemas.
 	dbSuffix, teardown := setupTestDatabase(t, true, true)
@@ -135,8 +138,8 @@ resource "postgresql_function" "function" {
 resource "postgresql_event_trigger" "event_trigger" {
   name = "event_trigger_test"
   database = "%[1]s"
-  schema = "%[2]s"
   function = postgresql_function.function.name
+  function_schema = postgresql_function.function.schema
   on = "ddl_command_end"
   owner = "postgres"
   status = "enable"
