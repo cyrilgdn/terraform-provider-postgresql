@@ -128,7 +128,9 @@ func resourcePostgreSQLEventTrigger() *schema.Resource {
 
 func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceData) error {
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
-	d.SetId(eventTriggerName)
+	database := getDatabase(d, db.client.databaseName)
+
+	d.SetId(generateSchemaID(d, database))
 
 	b := bytes.NewBufferString("CREATE EVENT TRIGGER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
@@ -211,7 +213,9 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 
 func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceData) error {
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
-	d.SetId(eventTriggerName)
+	database := getDatabase(d, db.client.databaseName)
+
+	d.SetId(generateSchemaID(d, database))
 
 	// Enable or disable the event trigger
 	b := bytes.NewBufferString("ALTER EVENT TRIGGER ")
@@ -252,7 +256,9 @@ func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceDa
 
 func resourcePostgreSQLEventTriggerDelete(db *DBConnection, d *schema.ResourceData) error {
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
-	d.SetId(eventTriggerName)
+	database := getDatabase(d, db.client.databaseName)
+
+	d.SetId(generateSchemaID(d, database))
 
 	sql := fmt.Sprintf("DROP EVENT TRIGGER %s", pq.QuoteIdentifier(eventTriggerName))
 
@@ -317,7 +323,7 @@ func resourcePostgreSQLEventTriggerRead(db *DBConnection, d *schema.ResourceData
 		return err
 	}
 
-	d.SetId(name)
+	d.SetId(generateSchemaID(d, database))
 	d.Set(eventTriggerNameAttr, name)
 	d.Set(eventTriggerOnAttr, on)
 	d.Set(eventTriggerFunctionAttr, function)
