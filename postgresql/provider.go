@@ -104,6 +104,13 @@ func Provider() *schema.Provider {
 				Description: "MS Azure tenant ID (see: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)",
 			},
 
+			"gcp_iam_impersonate_service_account": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "Service account to impersonate when using GCP IAM authentication.",
+			},
+
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -325,19 +332,20 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	config := Config{
-		Scheme:            d.Get("scheme").(string),
-		Host:              host,
-		Port:              port,
-		Username:          username,
-		Password:          password,
-		DatabaseUsername:  d.Get("database_username").(string),
-		Superuser:         d.Get("superuser").(bool),
-		SSLMode:           sslMode,
-		ApplicationName:   "Terraform provider",
-		ConnectTimeoutSec: d.Get("connect_timeout").(int),
-		MaxConns:          d.Get("max_connections").(int),
-		ExpectedVersion:   version,
-		SSLRootCertPath:   d.Get("sslrootcert").(string),
+		Scheme:                          d.Get("scheme").(string),
+		Host:                            host,
+		Port:                            port,
+		Username:                        username,
+		Password:                        password,
+		DatabaseUsername:                d.Get("database_username").(string),
+		Superuser:                       d.Get("superuser").(bool),
+		SSLMode:                         sslMode,
+		ApplicationName:                 "Terraform provider",
+		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
+		MaxConns:                        d.Get("max_connections").(int),
+		ExpectedVersion:                 version,
+		SSLRootCertPath:                 d.Get("sslrootcert").(string),
+		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
