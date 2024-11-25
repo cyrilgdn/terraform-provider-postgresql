@@ -165,7 +165,7 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 
 	eventTriggerFunction := d.Get(eventTriggerFunctionAttr).(string)
 	eventTriggerSchema := d.Get(eventTriggerFunctionSchemaAttr).(string)
-	fmt.Fprint(b, " EXECUTE FUNCTION ", pq.QuoteIdentifier(eventTriggerSchema), ".", eventTriggerFunction, "()")
+	fmt.Fprint(b, " EXECUTE FUNCTION ", pq.QuoteIdentifier(eventTriggerSchema), ".", pq.QuoteIdentifier(eventTriggerFunction), "()")
 
 	createSql := b.String()
 
