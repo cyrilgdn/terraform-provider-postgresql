@@ -30,7 +30,6 @@ func resourcePostgreSQLEventTrigger() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLEventTriggerRead),
 		Update: PGResourceFunc(resourcePostgreSQLEventTriggerUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLEventTriggerDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLEventTriggerExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -134,8 +133,7 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 	b := bytes.NewBufferString("CREATE EVENT TRIGGER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
-	eventTriggerOn := d.Get(eventTriggerOnAttr).(string)
-	fmt.Fprint(b, " ON ", eventTriggerOn)
+	fmt.Fprint(b, " ON ", d.Get(eventTriggerOnAttr).(string))
 
 	if filters, ok := d.GetOk(eventTriggerFilterAttr); ok {
 		filters := filters.([]interface{})
@@ -181,7 +179,7 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 	// Table owner
 	b = bytes.NewBufferString("ALTER EVENT TRIGGER ")
 	eventTriggerOwner := d.Get(eventTriggerOwnerAttr).(string)
-	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName), " OWNER TO ", eventTriggerOwner)
+	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName), " OWNER TO ", pq.QuoteIdentifier(eventTriggerOwner))
 
 	ownerSql := b.String()
 
@@ -256,10 +254,7 @@ func resourcePostgreSQLEventTriggerDelete(db *DBConnection, d *schema.ResourceDa
 	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
 	d.SetId(eventTriggerName)
 
-	b := bytes.NewBufferString("DROP EVENT TRIGGER ")
-	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
-
-	sql := b.String()
+	sql := fmt.Sprintf("DROP EVENT TRIGGER %s", pq.QuoteIdentifier(eventTriggerName))
 
 	txn, err := startTransaction(db.client, d.Get(eventTriggerDatabaseAttr).(string))
 	if err != nil {
@@ -284,9 +279,8 @@ func resourcePostgreSQLEventTriggerRead(db *DBConnection, d *schema.ResourceData
 		return err
 	}
 
-	query := `SELECT evtname, evtevent, proname, nspname, evtenabled, evttags, usename ` +
+	query := `SELECT evtname, evtevent, proname, nspname, evtenabled, evttags, pg_get_userbyid(evtowner) ` +
 		`FROM pg_catalog.pg_event_trigger ` +
-		`JOIN pg_catalog.pg_user on pg_catalog.pg_event_trigger.evtowner = pg_catalog.pg_user.usesysid ` +
 		`JOIN pg_catalog.pg_proc on pg_catalog.pg_event_trigger.evtfoid = pg_catalog.pg_proc.oid ` +
 		`JOIN pg_catalog.pg_namespace on pg_catalog.pg_proc.pronamespace = pg_catalog.pg_namespace.oid ` +
 		`WHERE evtname=$1`
@@ -359,35 +353,6 @@ func resourcePostgreSQLEventTriggerRead(db *DBConnection, d *schema.ResourceData
 	d.Set(eventTriggerFilterAttr, filters)
 
 	return nil
-}
-
-func resourcePostgreSQLEventTriggerExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	database, eventTriggerName, err := getDBEventTriggerName(d, db.client.databaseName)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	err = txn.QueryRow("SELECT evtname FROM pg_event_trigger WHERE evtname=$1", eventTriggerName).Scan(&eventTriggerName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("error reading schema: %w", err)
-	}
-
-	return true, nil
 }
 
 func getDBEventTriggerName(d *schema.ResourceData, databaseName string) (string, string, error) {
