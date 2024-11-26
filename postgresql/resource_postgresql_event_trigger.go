@@ -24,6 +24,13 @@ const (
 	eventTriggerStatusAttr         = "status"
 )
 
+var eventTriggerStatusMap = map[string]string{
+	"disable":        "DISABLE",
+	"enable":         "ENABLE",
+	"enable_replica": "ENABLE REPLICA",
+	"enable_always":  "ENABLE ALWAYS",
+}
+
 func resourcePostgreSQLEventTrigger() *schema.Resource {
 	return &schema.Resource{
 		Create: PGResourceFunc(resourcePostgreSQLEventTriggerCreate),
@@ -174,7 +181,7 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
 	eventTriggerEnabled := d.Get(eventTriggerStatusAttr).(string)
-	fmt.Fprint(b, " ", eventTriggerEnabled)
+	fmt.Fprint(b, " ", eventTriggerStatusMap[eventTriggerEnabled])
 
 	statusSql := b.String()
 
@@ -212,7 +219,16 @@ func resourcePostgreSQLEventTriggerCreate(db *DBConnection, d *schema.ResourceDa
 }
 
 func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceData) error {
-	eventTriggerName := d.Get(eventTriggerNameAttr).(string)
+	var eventTriggerName, eventTriggerNameNew string
+
+	if d.HasChange(eventTriggerNameAttr) {
+		old, new := d.GetChange(eventTriggerNameAttr)
+		eventTriggerName = old.(string)
+		eventTriggerNameNew = new.(string)
+	} else {
+		eventTriggerName = d.Get(eventTriggerNameAttr).(string)
+	}
+
 	database := getDatabase(d, db.client.databaseName)
 
 	d.SetId(generateSchemaID(d, database))
@@ -222,7 +238,7 @@ func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceDa
 	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName))
 
 	eventTriggerEnabled := d.Get(eventTriggerStatusAttr).(string)
-	fmt.Fprint(b, " ", eventTriggerEnabled)
+	fmt.Fprint(b, " ", eventTriggerStatusMap[eventTriggerEnabled])
 
 	statusSql := b.String()
 
@@ -245,6 +261,14 @@ func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceDa
 
 	if _, err := txn.Exec(ownerSql); err != nil {
 		return err
+	}
+
+	if eventTriggerNameNew != "" {
+		if _, err := txn.Exec(
+			fmt.Sprintf("ALTER EVENT TRIGGER %s RENAME TO %s", pq.QuoteIdentifier(eventTriggerName), pq.QuoteIdentifier(eventTriggerNameNew)),
+		); err != nil {
+			return err
+		}
 	}
 
 	if err := txn.Commit(); err != nil {
