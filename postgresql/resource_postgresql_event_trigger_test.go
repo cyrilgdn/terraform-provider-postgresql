@@ -23,15 +23,19 @@ func TestAccPostgresqlEventTrigger_Basic(t *testing.T) {
 
 	dbName, _ := getTestDBNames(dbSuffix)
 
-	testAccPostgresqlDataSourceTablesEventTriggerConfig := fmt.Sprintf(testAccPostgreSQLEventTriggerConfig, dbName, schemas[0])
-
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlEventTriggerDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccPostgresqlDataSourceTablesEventTriggerConfig,
+				Config: fmt.Sprintf(testAccPostgreSQLEventTriggerConfig, dbName, schemas[0], "test_event"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlEventTriggerExists("postgresql_event_trigger.event_trigger", dbName),
+				),
+			},
+			{
+				Config: fmt.Sprintf(testAccPostgreSQLEventTriggerConfig, dbName, schemas[0], "test_event_renamed"),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlEventTriggerExists("postgresql_event_trigger.event_trigger", dbName),
 				),
@@ -58,7 +62,7 @@ func testAccCheckPostgresqlEventTriggerExists(n string, database string) resourc
 		}
 		defer deferredRollback(txn)
 
-		exists, err := checkEventTriggerExists(txn, rs.Primary.ID)
+		exists, err := checkEventTriggerExists(txn, rs.Primary.Attributes["name"])
 
 		if err != nil {
 			return fmt.Errorf("Error checking event trigger %s", err)
@@ -93,7 +97,7 @@ func testAccCheckPostgresqlEventTriggerDestroy(s *terraform.State) error {
 		}
 		defer deferredRollback(txn)
 
-		exists, err := checkEventTriggerExists(txn, rs.Primary.ID)
+		exists, err := checkEventTriggerExists(txn, rs.Primary.Attributes["name"])
 
 		if err != nil {
 			return fmt.Errorf("Error checking event trigger %s", err)
@@ -136,7 +140,7 @@ resource "postgresql_function" "function" {
 }
 
 resource "postgresql_event_trigger" "event_trigger" {
-  name = "event_trigger_test"
+  name = "%[3]s"
   database = "%[1]s"
   function = postgresql_function.function.name
   function_schema = postgresql_function.function.schema
