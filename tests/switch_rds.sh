@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 HERE=$(dirname $(readlink -f ${BASH_SOURCE:-${(%):-%N}}))
 
