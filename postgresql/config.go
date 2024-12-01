@@ -60,6 +60,7 @@ const (
 	featureAdvisoryXactLock
 	featureTransactionIsolation
 	featureSysPrivileges
+	featureFollowerReads
 )
 
 var (
@@ -156,6 +157,7 @@ var (
 		//Postgresql do not support transaction isolation in Role level
 		featureTransactionIsolation: semver.MustParseRange("<1.0.0"),
 		featureSysPrivileges:        semver.MustParseRange("<1.0.0"),
+		featureFollowerReads:        semver.MustParseRange("<1.0.0"),
 	}
 
 	// Mapping of feature flags to versions
@@ -269,6 +271,7 @@ var (
 
 		featureTransactionIsolation: semver.MustParseRange(">=23.2.0"),
 		featureSysPrivileges:        semver.MustParseRange(">=22.2.0"),
+		featureFollowerReads:        semver.MustParseRange(">=22.2.0"),
 	}
 )
 

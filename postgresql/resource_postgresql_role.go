@@ -37,6 +37,7 @@ const (
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
 	defaultTransactionIsolationAttr         = "default_transaction_isolation"
+	defaultTransactionFollowerReadsAttr     = "default_transaction_use_follower_reads"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -179,6 +180,11 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role default_transaction_isolation",
+			},
+			defaultTransactionFollowerReadsAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Role default_transaction_use_follower_reads",
 			},
 		},
 	}
@@ -331,6 +337,12 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 
 	if db.featureSupported(featureTransactionIsolation) {
 		if err = setDefaultTransactionIsolation(txn, d); err != nil {
+			return err
+		}
+	}
+
+	if db.featureSupported(featureFollowerReads) {
+		if err = setDefaultFollowerReads(txn, d); err != nil {
 			return err
 		}
 	}
@@ -511,6 +523,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.Set(defaultTransactionIsolationAttr, defaultTransactionIsolation)
 
+	defaultFollowerReads, err := readFollowerReads(db, d)
+	if err != nil {
+		return err
+	}
+
+	d.Set(defaultTransactionFollowerReadsAttr, defaultFollowerReads)
+
 	password, err := readRolePassword(db, d, roleCanLogin)
 	if err != nil {
 		return err
@@ -609,6 +628,32 @@ func readDefaultTransactionIsolation(db *DBConnection, d *schema.ResourceData) (
 		}
 	}
 	return stateDefaultTransactionIsolation, nil
+}
+
+func readFollowerReads(db *DBConnection, d *schema.ResourceData) (string, error) {
+	stateFollowerReads := d.Get(defaultTransactionFollowerReadsAttr).(string)
+	var roleSetting string
+	query := fmt.Sprintf("SELECT setconfig FROM pg_db_role_setting role_setting LEFT JOIN pg_roles role ON role.oid = role_setting.setrole where role.rolname= "+
+		"'%s'", d.Id())
+	err := db.QueryRow(query).Scan(&roleSetting)
+	switch {
+	case err == sql.ErrNoRows:
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("Error reading role: %w", err)
+	}
+
+	re := regexp.MustCompile(`default_transaction_use_follower_reads\s*=\s*([A-Z ]+)`)
+	match := re.FindStringSubmatch(roleSetting)
+	if len(match) > 1 {
+		roleFollowerReads := match[1]
+		if roleFollowerReads == stateFollowerReads {
+			return stateFollowerReads, nil
+		} else {
+			return roleFollowerReads, nil
+		}
+	}
+	return stateFollowerReads, nil
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -759,6 +804,11 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		}
 	}
 
+	if db.featureSupported(featureFollowerReads) {
+		if err = setDefaultFollowerReads(txn, d); err != nil {
+			return err
+		}
+	}
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
@@ -1159,6 +1209,31 @@ func setDefaultTransactionIsolation(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset default_transaction_isolation for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setDefaultFollowerReads(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(defaultTransactionFollowerReadsAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	defaultFollowerReads := d.Get(defaultTransactionFollowerReadsAttr).(string)
+	if defaultFollowerReads != "" {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET default_transaction_use_follower_reads = %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(defaultFollowerReads),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set default_transaction_use_follower_reads %s for %s: %w", defaultFollowerReads, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET default_transaction_use_follower_reads", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset default_transaction_use_follower_reads for %s: %w", roleName, err)
 		}
 	}
 	return nil
