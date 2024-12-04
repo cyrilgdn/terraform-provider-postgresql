@@ -24,6 +24,8 @@ startdb::
 		-c log_disconnections=on \
 		-c log_duration=on \
 		-c log_statement=all \
+		-c wal_level=logical \
+		-p 25432 \
 	| tee postgresql.log
 
 cleandb::

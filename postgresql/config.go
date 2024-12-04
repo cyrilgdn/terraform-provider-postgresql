@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
@@ -315,7 +317,13 @@ func (c *Client) connect() (*DBConnection, error) {
 	log.Printf("Creating a new database connection")
 	var db *sql.DB
 	if c.config.Scheme == "postgres" {
-		db, err = sql.Open("postgres", dsn)
+		for i := 0; i < 10; i++ {
+			db, err = sql.Open("postgres", dsn)
+			if err == nil {
+				break
+			}
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+		}
 	} else {
 		db, err = postgres.Open(c.config.ctx, dsn)
 	}
