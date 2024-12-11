@@ -56,11 +56,25 @@ func pqQuoteLiteral(in string) string {
 
 func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
+	setOption := true
+
 	err := db.QueryRow(
-		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
-		role, member,
+		"SELECT 1 FROM information_schema.columns WHERE table_name='pg_auth_members' AND column_name = 'set_option'",
 	).Scan(&_rez)
 
+	switch {
+	case err == sql.ErrNoRows:
+		setOption = false
+	case err != nil:
+		return false, fmt.Errorf("could not read setOption column: %w", err)
+	}
+
+	query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
+	if setOption {
+		query += " AND set_option"
+	}
+
+	err = db.QueryRow(query, role, member).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -265,6 +279,30 @@ func validatePrivileges(d *schema.ResourceData) error {
 		}
 	}
 	return nil
+}
+
+func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
+	objectType := d.Get("object_type").(string)
+	wanted := d.Get("privileges").(*schema.Set)
+
+	if granted.Equal(wanted) {
+		return true
+	}
+
+	if !wanted.Contains("ALL") {
+		return false
+	}
+
+	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
+	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitely")
+	implicits := []interface{}{}
+	for _, p := range allowedPrivileges[objectType] {
+		if p != "ALL" {
+			implicits = append(implicits, p)
+		}
+	}
+	wantedSet := schema.NewSet(schema.HashString, implicits)
+	return granted.Equal(wantedSet)
 }
 
 func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
