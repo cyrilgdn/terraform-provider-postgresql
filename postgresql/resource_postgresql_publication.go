@@ -19,7 +19,7 @@ const (
 	pubTablesAttr                  = "tables"
 	pubDropCascadeAttr             = "drop_cascade"
 	pubPublishAttr                 = "publish_param"
-	pubPublisViaPartitionRoothAttr = "publish_via_partition_root_param"
+	pubPublishViaPartitionRootAttr = "publish_via_partition_root_param"
 )
 
 func resourcePostgreSQLPublication() *schema.Resource {
@@ -79,7 +79,7 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Sets which DML operations will be published",
 			},
-			pubPublisViaPartitionRoothAttr: {
+			pubPublishViaPartitionRootAttr: {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				ForceNew:    false,
@@ -205,12 +205,12 @@ func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) e
 	paramAlterTemplate := "ALTER PUBLICATION %s %s"
 	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled)
 	if err != nil {
-		return fmt.Errorf("Error getting publication paramters: %w", err)
+		return fmt.Errorf("Error getting publication parameters: %w", err)
 	}
 	if publicationParametersString != "" {
 		sql := fmt.Sprintf(paramAlterTemplate, pubName, publicationParametersString)
 		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("Error updating publication paramters: %w", err)
+			return fmt.Errorf("Error updating publication parameters: %w", err)
 		}
 	}
 	return nil
@@ -397,7 +397,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	d.Set(pubAllTablesAttr, puballtables)
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
-		d.Set(pubPublisViaPartitionRoothAttr, pubviaroot)
+		d.Set(pubPublishViaPartitionRootAttr, pubviaroot)
 	}
 	return nil
 }
@@ -487,11 +487,11 @@ func validatedPublicationPublishParams(paramList []interface{}) ([]string, error
 }
 
 func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (string, error) {
-	parmeterSQLTemplate := ""
+	parameterSQLTemplate := ""
 	returnValue := ""
 	pubParams := make(map[string]string, 2)
 	if d.IsNewResource() {
-		if v, ok := d.GetOk(pubPublisViaPartitionRoothAttr); ok {
+		if v, ok := d.GetOk(pubPublishViaPartitionRootAttr); ok {
 			if !pubViaRootEnabled {
 				return "", fmt.Errorf(
 					"publish_via_partition_root attribute is supported only for postgres version 13 and above",
@@ -508,17 +508,17 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 			}
 		}
 
-		parmeterSQLTemplate = "WITH (%s)"
+		parameterSQLTemplate = "WITH (%s)"
 
 	} else {
 
-		if d.HasChange(pubPublisViaPartitionRoothAttr) {
+		if d.HasChange(pubPublishViaPartitionRootAttr) {
 			if !pubViaRootEnabled {
 				return "", fmt.Errorf(
 					"publish_via_partition_root attribute is supported only for postgres version 13 and above",
 				)
 			}
-			_, nraw := d.GetChange(pubPublisViaPartitionRoothAttr)
+			_, nraw := d.GetChange(pubPublishViaPartitionRootAttr)
 			pubParams["publish_via_partition_root"] = fmt.Sprintf("%v", nraw.(bool))
 		}
 
@@ -530,7 +530,7 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 				pubParams["publish"] = fmt.Sprintf("'%s'", strings.Join(paramsList, ", "))
 			}
 		}
-		parmeterSQLTemplate = "SET (%s)"
+		parameterSQLTemplate = "SET (%s)"
 
 	}
 	var paramsList []string
@@ -538,7 +538,7 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 		paramsList = append(paramsList, fmt.Sprintf("%s = %s", k, v))
 	}
 	if len(paramsList) > 0 {
-		returnValue = fmt.Sprintf(parmeterSQLTemplate, strings.Join(paramsList, ","))
+		returnValue = fmt.Sprintf(parameterSQLTemplate, strings.Join(paramsList, ","))
 	}
 	return returnValue, nil
 }

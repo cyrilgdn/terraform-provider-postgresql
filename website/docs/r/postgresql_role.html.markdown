@@ -109,7 +109,7 @@ resource "postgresql_role" "my_replication_role" {
   databases and the ROLE is dropped, a
   [`REASSIGN OWNED`](https://www.postgresql.org/docs/current/static/sql-reassign-owned.html) in
   must be executed on each of the respective databases before the `DROP ROLE`
-  can be executed to dropped the ROLE from the catalog.  This is the first and
+  can be executed to drop the ROLE from the catalog.  This is the first and
   second steps taken when removing a ROLE from a database (the second step being
   an implicit
   [`DROP OWNED`](https://www.postgresql.org/docs/current/static/sql-drop-owned.html)).

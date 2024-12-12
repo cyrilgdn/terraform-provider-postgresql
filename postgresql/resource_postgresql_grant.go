@@ -192,7 +192,7 @@ func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceD
 	}
 	if err := withRolesGranted(txn, owners, func() error {
 		// Revoke all privileges before granting otherwise reducing privileges will not work.
-		// We just have to revoke them in the same transaction so the role will not lost its
+		// We just have to revoke them in the same transaction so the role will not lose its
 		// privileges between the revoke and grant statements.
 		if err := revokeRolePrivileges(txn, d, usePrevious); err != nil {
 			return err

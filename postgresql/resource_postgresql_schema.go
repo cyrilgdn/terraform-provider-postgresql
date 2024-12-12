@@ -509,7 +509,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 
 // schemaChangedPolicies walks old and new to create a set of queries that can
 // be executed to enact each type of state change (roles that have been dropped
-// from the policy, added to a policy, have updated privilges, or are
+// from the policy, added to a policy, have updated privileges, or are
 // unchanged).
 func schemaChangedPolicies(old, new []interface{}) (dropped, added, update, unchanged map[string]interface{}) {
 	type RoleKey string

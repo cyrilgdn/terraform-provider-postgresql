@@ -10,7 +10,7 @@ BEGIN;
     CREATE role rds LOGIN CREATEDB CREATEROLE PASSWORD 'rds';
     -- On RDS, postgres user is member of these roles
     -- But it's not really needed for the tests and pg_monitor is
-    -- not available on Posgres 8.x
+    -- not available on Postgres 8.x
     -- GRANT pg_monitor,pg_signal_backend TO rds;
     ALTER DATABASE postgres OWNER TO rds;
     ALTER SCHEMA public OWNER TO rds;

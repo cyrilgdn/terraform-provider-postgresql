@@ -307,7 +307,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 		// We don't want to retain connection
 		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dopped in the plan.
+		// we don't keep opened connection in case of the db has to be dropped in the plan.
 		db.SetMaxIdleConns(0)
 		db.SetMaxOpenConns(c.config.MaxConns)
 

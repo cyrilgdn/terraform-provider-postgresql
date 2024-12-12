@@ -179,7 +179,7 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		// in order to manipulate its objects/privileges.
 		// But PostgreSQL prevents `foo` to be a member of the role `postgres`,
 		// and for `postgres` to be a member of the role `foo`, at the same time.
-		// In this case we will temporary revoke this privilege.
+		// In this case we will temporarily revoke this privilege.
 		// So, the following queries will happen (in the same transaction):
 		//  - REVOKE postgres FROM foo
 		//  - GRANT foo TO postgres
@@ -294,7 +294,7 @@ func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
 	}
 
 	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
-	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitely")
+	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitly")
 	implicits := []interface{}{}
 	for _, p := range allowedPrivileges[objectType] {
 		if p != "ALL" {

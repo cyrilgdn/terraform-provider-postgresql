@@ -108,7 +108,7 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				Optional:    true,
 				ForceNew:    true,
 				Default:     "plpgsql",
-				Description: "Language of theof the function. One of: internal, sql, c, plpgsql",
+				Description: "Language of the function. One of: internal, sql, c, plpgsql",
 
 				DiffSuppressFunc: defaultDiffSuppressFunc,
 			},

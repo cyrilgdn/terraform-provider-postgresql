@@ -135,7 +135,7 @@ func TestAccPostgresqlDatabase_Update(t *testing.T) {
 	// Version dependent features values will be set in PreCheck
 	// because we need to access database to check Postgres version.
 
-	// Allow connection depends of Postgres version (needs pg >= 9.5)
+	// Allow connection depends on Postgres version (needs pg >= 9.5)
 	var allowConnections bool
 
 	resource.Test(t, resource.TestCase{
