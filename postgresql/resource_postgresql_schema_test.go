@@ -56,7 +56,7 @@ func TestAccPostgresqlSchema_AddPolicy(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			// TODO: Need to check if remooving policy is buggy
+			// TODO: Need to check if removing policy is buggy
 			// because non-superuser fails to drop a role
 			testSuperuserPreCheck(t)
 		},
