@@ -54,4 +54,5 @@ Changing this value
 Changing this value
   will force the creation of a new resource as this value can only be set
   when the user mapping is created.
+* `database` - (Optional) Which database to create the extension on. Defaults to provider database. 
 * `options` - (Optional) This clause specifies the options of the user mapping. The options typically define the actual user name and password of the mapping. Option names must be unique. The allowed option names and values are specific to the server's foreign-data wrapper.

@@ -19,6 +19,7 @@ const (
 	serverFDWAttr         = "fdw_name"
 	serverOptionsAttr     = "options"
 	serverDropCascadeAttr = "drop_cascade"
+	serverDatabaseAttr    = "database"
 )
 
 func resourcePostgreSQLServer() *schema.Resource {
@@ -74,6 +75,12 @@ func resourcePostgreSQLServer() *schema.Resource {
 				Default:     false,
 				Description: "Automatically drop objects that depend on the server (such as user mappings), and in turn all objects that depend on those objects. Drop RESTRICT is the default",
 			},
+			serverDatabaseAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: "Specifies the database in which the server will be created",
+			},
 		},
 	}
 }
@@ -87,6 +94,7 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	serverName := d.Get(serverNameAttr).(string)
+	databaseName := getDatabaseForServer(d, db.client.databaseName)
 
 	b := bytes.NewBufferString("CREATE SERVER ")
 	fmt.Fprint(b, pq.QuoteIdentifier(serverName))
@@ -115,7 +123,7 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 		fmt.Fprint(b, " ) ")
 	}
 
-	txn, err := startTransaction(db.client, "")
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
@@ -147,6 +155,13 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 	return resourcePostgreSQLServerReadImpl(db, d)
 }
 
+func getDatabaseForServer(d *schema.ResourceData, defaultDatabase string) string {
+	if v, ok := d.GetOk(serverDatabaseAttr); ok {
+		return v.(string)
+	}
+	return defaultDatabase
+}
+
 func resourcePostgreSQLServerRead(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
@@ -160,7 +175,8 @@ func resourcePostgreSQLServerRead(db *DBConnection, d *schema.ResourceData) erro
 
 func resourcePostgreSQLServerReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	serverName := d.Get(serverNameAttr).(string)
-	txn, err := startTransaction(db.client, "")
+	databaseName := getDatabaseForServer(d, db.client.databaseName)
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
@@ -193,6 +209,7 @@ func resourcePostgreSQLServerReadImpl(db *DBConnection, d *schema.ResourceData) 
 	d.Set(serverOwnerAttr, serverOwner)
 	d.Set(serverOptionsAttr, mappedOptions)
 	d.Set(serverFDWAttr, serverFDW)
+	d.Set(serverDatabaseAttr, databaseName)
 	d.SetId(serverName)
 
 	return nil
@@ -207,8 +224,9 @@ func resourcePostgreSQLServerDelete(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	serverName := d.Get(serverNameAttr).(string)
+	databaseName := getDatabaseForServer(d, db.client.databaseName)
 
-	txn, err := startTransaction(db.client, "")
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
@@ -240,8 +258,8 @@ func resourcePostgreSQLServerUpdate(db *DBConnection, d *schema.ResourceData) er
 			db.version,
 		)
 	}
-
-	txn, err := startTransaction(db.client, "")
+	databaseName := getDatabaseForServer(d, db.client.databaseName)
+	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
