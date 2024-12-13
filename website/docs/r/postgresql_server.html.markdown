@@ -46,6 +46,7 @@ resource "postgresql_server" "myserver_file" {
 ## Argument Reference
 
 * `server_name` - (Required) The name of the foreign server to be created.
+* `database` - (Optional) Which database to create the extension on. Defaults to provider database. 
 * `fdw_name` - (Required) The name of the foreign-data wrapper that manages the server.
 Changing this value
   will force the creation of a new resource as this value can only be set
