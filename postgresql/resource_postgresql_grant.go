@@ -34,12 +34,12 @@ var objectTypes = map[string]string{
 	"schema":   "n",
 }
 
+type ResourceSchemeGetter func(string) interface{}
+
 func resourcePostgreSQLGrant() *schema.Resource {
 	return &schema.Resource{
 		Create: PGResourceFunc(resourcePostgreSQLGrantCreate),
-		// Since all of this resource's arguments force a recreation
-		// there's no need for an Update function
-		// Update:
+		Update: PGResourceFunc(resourcePostgreSQLGrantUpdate),
 		Read:   PGResourceFunc(resourcePostgreSQLGrantRead),
 		Delete: PGResourceFunc(resourcePostgreSQLGrantDelete),
 
@@ -88,7 +88,6 @@ func resourcePostgreSQLGrant() *schema.Resource {
 			"privileges": {
 				Type:        schema.TypeSet,
 				Required:    true,
-				ForceNew:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
 				Description: "The list of privileges to grant",
@@ -129,6 +128,14 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
+	return resourcePostgreSQLGrantCreateOrUpdate(db, d, false)
+}
+
+func resourcePostgreSQLGrantUpdate(db *DBConnection, d *schema.ResourceData) error {
+	return resourcePostgreSQLGrantCreateOrUpdate(db, d, true)
+}
+
+func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceData, usePrevious bool) error {
 	if err := validateFeatureSupport(db, d); err != nil {
 		return fmt.Errorf("feature is not supported: %v", err)
 	}
@@ -187,7 +194,7 @@ func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) err
 		// Revoke all privileges before granting otherwise reducing privileges will not work.
 		// We just have to revoke them in the same transaction so the role will not lost its
 		// privileges between the revoke and grant statements.
-		if err := revokeRolePrivileges(txn, d); err != nil {
+		if err := revokeRolePrivileges(txn, d, usePrevious); err != nil {
 			return err
 		}
 		if err := grantRolePrivileges(txn, d); err != nil {
@@ -243,7 +250,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	}
 
 	if err := withRolesGranted(txn, owners, func() error {
-		return revokeRolePrivileges(txn, d)
+		return revokeRolePrivileges(txn, d, false)
 	}); err != nil {
 		return err
 	}
@@ -255,7 +262,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readDatabaseRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readDatabaseRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("database").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -269,12 +276,14 @@ WHERE grantee = $2
 	if err := txn.QueryRow(query, dbName, roleOID).Scan(&privileges); err != nil {
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
-
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	if !resourcePrivilegesEqual(granted, d) {
+		return d.Set("privileges", granted)
+	}
 	return nil
 }
 
-func readSchemaRolePriviges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readSchemaRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("schema").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -289,7 +298,10 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for schema %s: %w", dbName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	if !resourcePrivilegesEqual(granted, d) {
+		return d.Set("privileges", granted)
+	}
 	return nil
 }
 
@@ -309,7 +321,10 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for foreign data wrapper %s: %w", fdwName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	if !resourcePrivilegesEqual(granted, d) {
+		return d.Set("privileges", granted)
+	}
 	return nil
 }
 
@@ -329,7 +344,10 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for foreign server %s: %w", srvName, err)
 	}
 
-	d.Set("privileges", pgArrayToSet(privileges))
+	granted := pgArrayToSet(privileges)
+	if !resourcePrivilegesEqual(granted, d) {
+		return d.Set("privileges", granted)
+	}
 	return nil
 }
 
@@ -426,10 +444,10 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	switch objectType {
 	case "database":
-		return readDatabaseRolePriviges(txn, d, roleOID)
+		return readDatabaseRolePrivileges(txn, d, roleOID)
 
 	case "schema":
-		return readSchemaRolePriviges(txn, d, roleOID)
+		return readSchemaRolePrivileges(txn, d, roleOID)
 
 	case "foreign_data_wrapper":
 		return readForeignDataWrapperRolePrivileges(txn, d, roleOID)
@@ -502,8 +520,7 @@ GROUP BY pg_class.relname
 		}
 
 		privilegesSet := pgArrayToSet(privileges)
-
-		if !privilegesSet.Equal(d.Get("privileges").(*schema.Set)) {
+		if !resourcePrivilegesEqual(privilegesSet, d) {
 			// If any object doesn't have the same privileges as saved in the state,
 			// we return its privileges to force an update.
 			log.Printf(
@@ -589,40 +606,40 @@ func createGrantQuery(d *schema.ResourceData, privileges []string) string {
 	return query
 }
 
-func createRevokeQuery(d *schema.ResourceData) string {
+func createRevokeQuery(getter ResourceSchemeGetter) string {
 	var query string
 
-	switch strings.ToUpper(d.Get("object_type").(string)) {
+	switch strings.ToUpper(getter("object_type").(string)) {
 	case "DATABASE":
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s",
-			pq.QuoteIdentifier(d.Get("database").(string)),
-			pq.QuoteIdentifier(d.Get("role").(string)),
+			pq.QuoteIdentifier(getter("database").(string)),
+			pq.QuoteIdentifier(getter("role").(string)),
 		)
 	case "SCHEMA":
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON SCHEMA %s FROM %s",
-			pq.QuoteIdentifier(d.Get("schema").(string)),
-			pq.QuoteIdentifier(d.Get("role").(string)),
+			pq.QuoteIdentifier(getter("schema").(string)),
+			pq.QuoteIdentifier(getter("role").(string)),
 		)
 	case "FOREIGN_DATA_WRAPPER":
-		fdwName := d.Get("objects").(*schema.Set).List()[0]
+		fdwName := getter("objects").(*schema.Set).List()[0]
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON FOREIGN DATA WRAPPER %s FROM %s",
 			pq.QuoteIdentifier(fdwName.(string)),
-			pq.QuoteIdentifier(d.Get("role").(string)),
+			pq.QuoteIdentifier(getter("role").(string)),
 		)
 	case "FOREIGN_SERVER":
-		srvName := d.Get("objects").(*schema.Set).List()[0]
+		srvName := getter("objects").(*schema.Set).List()[0]
 		query = fmt.Sprintf(
 			"REVOKE ALL PRIVILEGES ON FOREIGN SERVER %s FROM %s",
 			pq.QuoteIdentifier(srvName.(string)),
-			pq.QuoteIdentifier(d.Get("role").(string)),
+			pq.QuoteIdentifier(getter("role").(string)),
 		)
 	case "COLUMN":
-		objects := d.Get("objects").(*schema.Set)
-		columns := d.Get("columns").(*schema.Set)
-		privileges := d.Get("privileges").(*schema.Set)
+		objects := getter("objects").(*schema.Set)
+		columns := getter("columns").(*schema.Set)
+		privileges := getter("privileges").(*schema.Set)
 		if privileges.Len() == 0 || columns.Len() == 0 {
 			// No privileges to revoke, so don't revoke anything
 			query = "SELECT NULL"
@@ -631,13 +648,13 @@ func createRevokeQuery(d *schema.ResourceData) string {
 				"REVOKE %s (%s) ON TABLE %s FROM %s",
 				setToPgIdentSimpleList(privileges),
 				setToPgIdentListWithoutSchema(columns),
-				setToPgIdentList(d.Get("schema").(string), objects),
-				pq.QuoteIdentifier(d.Get("role").(string)),
+				setToPgIdentList(getter("schema").(string), objects),
+				pq.QuoteIdentifier(getter("role").(string)),
 			)
 		}
 	case "TABLE", "SEQUENCE", "FUNCTION", "PROCEDURE", "ROUTINE":
-		objects := d.Get("objects").(*schema.Set)
-		privileges := d.Get("privileges").(*schema.Set)
+		objects := getter("objects").(*schema.Set)
+		privileges := getter("privileges").(*schema.Set)
 		if objects.Len() > 0 {
 			if privileges.Len() > 0 {
 				// Revoking specific privileges instead of all privileges
@@ -645,24 +662,24 @@ func createRevokeQuery(d *schema.ResourceData) string {
 				query = fmt.Sprintf(
 					"REVOKE %s ON %s %s FROM %s",
 					setToPgIdentSimpleList(privileges),
-					strings.ToUpper(d.Get("object_type").(string)),
-					setToPgIdentList(d.Get("schema").(string), objects),
-					pq.QuoteIdentifier(d.Get("role").(string)),
+					strings.ToUpper(getter("object_type").(string)),
+					setToPgIdentList(getter("schema").(string), objects),
+					pq.QuoteIdentifier(getter("role").(string)),
 				)
 			} else {
 				query = fmt.Sprintf(
 					"REVOKE ALL PRIVILEGES ON %s %s FROM %s",
-					strings.ToUpper(d.Get("object_type").(string)),
-					setToPgIdentList(d.Get("schema").(string), objects),
-					pq.QuoteIdentifier(d.Get("role").(string)),
+					strings.ToUpper(getter("object_type").(string)),
+					setToPgIdentList(getter("schema").(string), objects),
+					pq.QuoteIdentifier(getter("role").(string)),
 				)
 			}
 		} else {
 			query = fmt.Sprintf(
 				"REVOKE ALL PRIVILEGES ON ALL %sS IN SCHEMA %s FROM %s",
-				strings.ToUpper(d.Get("object_type").(string)),
-				pq.QuoteIdentifier(d.Get("schema").(string)),
-				pq.QuoteIdentifier(d.Get("role").(string)),
+				strings.ToUpper(getter("object_type").(string)),
+				pq.QuoteIdentifier(getter("schema").(string)),
+				pq.QuoteIdentifier(getter("role").(string)),
 			)
 		}
 	}
@@ -687,8 +704,21 @@ func grantRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	return err
 }
 
-func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
-	query := createRevokeQuery(d)
+func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData, usePrevious bool) error {
+	getter := d.Get
+
+	if usePrevious {
+		getter = func(name string) interface{} {
+			if d.HasChange(name) {
+				old, _ := d.GetChange(name)
+				return old
+			}
+
+			return d.Get(name)
+		}
+	}
+
+	query := createRevokeQuery(getter)
 	if len(query) == 0 {
 		// Query is empty, don't run anything
 		return nil

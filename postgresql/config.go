@@ -12,9 +12,12 @@ import (
 
 	"github.com/blang/semver"
 	_ "github.com/lib/pq" // PostgreSQL db
+	"gocloud.dev/gcp"
+	"gocloud.dev/gcp/cloudsql"
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
-	_ "gocloud.dev/postgres/gcppostgres"
+	"gocloud.dev/postgres/gcppostgres"
+	"google.golang.org/api/impersonate"
 )
 
 type featureName uint
@@ -41,6 +44,8 @@ const (
 	featurePubWithoutTruncate
 	featureFunction
 	featureServer
+	featureCreateRoleSelfGrant
+	featureSecurityLabel
 )
 
 var (
@@ -112,6 +117,11 @@ var (
 		featureServer: semver.MustParseRange(">=10.0.0"),
 
 		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
+
+		// New privileges rules in version 16
+		// https://www.postgresql.org/docs/16/release-16.html#RELEASE-16-PRIVILEGES
+		featureCreateRoleSelfGrant: semver.MustParseRange(">=16.0.0"),
+		featureSecurityLabel:       semver.MustParseRange(">=11.0.0"),
 	}
 )
 
@@ -157,21 +167,22 @@ type ClientCertificateConfig struct {
 
 // Config - provider config
 type Config struct {
-	Scheme            string
-	Host              string
-	Port              int
-	Username          string
-	Password          string
-	DatabaseUsername  string
-	Superuser         bool
-	SSLMode           string
-	ApplicationName   string
-	Timeout           int
-	ConnectTimeoutSec int
-	MaxConns          int
-	ExpectedVersion   semver.Version
-	SSLClientCert     *ClientCertificateConfig
-	SSLRootCertPath   string
+	Scheme                          string
+	Host                            string
+	Port                            int
+	Username                        string
+	Password                        string
+	DatabaseUsername                string
+	Superuser                       bool
+	SSLMode                         string
+	ApplicationName                 string
+	Timeout                         int
+	ConnectTimeoutSec               int
+	MaxConns                        int
+	ExpectedVersion                 semver.Version
+	SSLClientCert                   *ClientCertificateConfig
+	SSLRootCertPath                 string
+	GCPIAMImpersonateServiceAccount string
 }
 
 // Client struct holding connection string
@@ -280,6 +291,8 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var err error
 		if c.config.Scheme == "postgres" {
 			db, err = sql.Open(proxyDriverName, dsn)
+		} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
+			db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
@@ -344,4 +357,25 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	}
 
 	return &version, nil
+}
+
+func openImpersonatedGCPDBConnection(ctx context.Context, dsn string, targetServiceAccountEmail string) (*sql.DB, error) {
+	ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+		TargetPrincipal: targetServiceAccountEmail,
+		Scopes:          []string{"https://www.googleapis.com/auth/sqlservice.admin"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Error creating token source with service account impersonation of %s: %w", targetServiceAccountEmail, err)
+	}
+	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), ts)
+	if err != nil {
+		return nil, fmt.Errorf("Error creating HTTP client with service account impersonation of %s: %w", targetServiceAccountEmail, err)
+	}
+	certSource := cloudsql.NewCertSourceWithIAM(client, ts)
+	opener := gcppostgres.URLOpener{CertSource: certSource}
+	dbURL, err := url.Parse(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing connection string: %w", err)
+	}
+	return opener.OpenPostgresURL(ctx, dbURL)
 }

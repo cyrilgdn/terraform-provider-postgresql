@@ -134,7 +134,7 @@ data "aws_secretsmanager_secret_version" "postgres_password" {
 
 provider "postgresql" {
    [...]
-   password = data.aws_secretsmanager_secret_version.postgres_password.secret_string
+   password = jsondecode(data.aws_secretsmanager_secret_version.postgres_password.secret_string)["password"]
 }
 ```
 
@@ -183,6 +183,7 @@ The following arguments are supported:
   from the environment (or the given profile, see `aws_rds_iam_profile`)
 * `aws_rds_iam_profile` - (Optional) The AWS IAM Profile to use while using AWS RDS IAM Auth.
 * `aws_rds_iam_region` - (Optional) The AWS region to use while using AWS RDS IAM Auth.
+* `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
 
@@ -214,7 +215,28 @@ To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres` and `host` to the c
 For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file.
 These credentials can be created here: https://console.cloud.google.com/iam-admin/serviceaccounts
 
-See also: https://cloud.google.com/docs/authentication/production
+In addition, the provider supports service account impersonation with the `gcp_iam_impersonate_service_account` option. You must ensure:
+
+- The IAM database user has sufficient permissions to connect to the database, e.g., `roles/cloudsql.instanceUser`
+- The principal (IAM user or IAM service account) behind the `GOOGLE_APPLICATION_CREDENTIALS` has sufficient permissions to impersonate the provided service account. Learn more from [roles for service account authentication](https://cloud.google.com/iam/docs/service-account-permissions).
+
+```hcl
+provider "postgresql" {
+  scheme   = "gcppostgres"
+  host     = "test-project/europe-west3/test-instance"
+  port     = 5432
+
+  username                            = "service_account_id@$project_id.iam"
+  gcp_iam_impersonate_service_account = "service_account_id@$project_id.iam.gserviceaccount.com"
+
+  superuser = false
+}
+```
+
+See also: 
+
+- https://cloud.google.com/docs/authentication/production
+- https://cloud.google.com/sql/docs/postgres/iam-logins
 
 ---
 **Note**

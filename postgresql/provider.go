@@ -3,9 +3,12 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"os"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -89,6 +92,13 @@ func Provider() *schema.Provider {
 				Description: "AWS region to use for IAM auth",
 			},
 
+			"aws_rds_iam_provider_role_arn": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "AWS IAM role to assume for IAM auth",
+			},
+
 			"azure_identity_auth": {
 				Type:     schema.TypeBool,
 				Optional: true,
@@ -101,6 +111,13 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				Default:     "",
 				Description: "MS Azure tenant ID (see: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)",
+			},
+
+			"gcp_iam_impersonate_service_account": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "Service account to impersonate when using GCP IAM authentication.",
 			},
 
 			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
@@ -200,6 +217,7 @@ func Provider() *schema.Provider {
 			"postgresql_function":                  resourcePostgreSQLFunction(),
 			"postgresql_server":                    resourcePostgreSQLServer(),
 			"postgresql_user_mapping":              resourcePostgreSQLUserMapping(),
+			"postgresql_security_label":            resourcePostgreSQLSecurityLabel(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -219,7 +237,7 @@ func validateExpectedVersion(v interface{}, key string) (warnings []string, erro
 	return
 }
 
-func getRDSAuthToken(region string, profile string, username string, host string, port int) (string, error) {
+func getRDSAuthToken(region string, profile string, role string, username string, host string, port int) (string, error) {
 	endpoint := fmt.Sprintf("%s:%d", host, port)
 
 	ctx := context.Background()
@@ -236,6 +254,32 @@ func getRDSAuthToken(region string, profile string, username string, host string
 	}
 	if err != nil {
 		return "", err
+	}
+
+	if role != "" {
+		stsClient := sts.NewFromConfig(awscfg)
+		roleInput := &sts.AssumeRoleInput{
+			RoleArn:         aws.String(role),
+			RoleSessionName: aws.String("TerraformPostgresqlProvider"),
+		}
+
+		roleOutput, err := stsClient.AssumeRole(ctx, roleInput)
+		if err != nil {
+			return "", fmt.Errorf("could not assume AWS role: %w", err)
+		}
+
+		awscfg, err = awsConfig.LoadDefaultConfig(ctx,
+			awsConfig.WithCredentialsProvider(
+				aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(
+					*roleOutput.Credentials.AccessKeyId,
+					*roleOutput.Credentials.SecretAccessKey,
+					*roleOutput.Credentials.SessionToken,
+				)),
+			),
+		)
+		if err != nil {
+			return "", fmt.Errorf("could not load AWS default config: %w", err)
+		}
 	}
 
 	token, err := auth.BuildAuthToken(ctx, endpoint, awscfg.Region, username, awscfg.Credentials)
@@ -304,8 +348,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	if d.Get("aws_rds_iam_auth").(bool) {
 		profile := d.Get("aws_rds_iam_profile").(string)
 		region := d.Get("aws_rds_iam_region").(string)
+		role := d.Get("aws_rds_iam_provider_role_arn").(string)
 		var err error
-		password, err = getRDSAuthToken(region, profile, username, host, port)
+		password, err = getRDSAuthToken(region, profile, role, username, host, port)
 		if err != nil {
 			return nil, err
 		}
@@ -324,19 +369,20 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	config := Config{
-		Scheme:            d.Get("scheme").(string),
-		Host:              host,
-		Port:              port,
-		Username:          username,
-		Password:          password,
-		DatabaseUsername:  d.Get("database_username").(string),
-		Superuser:         d.Get("superuser").(bool),
-		SSLMode:           sslMode,
-		ApplicationName:   "Terraform provider",
-		ConnectTimeoutSec: d.Get("connect_timeout").(int),
-		MaxConns:          d.Get("max_connections").(int),
-		ExpectedVersion:   version,
-		SSLRootCertPath:   d.Get("sslrootcert").(string),
+		Scheme:                          d.Get("scheme").(string),
+		Host:                            host,
+		Port:                            port,
+		Username:                        username,
+		Password:                        password,
+		DatabaseUsername:                d.Get("database_username").(string),
+		Superuser:                       d.Get("superuser").(bool),
+		SSLMode:                         sslMode,
+		ApplicationName:                 "Terraform provider",
+		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
+		MaxConns:                        d.Get("max_connections").(int),
+		ExpectedVersion:                 version,
+		SSLRootCertPath:                 d.Get("sslrootcert").(string),
+		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

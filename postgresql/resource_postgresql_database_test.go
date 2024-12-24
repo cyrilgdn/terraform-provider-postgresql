@@ -43,6 +43,8 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.default_opts", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.default_opts", "is_template", "false"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.default_opts", "alter_object_ownership", "false"),
 
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "owner", "myrole"),
@@ -62,6 +64,8 @@ func TestAccPostgresqlDatabase_Basic(t *testing.T) {
 						"postgresql_database.modified_opts", "connection_limit", "10"),
 					resource.TestCheckResourceAttr(
 						"postgresql_database.modified_opts", "is_template", "true"),
+					resource.TestCheckResourceAttr(
+						"postgresql_database.modified_opts", "alter_object_ownership", "true"),
 
 					resource.TestCheckResourceAttr(
 						"postgresql_database.pathological_opts", "owner", "myrole"),
@@ -266,21 +270,94 @@ resource postgresql_database "test_db" {
 	})
 }
 
+// Test the case where the owned objects by the previous database owner are altered.
+func TestAccPostgresqlDatabase_AlterObjectOwnership(t *testing.T) {
+	skipIfNotAcc(t)
+
+	const (
+		databaseSuffix = "ownership"
+		tableName      = "testtable1"
+		previous_owner = "previous_owner"
+		new_owner      = "new_owner"
+	)
+
+	databaseName := fmt.Sprintf("%s_%s", dbNamePrefix, databaseSuffix)
+
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	for _, role := range []string{previous_owner, new_owner} {
+		dbExecute(
+			t, dsn,
+			fmt.Sprintf("CREATE ROLE %s;", role),
+		)
+		defer func(role string) {
+			dbExecute(t, dsn, fmt.Sprintf("DROP ROLE %s", role))
+		}(role)
+
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource postgresql_database "test_db" {
+       name  = "tf_tests_db_ownership"
+       owner = "previous_owner"
+	   alter_object_ownership = true
+}
+`,
+				Check: func(*terraform.State) error {
+					// To test default privileges, we need to create a table
+					// after having apply the state.
+					_ = createTestTables(t, databaseSuffix, []string{tableName}, previous_owner)
+					return nil
+				},
+			},
+			{
+				Config: `
+resource postgresql_database "test_db" {
+       name  = "tf_tests_db_ownership"
+       owner = "new_owner"
+	   alter_object_ownership = true
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "name", databaseName),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", new_owner),
+					resource.TestCheckResourceAttr("postgresql_database.test_db", "alter_object_ownership", "true"),
+
+					checkTableOwnership(t, config.connStr(databaseName), new_owner, tableName),
+				),
+			},
+		},
+	})
+
+}
+
 func checkUserMembership(
 	t *testing.T, dsn, member, role string, shouldHaveRole bool,
 ) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		db, err := sql.Open("postgres", dsn)
+		client := testAccProvider.Meta().(*Client)
+		db, err := client.Connect()
 		if err != nil {
 			t.Fatalf("could to create connection pool: %v", err)
 		}
-		defer db.Close()
 
 		var _rez int
-		err = db.QueryRow(`
-                       SELECT 1 FROM pg_auth_members
-                       WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2
-               `, role, member).Scan(&_rez)
+		query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
+		if db.featureSupported(featureCreateRoleSelfGrant) {
+			query += " AND (set_option OR inherit_option)"
+		}
+		err = db.QueryRow(query, role, member).Scan(&_rez)
 
 		switch {
 		case err == sql.ErrNoRows:
@@ -303,6 +380,38 @@ func checkUserMembership(
 			)
 		}
 		return nil
+	}
+}
+
+func checkTableOwnership(
+	t *testing.T, dsn, owner, tableName string,
+) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			t.Fatalf("could not create connection pool: %v", err)
+		}
+		defer db.Close()
+
+		var _rez int
+
+		err = db.QueryRow(`
+			SELECT 1 FROM pg_tables
+			WHERE tablename = $1 AND tableowner = $2
+		`, tableName, owner).Scan(&_rez)
+
+		switch {
+		case err == sql.ErrNoRows:
+			return fmt.Errorf(
+				"User %s should be owner of %s but is not", owner, tableName,
+			)
+		case err != nil:
+			t.Fatalf("Error checking table ownership. %v", err)
+
+		}
+
+		return nil
+
 	}
 }
 
@@ -396,6 +505,7 @@ resource "postgresql_database" "default_opts" {
    lc_ctype = "C"
    connection_limit = -1
    is_template = false
+   alter_object_ownership = false
 }
 
 resource "postgresql_database" "modified_opts" {
@@ -407,6 +517,7 @@ resource "postgresql_database" "modified_opts" {
    lc_ctype = "en_US.UTF-8"
    connection_limit = 10
    is_template = true
+   alter_object_ownership = true
 }
 
 resource "postgresql_database" "pathological_opts" {
