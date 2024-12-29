@@ -14,7 +14,7 @@ func TestAccPostgresqlExtension_Basic(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureExtension)
-			// TODO: Need to check how RDS manage to allow `rds_supuser` to create extension
+			// TODO: Need to check how RDS manage to allow `rds_superuser` to create extension
 			// even it's not a real superuser
 			testSuperuserPreCheck(t)
 		},
