@@ -156,7 +156,7 @@ The following arguments are supported:
   In this case, some features might be disabled (e.g.: Refreshing state password from database).
 * `sslmode` - (Optional) Set the priority for an SSL connection to the server.
   Valid values for `sslmode` are (note: `prefer` is not supported by Go's
-  [`lib/pq`][libpq])):
+  [`lib/pq`][libpq]):
     * disable - No SSL
     * require - Always SSL (the default, also skip verification)
     * verify-ca - Always SSL (verify that the certificate presented by the server was signed by a trusted CA)

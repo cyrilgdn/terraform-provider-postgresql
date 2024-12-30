@@ -144,7 +144,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	if err := withRolesGranted(txn, []string{owner}, func() error {
 
 		// Revoke all privileges before granting otherwise reducing privileges will not work.
-		// We just have to revoke them in the same transaction so role will not lost his privileges
+		// We just have to revoke them in the same transaction so role will not lose its privileges
 		// between revoke and grant.
 		if err = revokeRoleDefaultPrivileges(txn, d); err != nil {
 			return err

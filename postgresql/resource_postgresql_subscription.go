@@ -82,7 +82,7 @@ func resourcePostgreSQLSubscriptionCreate(db *DBConnection, d *schema.ResourceDa
 
 	optionalParams := getOptionalParameters(d)
 
-	// Creating of a subscription can not be done in an transaction
+	// Creating of a subscription can not be done in a transaction
 	client := db.client.config.NewClient(databaseName)
 	conn, err := client.Connect()
 	if err != nil {

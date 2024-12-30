@@ -1,6 +1,6 @@
 ---
 layout: "postgresql"
-page_title: "PostgreSQL: postgresql_susbcription"
+page_title: "PostgreSQL: postgresql_subscription"
 sidebar_current: "docs-postgresql-resource-postgresql_subscription"
 description: |-
 Creates and manages a subscription in a PostgreSQL server database.

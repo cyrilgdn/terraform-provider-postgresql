@@ -195,8 +195,8 @@ resource "postgresql_default_privileges" "test_ro" {
 	})
 }
 
-// Test the case where we define default priviliges without specifying a schema. These
-// priviliges should apply to newly created resources for the named role in all schema.
+// Test the case where we define default privileges without specifying a schema. These
+// privileges should apply to newly created resources for the named role in all schema.
 func TestAccPostgresqlDefaultPrivileges_NoSchema(t *testing.T) {
 	skipIfNotAcc(t)
 
