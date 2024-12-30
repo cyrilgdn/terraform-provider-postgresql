@@ -499,7 +499,7 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 	return nil
 }
 
-// readIdleInTransactionSessionTimeout searches for a idle_in_transaction_session_timeout entry in the rolconfig array.
+// readIdleInTransactionSessionTimeout searches for an idle_in_transaction_session_timeout entry in the rolconfig array.
 // In case no such value is present, it returns nil.
 func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
 	for _, v := range roleConfig {

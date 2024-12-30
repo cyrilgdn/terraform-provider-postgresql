@@ -339,7 +339,7 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 }
 
 // testHasGrantForQuery executes a query and checks that it fails if
-// we were not allowed or succeses if we're allowed.
+// we were not allowed or success if we're allowed.
 func testHasGrantForQuery(db *sql.DB, query string, allowed bool) error {
 	_, err := db.Exec(query)
 	if err != nil {

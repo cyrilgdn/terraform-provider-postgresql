@@ -61,7 +61,7 @@ func Provider() *schema.Provider {
 			"database": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "The name of the database to connect to in order to conenct to (defaults to `postgres`).",
+				Description: "The name of the database to connect to in order to connect to (defaults to `postgres`).",
 				DefaultFunc: schema.EnvDefaultFunc("PGDATABASE", "postgres"),
 			},
 			"username": {
@@ -127,7 +127,7 @@ func Provider() *schema.Provider {
 				Description: "Service account to impersonate when using GCP IAM authentication.",
 			},
 
-			// Conection username can be different than database username with user name mapas (e.g.: in Azure)
+			// Connection username can be different than database username with user name maps (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
 				Type:        schema.TypeString,
