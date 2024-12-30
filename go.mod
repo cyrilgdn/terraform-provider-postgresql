@@ -9,7 +9,9 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.6.0
 	github.com/aws/aws-sdk-go-v2 v1.20.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.32
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.31
 	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.2.12
+	github.com/aws/aws-sdk-go-v2/service/sts v1.21.1
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.26.1
 	github.com/lib/pq v1.10.9
@@ -30,7 +32,6 @@ require (
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.9 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.13.31 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.7 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.37 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.31 // indirect
@@ -38,7 +39,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.31 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.13.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.21.1 // indirect
 	github.com/aws/smithy-go v1.14.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.15.0 // indirect
