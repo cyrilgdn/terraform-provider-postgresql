@@ -56,11 +56,25 @@ func pqQuoteLiteral(in string) string {
 
 func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 	var _rez int
+	setOption := true
+
 	err := db.QueryRow(
-		"SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2",
-		role, member,
+		"SELECT 1 FROM information_schema.columns WHERE table_name='pg_auth_members' AND column_name = 'set_option'",
 	).Scan(&_rez)
 
+	switch {
+	case err == sql.ErrNoRows:
+		setOption = false
+	case err != nil:
+		return false, fmt.Errorf("could not read setOption column: %w", err)
+	}
+
+	query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
+	if setOption {
+		query += " AND set_option"
+	}
+
+	err = db.QueryRow(query, role, member).Scan(&_rez)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -165,7 +179,7 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		// in order to manipulate its objects/privileges.
 		// But PostgreSQL prevents `foo` to be a member of the role `postgres`,
 		// and for `postgres` to be a member of the role `foo`, at the same time.
-		// In this case we will temporary revoke this privilege.
+		// In this case we will temporarily revoke this privilege.
 		// So, the following queries will happen (in the same transaction):
 		//  - REVOKE postgres FROM foo
 		//  - GRANT foo TO postgres
@@ -265,6 +279,30 @@ func validatePrivileges(d *schema.ResourceData) error {
 		}
 	}
 	return nil
+}
+
+func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
+	objectType := d.Get("object_type").(string)
+	wanted := d.Get("privileges").(*schema.Set)
+
+	if granted.Equal(wanted) {
+		return true
+	}
+
+	if !wanted.Contains("ALL") {
+		return false
+	}
+
+	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
+	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitly")
+	implicits := []interface{}{}
+	for _, p := range allowedPrivileges[objectType] {
+		if p != "ALL" {
+			implicits = append(implicits, p)
+		}
+	}
+	wantedSet := schema.NewSet(schema.HashString, implicits)
+	return granted.Equal(wantedSet)
 }
 
 func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
@@ -548,8 +586,11 @@ func pgLockRole(txn *sql.Tx, role string) error {
 	return nil
 }
 
-// Lock a schema avoid concurrent updates during revoke query.
+// Lock a schema to avoid concurrent updates
 func pgLockSchema(txn *sql.Tx, schema string) error {
+	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("could not disable statement_timeout: %w", err)
+	}
 	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_catalog.pg_namespace WHERE nspname = $1", schema); err != nil {
 		return fmt.Errorf("could not get advisory lock for schema %s: %w", schema, err)
 	}
@@ -614,4 +655,17 @@ func findStringSubmatchMap(expression string, text string) map[string]string {
 
 func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	return old == new
+}
+
+// quoteTable can quote a table name with or without a schema prefix
+// Example:
+//
+//	my_table -> "my_table"
+//	public.my_table -> "public"."my_table"
+func quoteTableName(tableName string) string {
+	parts := strings.Split(tableName, ".")
+	for i := range parts {
+		parts[i] = pq.QuoteIdentifier(parts[i])
+	}
+	return strings.Join(parts, ".")
 }

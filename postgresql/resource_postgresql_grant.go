@@ -184,6 +184,10 @@ func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceD
 		if err := pgLockDatabase(txn, database); err != nil {
 			return err
 		}
+	} else if objectType == "schema" {
+		if err := pgLockSchema(txn, database); err != nil {
+			return err
+		}
 	}
 
 	owners, err := getRolesToGrant(txn, d)

@@ -8,10 +8,6 @@ terraform {
       source  = "cyrilgdn/postgresql"
       version = "1.21"
     }
-    # postgresql = {
-    #   source  = "terraform-fu.bar/terraform-provider-postgresql/postgresql"
-    #   version = ">= 1.20"
-    # }
   }
 }
 
@@ -158,4 +154,3 @@ resource "postgresql_grant" "usage_readwrite_role" {
   privileges        = ["USAGE"]
   with_grant_option = false
 }
-
