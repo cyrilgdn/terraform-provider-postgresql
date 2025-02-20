@@ -18,6 +18,7 @@ require (
 	github.com/sean-/postgresql-acl v0.0.0-20161225120419-d10489e5d217
 	github.com/stretchr/testify v1.9.0
 	gocloud.dev v0.34.0
+	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
 	golang.org/x/net v0.26.0
 	golang.org/x/oauth2 v0.10.0
 	google.golang.org/api v0.134.0

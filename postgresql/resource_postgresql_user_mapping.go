@@ -9,6 +9,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/lib/pq"
+
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -52,6 +54,16 @@ func resourcePostgreSQLUserMapping() *schema.Resource {
 	}
 }
 
+func quoteUsername(username string) string {
+	usernameSpecials := []string{"CURRENT_ROLE", "CURRENT_USER", "PUBLIC", "USER"}
+	if slices.Contains(usernameSpecials, username) {
+		// don't use quotes on specials
+		return username
+	} else {
+		return pq.QuoteIdentifier(username)
+	}
+}
+
 func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
@@ -64,7 +76,7 @@ func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceDat
 	serverName := d.Get(userMappingServerNameAttr).(string)
 
 	b := bytes.NewBufferString("CREATE USER MAPPING ")
-	fmt.Fprint(b, " FOR ", pq.QuoteIdentifier(username))
+	fmt.Fprint(b, " FOR ", quoteUsername(username))
 	fmt.Fprint(b, " SERVER ", pq.QuoteIdentifier(serverName))
 
 	if options, ok := d.GetOk(userMappingOptionsAttr); ok {
@@ -105,6 +117,15 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	username := d.Get(userMappingUserNameAttr).(string)
 	serverName := d.Get(userMappingServerNameAttr).(string)
 
+	var usernameSpecial string
+	if username == "PUBLIC" {
+		usernameSpecial = username
+		username = "public"
+	} else if slices.Contains([]string{"CURRENT_ROLE", "CURRENT_USER", "USER"}, username) {
+		usernameSpecial = username
+		username = db.client.config.getDatabaseUsername()
+	}
+
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
@@ -115,7 +136,7 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	query := "SELECT umoptions FROM information_schema._pg_user_mappings WHERE authorization_identifier = $1 and foreign_server_name = $2"
 	err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
 
-	if err != sql.ErrNoRows && err != nil {
+	if err != nil {
 		// Fallback to pg_user_mappings table if information_schema._pg_user_mappings is not available
 		query := "SELECT umoptions FROM pg_user_mappings WHERE usename = $1 and srvname = $2"
 		err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
@@ -136,7 +157,11 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 		mappedOptions[pair[0]] = pair[1]
 	}
 
-	d.Set(userMappingUserNameAttr, username)
+	if usernameSpecial != "" {
+		d.Set(userMappingUserNameAttr, usernameSpecial)
+	} else {
+		d.Set(userMappingUserNameAttr, username)
+	}
 	d.Set(userMappingServerNameAttr, serverName)
 	d.Set(userMappingOptionsAttr, mappedOptions)
 	d.SetId(generateUserMappingID(d))
@@ -161,7 +186,7 @@ func resourcePostgreSQLUserMappingDelete(db *DBConnection, d *schema.ResourceDat
 	}
 	defer deferredRollback(txn)
 
-	sql := fmt.Sprintf("DROP USER MAPPING FOR %s SERVER %s ", pq.QuoteIdentifier(username), pq.QuoteIdentifier(serverName))
+	sql := fmt.Sprintf("DROP USER MAPPING FOR %s SERVER %s ", quoteUsername(username), pq.QuoteIdentifier(serverName))
 	if _, err := txn.Exec(sql); err != nil {
 		return err
 	}
@@ -199,7 +224,7 @@ func setUserMappingOptionsIfChanged(db *DBConnection, d *schema.ResourceData) er
 	serverName := d.Get(userMappingServerNameAttr).(string)
 
 	b := bytes.NewBufferString("ALTER USER MAPPING ")
-	fmt.Fprintf(b, " FOR %s SERVER %s ", pq.QuoteIdentifier(username), pq.QuoteIdentifier(serverName))
+	fmt.Fprintf(b, " FOR %s SERVER %s ", quoteUsername(username), pq.QuoteIdentifier(serverName))
 
 	oldOptions, newOptions := d.GetChange(userMappingOptionsAttr)
 	fmt.Fprint(b, " OPTIONS ( ")
