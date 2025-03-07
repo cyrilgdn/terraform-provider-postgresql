@@ -20,9 +20,10 @@ resource "postgresql_default_privileges" "read_only_tables" {
   database = "test_db"
   schema   = "public"
 
-  owner       = "db_owner"
-  object_type = "table"
-  privileges  = ["SELECT"]
+  owner             = "db_owner"
+  object_type       = "table"
+  privileges        = ["SELECT"]
+  with_grant_option = false
 }
 ```
 
@@ -34,6 +35,7 @@ resource "postgresql_default_privileges" "read_only_tables" {
 * `schema` - (Optional) The database schema to set default privileges for this role.
 * `object_type` - (Required) The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type, schema).
 * `privileges` - (Required) List of privileges (e.g., SELECT, INSERT, UPDATE, DELETE) to grant on new objects created by the owner. An empty list could be provided to revoke all default privileges for this role.
+* `with_grant_option` - (Optional) Whether the role will be able to grant the specified privileges to others.
 
 
 ## Examples
@@ -42,15 +44,17 @@ resource "postgresql_default_privileges" "read_only_tables" {
 
 ```hcl
 resource "postgresql_default_privileges" "grant_table_privileges" {
-  database    = postgresql_database.example_db.name
-  role        = "current_role"
-  owner       = "owner_role"
-  schema      = "public"
-  object_type = "table"
-  privileges  = ["SELECT", "INSERT", "UPDATE"]
+  database = postgresql_database.example_db.name
+  role     = "current_role"
+  owner    = "owner_role"
+
+  schema            = "public"
+  object_type       = "table"
+  privileges        = ["SELECT", "INSERT", "UPDATE"]
+  with_grant_option = true
 }
 ```
-Whenever the `owner_role` creates a new table in the `public` schema, the `current_role` is automatically granted SELECT, INSERT, and UPDATE privileges on that table.
+Whenever the `owner_role` creates a new table in the `public` schema, the `current_role` is automatically granted SELECT, INSERT, and UPDATE privileges on that table, and the `current_role` can grant these privileges to other roles.
 
 ### Revoke default privileges for functions for "public" role:
 
