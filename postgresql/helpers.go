@@ -586,15 +586,6 @@ func pgLockRole(txn *sql.Tx, role string) error {
 	return nil
 }
 
-// Lock a schema avoid concurrent updates during revoke query.
-func pgLockSchema(txn *sql.Tx, schema string) error {
-	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_catalog.pg_namespace WHERE nspname = $1", schema); err != nil {
-		return fmt.Errorf("could not get advisory lock for schema %s: %w", schema, err)
-	}
-
-	return nil
-}
-
 // Lock a database and all his members to avoid concurrent updates on some resources
 func pgLockDatabase(txn *sql.Tx, database string) error {
 	// Disable statement timeout for this connection otherwise the lock could fail

@@ -723,13 +723,6 @@ func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData, usePrevious bool)
 		// Query is empty, don't run anything
 		return nil
 	}
-
-	// Obtain a lock to avoid `Error: could not execute revoke query: pq: tuple concurrently updated`
-	schema := d.Get("schema").(string)
-	if err := pgLockSchema(txn, schema); err != nil {
-		return err
-	}
-
 	if _, err := txn.Exec(query); err != nil {
 		return fmt.Errorf("could not execute revoke query: %w", err)
 	}
