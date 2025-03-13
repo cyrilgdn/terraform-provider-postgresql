@@ -159,6 +159,10 @@ func (db *DBConnection) isSuperuser() (bool, error) {
 	return superuser, nil
 }
 
+func (db *DBConnection) IsLockGrants() bool {
+	return db.client.IsLockGrants()
+}
+
 type ClientCertificateConfig struct {
 	CertificatePath string
 	KeyPath         string
@@ -183,6 +187,7 @@ type Config struct {
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
+	LockGrants                      bool
 }
 
 // Client struct holding connection string
@@ -331,6 +336,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 	}
 
 	return conn, nil
+}
+
+func (c *Client) IsLockGrants() bool {
+	return c.config.LockGrants
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of

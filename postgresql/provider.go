@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -23,6 +24,7 @@ import (
 const (
 	defaultProviderMaxOpenConnections = 20
 	defaultExpectedPostgreSQLVersion  = "9.0.0"
+	defaultLockGrants                 = false
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -198,6 +200,12 @@ func Provider() *schema.Provider {
 				Default:      defaultExpectedPostgreSQLVersion,
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
+			},
+			"lock_grants": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     defaultLockGrants,
+				Description: "Wrap GRANT/REVOKEs in a lock to avoid executing them in parallel.",
 			},
 		},
 
@@ -382,6 +390,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
+		LockGrants:                      d.Get("lock_grants").(bool),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
