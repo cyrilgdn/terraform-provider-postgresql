@@ -6,17 +6,13 @@ terraform {
     }
     postgresql = {
       source  = "cyrilgdn/postgresql"
-      version = "1.21"
+      version = ">= 1.25"
     }
-    # postgresql = {
-    #   source  = "terraform-fu.bar/terraform-provider-postgresql/postgresql"
-    #   version = ">= 1.20"
-    # }
   }
 }
 
 provider "docker" {
-  host = "unix:///var/run/docker.sock"
+  host = var.docker_host
 }
 
 resource "docker_image" "postgres" {
@@ -42,22 +38,34 @@ resource "docker_container" "postgres" {
     retries      = 5
     start_period = "2s"
   }
+  upload {
+    file    = "/docker-entrypoint-initdb.d/mock-tables.sql"
+    content = <<EOS
+      CREATE DATABASE "test" OWNER "${var.POSTGRES_DBNAME}";
+      \connect ${var.POSTGRES_DBNAME}
+
+      DO $$
+      DECLARE
+        table_count int := ${var.table_count};
+      BEGIN
+        FOR count IN 0..table_count LOOP
+          EXECUTE format('CREATE TABLE table_%s (test int)', count);
+        END LOOP;
+      END $$;
+    EOS
+  }
 }
 
 provider "postgresql" {
-  scheme    = "postgres"
-  host      = var.POSTGRES_HOST
-  port      = docker_container.postgres.ports[0].external
-  database  = var.POSTGRES_PASSWORD
-  username  = var.POSTGRES_PASSWORD
-  password  = var.POSTGRES_PASSWORD
-  sslmode   = "disable"
-  superuser = false
-}
-
-resource "postgresql_database" "this" {
-  name  = "test"
-  owner = var.POSTGRES_USER
+  scheme      = "postgres"
+  host        = var.POSTGRES_HOST
+  port        = docker_container.postgres.ports[0].external
+  database    = var.POSTGRES_PASSWORD
+  username    = var.POSTGRES_PASSWORD
+  password    = var.POSTGRES_PASSWORD
+  sslmode     = "disable"
+  superuser   = false
+  lock_grants = true
 }
 
 resource "postgresql_role" "readonly_role" {
@@ -83,7 +91,7 @@ resource "postgresql_role" "readwrite_role" {
 }
 
 resource "postgresql_grant" "readonly_role" {
-  database          = postgresql_database.this.name
+  database          = var.POSTGRES_DBNAME
   role              = postgresql_role.readonly_role.name
   object_type       = "table"
   schema            = "public"
@@ -92,7 +100,7 @@ resource "postgresql_grant" "readonly_role" {
 }
 
 resource "postgresql_grant" "readwrite_role" {
-  database          = postgresql_database.this.name
+  database          = var.POSTGRES_DBNAME
   role              = postgresql_role.readwrite_role.name
   object_type       = "table"
   schema            = "public"
@@ -101,8 +109,8 @@ resource "postgresql_grant" "readwrite_role" {
 }
 
 resource "postgresql_role" "readonly_users" {
-  for_each         = toset(local.read_only_users)
-  name             = each.key
+  for_each         = local.read_only_users
+  name             = each.value
   roles            = [postgresql_role.readonly_role.name]
   login            = true
   superuser        = false
@@ -114,8 +122,8 @@ resource "postgresql_role" "readonly_users" {
 }
 
 resource "postgresql_role" "readwrite_users" {
-  for_each         = toset(local.read_write_users)
-  name             = each.key
+  for_each         = local.read_write_users
+  name             = each.value
   roles            = [postgresql_role.readonly_role.name]
   login            = true
   superuser        = false
@@ -127,22 +135,25 @@ resource "postgresql_role" "readwrite_users" {
 }
 
 resource "postgresql_grant" "connect_db_readonly_role" {
-  database    = postgresql_database.this.name
+  for_each    = postgresql_role.readonly_users
+  database    = var.POSTGRES_DBNAME
   object_type = "database"
   privileges  = ["CREATE", "CONNECT"]
-  role        = postgresql_role.readonly_role.name
+  role        = each.value.name
 }
 
 resource "postgresql_grant" "connect_db_readwrite_role" {
-  database    = postgresql_database.this.name
+  for_each    = postgresql_role.readwrite_users
+  database    = var.POSTGRES_DBNAME
   object_type = "database"
   privileges  = ["CREATE", "CONNECT"]
-  role        = postgresql_role.readwrite_role.name
+  role        = each.value.name
 }
 
 resource "postgresql_grant" "usage_readonly_role" {
-  database          = postgresql_database.this.name
-  role              = postgresql_role.readonly_role.name
+  for_each          = postgresql_role.readonly_users
+  database          = var.POSTGRES_DBNAME
+  role              = each.value.name
   object_type       = "schema"
   schema            = "public"
   privileges        = ["USAGE"]
@@ -150,11 +161,31 @@ resource "postgresql_grant" "usage_readonly_role" {
 }
 
 resource "postgresql_grant" "usage_readwrite_role" {
-  database          = postgresql_database.this.name
-  role              = postgresql_role.readwrite_role.name
+  for_each          = postgresql_role.readwrite_users
+  database          = var.POSTGRES_DBNAME
+  role              = each.value.name
   object_type       = "schema"
   schema            = "public"
   privileges        = ["USAGE"]
   with_grant_option = false
 }
 
+resource "postgresql_grant" "select_readonly_role" {
+  for_each          = postgresql_role.readonly_users
+  database          = var.POSTGRES_DBNAME
+  role              = each.value.name
+  object_type       = "table"
+  schema            = "public"
+  privileges        = ["SELECT"]
+  with_grant_option = false
+}
+
+resource "postgresql_grant" "crud_readwrite_role" {
+  for_each          = postgresql_role.readwrite_users
+  database          = var.POSTGRES_DBNAME
+  role              = each.value.name
+  object_type       = "table"
+  schema            = "public"
+  privileges        = ["SELECT", "UPDATE", "INSERT", "DELETE"]
+  with_grant_option = false
+}
