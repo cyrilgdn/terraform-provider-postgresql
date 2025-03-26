@@ -446,4 +446,12 @@ resource "postgresql_role" "role_with_search_path" {
   name = "role_with_search_path"
   search_path = ["bar", "foo-with-hyphen"]
 }
+
+resource "postgresql_role" "role_with_search_path_db" {
+  name = "role_with_search_path_db"
+  search_path_db = {
+    "postgres" = "schema1"
+    "template1" = "schema2"
+  }
+}
 `
