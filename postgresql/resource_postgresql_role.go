@@ -32,6 +32,7 @@ const (
 	roleSuperuserAttr                       = "superuser"
 	roleValidUntilAttr                      = "valid_until"
 	roleRolesAttr                           = "roles"
+	rolePgAuditLogAttr                      = "pg_audit_log"
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
@@ -173,6 +174,11 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			rolePgAuditLogAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Controls the behavior of the pg_audit logging",
+			},
 		},
 	}
 }
@@ -308,6 +314,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setPgAuditLog(txn, d); err != nil {
 		return err
 	}
 
@@ -457,6 +467,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
+	d.Set(rolePgAuditLogAttr, readPgAuditLog(roleConfig))
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
@@ -545,6 +556,19 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 		}
 	}
 	return res
+}
+
+// readPgAuditLog searches for a pg_audit.log entry in the rolconfig array.
+// In case no such value is present, it returns empty string.
+func readPgAuditLog(roleConfig pq.ByteaArray) string {
+	var pgAuditLogAttr = "pg_audit.log"
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, pgAuditLogAttr) {
+			return strings.TrimPrefix(config, pgAuditLogAttr+"=")
+		}
+	}
+	return ""
 }
 
 // readRolePassword reads password either from Postgres if admin user is a superuser
@@ -686,6 +710,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setPgAuditLog(txn, d); err != nil {
 		return err
 	}
 
@@ -1058,6 +1086,31 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setPgAuditLog(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(rolePgAuditLogAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	pgAuditLog := d.Get(rolePgAuditLogAttr).(string)
+	if pgAuditLog != "" {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET pg_audit.log TO '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(pgAuditLog),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set pg_audit.log %s for %s: %w", pgAuditLog, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET pg_audit.log", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset pg_audit.log for %s: %w", roleName, err)
 		}
 	}
 	return nil
