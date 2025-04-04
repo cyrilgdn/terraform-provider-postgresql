@@ -32,7 +32,7 @@ const (
 	roleSuperuserAttr                       = "superuser"
 	roleValidUntilAttr                      = "valid_until"
 	roleRolesAttr                           = "roles"
-	rolePgAuditLogAttr                      = "pg_audit_log"
+	rolePgAuditLogAttr                      = "pgaudit_log"
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
@@ -177,7 +177,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 			rolePgAuditLogAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Controls the behavior of the pg_audit logging",
+				Description: "Controls the behavior of the pg_audit extension by setting pgaudit.log. See https://github.com/pgaudit/pgaudit/blob/main/README.md#pgauditlog",
 			},
 		},
 	}
@@ -561,7 +561,7 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 // readPgAuditLog searches for a pg_audit.log entry in the rolconfig array.
 // In case no such value is present, it returns empty string.
 func readPgAuditLog(roleConfig pq.ByteaArray) string {
-	var pgAuditLogAttr = "pg_audit.log"
+	var pgAuditLogAttr = "pgaudit.log"
 	for _, v := range roleConfig {
 		config := string(v)
 		if strings.HasPrefix(config, pgAuditLogAttr) {
