@@ -177,7 +177,7 @@ func resourcePostgreSQLRole() *schema.Resource {
 			rolePgAuditLogAttr: {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Controls the behavior of the pg_audit extension by setting pgaudit.log. See https://github.com/pgaudit/pgaudit/blob/main/README.md#pgauditlog",
+				Description: "Controls the behavior of the pgaudit extension by setting pgaudit.log. See https://github.com/pgaudit/pgaudit/blob/main/README.md#pgauditlog",
 			},
 		},
 	}
@@ -558,7 +558,7 @@ func readAssumeRole(roleConfig pq.ByteaArray) string {
 	return res
 }
 
-// readPgAuditLog searches for a pg_audit.log entry in the rolconfig array.
+// readPgAuditLog searches for a pgaudit.log entry in the rolconfig array.
 // In case no such value is present, it returns empty string.
 func readPgAuditLog(roleConfig pq.ByteaArray) string {
 	var pgAuditLogAttr = "pgaudit.log"
@@ -1100,17 +1100,17 @@ func setPgAuditLog(txn *sql.Tx, d *schema.ResourceData) error {
 	pgAuditLog := d.Get(rolePgAuditLogAttr).(string)
 	if pgAuditLog != "" {
 		sql := fmt.Sprintf(
-			"ALTER ROLE %s SET pg_audit.log TO '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(pgAuditLog),
+			"ALTER ROLE %s SET pgaudit.log TO '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(pgAuditLog),
 		)
 		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not set pg_audit.log %s for %s: %w", pgAuditLog, roleName, err)
+			return fmt.Errorf("could not set pgaudit.log %s for %s: %w", pgAuditLog, roleName, err)
 		}
 	} else {
 		sql := fmt.Sprintf(
-			"ALTER ROLE %s RESET pg_audit.log", pq.QuoteIdentifier(roleName),
+			"ALTER ROLE %s RESET pgaudit.log", pq.QuoteIdentifier(roleName),
 		)
 		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("could not reset pg_audit.log for %s: %w", roleName, err)
+			return fmt.Errorf("could not reset pgaudit.log for %s: %w", roleName, err)
 		}
 	}
 	return nil
