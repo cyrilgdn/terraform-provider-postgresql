@@ -46,12 +46,6 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
 				Description: "Name of PostgreSQL server address",
 			},
-			"connection_host": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
-				Description: "Name of PostgreSQL server address to connect to",
-			},
 			"port": {
 				Type:        schema.TypeInt,
 				Optional:    true,
@@ -104,6 +98,13 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				Default:     "",
 				Description: "AWS IAM role to assume for IAM auth",
+			},
+
+			"aws_rds_iam_token_host": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
+				Description: "Name of PostgreSQL server address for AWS RDS IAM to get token",
 			},
 
 			"azure_identity_auth": {
@@ -350,18 +351,18 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	port := d.Get("port").(int)
 	username := d.Get("username").(string)
 
-	connectionHost := d.Get("connection_host").(string)
-	if connectionHost == "" {
-		connectionHost = host
-	}
-
 	var password string
 	if d.Get("aws_rds_iam_auth").(bool) {
+		awsIAMTokenHost := d.Get("aws_rds_iam_token_host").(string)
+		if awsIAMTokenHost == "" {
+			awsIAMTokenHost = host
+		}
+
 		profile := d.Get("aws_rds_iam_profile").(string)
 		region := d.Get("aws_rds_iam_region").(string)
 		role := d.Get("aws_rds_iam_provider_role_arn").(string)
 		var err error
-		password, err = getRDSAuthToken(region, profile, role, username, host, port)
+		password, err = getRDSAuthToken(region, profile, role, username, awsIAMTokenHost, port)
 		if err != nil {
 			return nil, err
 		}
@@ -382,7 +383,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	config := Config{
 		Scheme:                          d.Get("scheme").(string),
 		Host:                            host,
-		ConnectionHost:                  connectionHost,
+		AWSIAMDBAuthTokenHost:           awsIAMTokenHost,
 		Port:                            port,
 		Username:                        username,
 		Password:                        password,
