@@ -237,6 +237,30 @@ resource "postgresql_role" "test_role" {
 	})
 }
 
+func TestAccPostgresqlRole_Audit(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "test" {
+  name  = "test_role"
+  audit = ["READ", "WRITE"]
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.test", "audit.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_role.test", "audit.0", "READ"),
+					resource.TestCheckResourceAttr("postgresql_role.test", "audit.1", "WRITE"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlRoleDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
