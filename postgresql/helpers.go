@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -368,10 +369,10 @@ func setToPgIdentSimpleList(idents *schema.Set) string {
 	return strings.Join(quotedIdents, ",")
 }
 
-// startTransaction starts a new DB transaction on the specified database.
+// startTransactionWithOpts starts a new DB transaction on the specified database.
 // If the database is specified and different from the one configured in the provider,
-// it will create a new connection pool if needed.
-func startTransaction(client *Client, database string) (*sql.Tx, error) {
+// it will create a new connection pool if needed
+func startTransactionWithOpts(client *Client, database string, opts *sql.TxOptions) (*sql.Tx, error) {
 	if database != "" && database != client.databaseName {
 		client = client.config.NewClient(database)
 	}
@@ -380,12 +381,20 @@ func startTransaction(client *Client, database string) (*sql.Tx, error) {
 		return nil, err
 	}
 
-	txn, err := db.Begin()
+	txn, err := db.BeginTx(context.Background(), opts)
 	if err != nil {
 		return nil, fmt.Errorf("could not start transaction: %w", err)
 	}
 
 	return txn, nil
+}
+
+func startTransaction(client *Client, database string) (*sql.Tx, error) {
+	return startTransactionWithOpts(client, database, nil)
+}
+
+func startReadOnlyTransaction(client *Client, database string) (*sql.Tx, error) {
+	return startTransactionWithOpts(client, database, &sql.TxOptions{ReadOnly: true})
 }
 
 func dbExists(db QueryAble, dbname string) (bool, error) {
