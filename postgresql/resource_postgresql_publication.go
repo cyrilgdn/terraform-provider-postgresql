@@ -356,7 +356,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 
 	query = `SELECT DISTINCT ` +
         	`COALESCE(parent_ns.nspname || '.' || parent_class.relname, ` +
-        	`         pt.schemaname || '.' || pt.tablename) AS fulltablename ` +
+        	`pt.schemaname || '.' || pt.tablename) AS fulltablename ` +
        		`FROM pg_publication_tables pt ` +
         	`LEFT JOIN pg_class child ON pt.tablename = child.relname ` +
         	`LEFT JOIN pg_inherits i ON i.inhrelid = child.oid ` +
