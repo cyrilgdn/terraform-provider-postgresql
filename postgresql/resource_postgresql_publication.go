@@ -354,9 +354,15 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		return fmt.Errorf("Error reading publication info: %w", err)
 	}
 
-	query = `SELECT CONCAT(schemaname,'.',tablename) as fulltablename ` +
-		`FROM pg_catalog.pg_publication_tables ` +
-		`WHERE pubname = $1`
+	query = `SELECT DISTINCT ` +
+        	`COALESCE(parent_ns.nspname || '.' || parent_class.relname, ` +
+        	`         pt.schemaname || '.' || pt.tablename) AS fulltablename ` +
+       		`FROM pg_publication_tables pt ` +
+        	`LEFT JOIN pg_class child ON pt.tablename = child.relname ` +
+        	`LEFT JOIN pg_inherits i ON i.inhrelid = child.oid ` +
+        	`LEFT JOIN pg_class parent_class ON i.inhparent = parent_class.oid ` +
+        	`LEFT JOIN pg_namespace parent_ns ON parent_class.relnamespace = parent_ns.oid ` +
+        	`WHERE pt.pubname = $1`
 
 	rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
 	if err != nil {
