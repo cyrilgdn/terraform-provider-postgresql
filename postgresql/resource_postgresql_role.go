@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/lib/pq"
@@ -26,6 +27,8 @@ const (
 	roleLoginAttr                           = "login"
 	roleNameAttr                            = "name"
 	rolePasswordAttr                        = "password"
+	rolePasswordWOAttr                      = "password_wo"
+	rolePasswordWOVersionAttr               = "password_wo_version"
 	roleReplicationAttr                     = "replication"
 	roleSkipDropRoleAttr                    = "skip_drop_role"
 	roleSkipReassignOwnedAttr               = "skip_reassign_owned"
@@ -58,10 +61,27 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Description: "The name of the role",
 			},
 			rolePasswordAttr: {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Sensitive:   true,
-				Description: "Sets the role's password",
+				Type:          schema.TypeString,
+				Optional:      true,
+				Sensitive:     true,
+				ConflictsWith: []string{rolePasswordWOAttr, rolePasswordWOVersionAttr},
+				Description:   "Sets the role's password",
+			},
+			rolePasswordWOAttr: {
+				Type:          schema.TypeString,
+				Optional:      true,
+				Sensitive:     true,
+				ConflictsWith: []string{rolePasswordAttr},
+				RequiredWith:  []string{rolePasswordWOVersionAttr},
+				WriteOnly:     true,
+				Description:   "Sets the role's password without storing it in the state file.",
+			},
+			rolePasswordWOVersionAttr: {
+				Type:          schema.TypeString,
+				Optional:      true,
+				ConflictsWith: []string{rolePasswordAttr},
+				RequiredWith:  []string{rolePasswordWOAttr},
+				Description:   "Prevents applies from updating the role password on every apply unless the value changes.",
 			},
 			roleDepEncryptedAttr: {
 				Type:       schema.TypeString,
@@ -188,9 +208,25 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		hclKey string
 		sqlKey string
 	}{
-		{rolePasswordAttr, "PASSWORD"},
-		{roleValidUntilAttr, "VALID UNTIL"},
+		{roleValidUntilAttr, "VALID UNTIL"}, // always keep this
 	}
+
+	// Decide which password attribute (if any) is set and prepend it.
+	// NOTE: getWO returns (string, bool) just like d.GetOk.
+	if v, ok := d.GetOk(rolePasswordAttr); ok && v.(string) != "" {
+		// normal password stored in state
+		stringOpts = append(
+			[]struct{ hclKey, sqlKey string }{{rolePasswordAttr, "PASSWORD"}},
+			stringOpts...,
+		)
+	} else if _, ok := getWO(d, rolePasswordWOAttr); ok {
+		// write-only password
+		stringOpts = append(
+			[]struct{ hclKey, sqlKey string }{{rolePasswordWOAttr, "PASSWORD"}},
+			stringOpts...,
+		)
+	}
+
 	intOpts := []struct {
 		hclKey string
 		sqlKey string
@@ -224,35 +260,57 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	createOpts := make([]string, 0, len(stringOpts)+len(intOpts)+len(boolOpts))
 
 	for _, opt := range stringOpts {
-		v, ok := d.GetOk(opt.hclKey)
+		var val string
+		var ok bool
+
+		if opt.hclKey == rolePasswordWOAttr {
+			v, found := getWO(d, opt.hclKey)
+			if found {
+				val = v
+				if val != "" {
+					ok = true
+				}
+			}
+		} else {
+			v, found := d.GetOk(opt.hclKey)
+			if found {
+				val = v.(string)
+				if val != "" {
+					ok = true
+				}
+			}
+		}
+
 		if !ok {
 			continue
 		}
 
-		val := v.(string)
-		if val != "" {
-			switch {
-			case opt.hclKey == rolePasswordAttr:
-				if strings.ToUpper(v.(string)) == "NULL" {
-					createOpts = append(createOpts, "PASSWORD NULL")
+		switch opt.hclKey {
+		case rolePasswordWOAttr, rolePasswordAttr:
+			if strings.ToUpper(val) == "NULL" {
+				createOpts = append(createOpts, "PASSWORD NULL")
+			} else {
+				if d.Get(roleEncryptedPassAttr).(bool) {
+					createOpts = append(createOpts, "ENCRYPTED")
 				} else {
-					if d.Get(roleEncryptedPassAttr).(bool) {
-						createOpts = append(createOpts, "ENCRYPTED")
-					} else {
-						createOpts = append(createOpts, "UNENCRYPTED")
-					}
-					createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
+					createOpts = append(createOpts, "UNENCRYPTED")
 				}
-			case opt.hclKey == roleValidUntilAttr:
-				switch {
-				case v.(string) == "", strings.ToLower(v.(string)) == "infinity":
-					createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, "infinity"))
-				default:
-					createOpts = append(createOpts, fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
-				}
-			default:
-				createOpts = append(createOpts, fmt.Sprintf("%s %s", opt.sqlKey, pq.QuoteIdentifier(val)))
+				createOpts = append(createOpts,
+					fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val))) // pqQuoteLiteral includes single quotes
 			}
+
+		case roleValidUntilAttr:
+			if val == "" || strings.ToLower(val) == "infinity" {
+				createOpts = append(createOpts,
+					fmt.Sprintf("%s 'infinity'", opt.sqlKey))
+			} else {
+				createOpts = append(createOpts,
+					fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
+			}
+
+		default:
+			createOpts = append(createOpts,
+				fmt.Sprintf("%s %s", opt.sqlKey, pq.QuoteIdentifier(val)))
 		}
 	}
 
@@ -287,6 +345,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	sql := fmt.Sprintf("CREATE ROLE %s%s", pq.QuoteIdentifier(roleName), createStr)
+
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error creating role %s: %w", roleName, err)
 	}
@@ -474,12 +533,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.SetId(roleName)
 
-	password, err := readRolePassword(db, d, roleCanLogin)
-	if err != nil {
-		return err
+	if _, ok := d.GetOk(rolePasswordAttr); ok {
+		password, err := readRolePassword(db, d, roleCanLogin)
+		if err != nil {
+			return err
+		}
+		d.Set(rolePasswordAttr, password)
 	}
-
-	d.Set(rolePasswordAttr, password)
 	return nil
 }
 
@@ -719,19 +779,37 @@ func setRoleName(txn *sql.Tx, d *schema.ResourceData) error {
 }
 
 func setRolePassword(txn *sql.Tx, d *schema.ResourceData) error {
-	// If role is renamed, password is reset (as the md5 sum is also base on the role name)
-	// so we need to update it
-	if !d.HasChange(rolePasswordAttr) && !d.HasChange(roleNameAttr) {
-		return nil
+
+	// Early exit if password WO and version are set, and version has not changed
+	if _, ok := getWO(d, rolePasswordWOAttr); ok {
+		if !d.HasChange(rolePasswordWOVersionAttr) {
+			return nil
+		}
+	} else {
+		// Only for regular password attribute: exit if neither password nor role name changed
+		if !d.HasChange(rolePasswordAttr) && !d.HasChange(roleNameAttr) {
+			return nil
+		}
 	}
 
 	roleName := d.Get(roleNameAttr).(string)
-	password := d.Get(rolePasswordAttr).(string)
+
+	var password string
+	if v, ok := getWO(d, rolePasswordWOAttr); ok {
+		password = v // use the value from password_wo and reset the password state.
+		d.Set(rolePasswordAttr, nil)
+	} else if v, ok := d.GetOk(rolePasswordAttr); ok && v.(string) != "" {
+		password = v.(string) // use the clear-text password
+	} else {
+		// Nothing to set
+		return nil
+	}
 
 	sql := fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(password))
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("Error updating role password: %w", err)
 	}
+
 	return nil
 }
 
@@ -938,7 +1016,6 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 	for _, grantedRole := range grantedRoles {
 		query = fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantedRole), pq.QuoteIdentifier(role))
 
-		log.Printf("[DEBUG] revoking role %s from %s", grantedRole, role)
 		if _, err := txn.Exec(query); err != nil {
 			return fmt.Errorf("could not revoke role %s from %s: %w", string(grantedRole), role, err)
 		}
@@ -1061,4 +1138,16 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 		}
 	}
 	return nil
+}
+
+func getWO(d *schema.ResourceData, attribute string) (string, bool) {
+	// Special case for write-only fields
+	raw, diags := d.GetRawConfigAt(cty.GetAttrPath(attribute))
+	if diags.HasError() || raw.IsNull() || !raw.Type().Equals(cty.String) {
+		return "", false
+	}
+	if raw.AsString() == "" {
+		return "", false
+	}
+	return raw.AsString(), true // return the value
 }
