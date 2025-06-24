@@ -14,11 +14,11 @@ import (
 )
 
 const (
-	taskNameAttr                = "name"
-	taskDatabaseAttr        		= "database"
-	taskSchemaAttr              = "schema"
-	taskScheduleAttr        		= "schedule"
-	taskQueryAttr               = "query"
+	taskNameAttr     = "name"
+	taskDatabaseAttr = "database"
+	taskSchemaAttr   = "schema"
+	taskScheduleAttr = "schedule"
+	taskQueryAttr    = "query"
 )
 
 func resourcePostgreSQLTask() *schema.Resource {
@@ -206,18 +206,18 @@ func resourcePostgreSQLTaskExists(db *DBConnection, d *schema.ResourceData) (boo
 }
 
 type PGTask struct {
-	Database            string
-	Schema              string
-	Name                string
-	Query               string
-	Schedule     				string
+	Database string
+	Schema   string
+	Name     string
+	Query    string
+	Schedule string
 }
 
 type TaskInfo struct {
-	Database string   `db:"database"`
-	Name     string   `db:"name"`
-	Query    string   `db:"query"`
-	Schedule string 	`db:"schedule"`
+	Database string `db:"database"`
+	Name     string `db:"name"`
+	Query    string `db:"query"`
+	Schedule string `db:"schedule"`
 }
 
 func resourcePostgreSQLTaskReadImpl(db *DBConnection, d *schema.ResourceData) error {
@@ -373,7 +373,7 @@ func runChecks(db *DBConnection) error {
 			db.version,
 		)
 	}
-	sql = 
+
 	var extensionExists bool
 	txn, err := startTransaction(db.client)
 	if err != nil {
@@ -391,7 +391,7 @@ func runChecks(db *DBConnection) error {
 
 	if !taskExists {
 		return fmt.Errorf(
-			"The pg_cron extension must be installed on the database before a task is created. Please use the postgresql_extension resource to set it up."
+			"The pg_cron extension must be installed on the database before a task is created. Please use the postgresql_extension resource to set it up.",
 		)
 	}
 
