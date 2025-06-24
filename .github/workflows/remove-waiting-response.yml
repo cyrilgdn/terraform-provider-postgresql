@@ -4,7 +4,7 @@ on: [issue_comment]
 
 jobs:
   remove_label:
-    if: github.actor != 'cyrilgdn'
+    if: github.actor != 'rlmartin'
     runs-on: ubuntu-latest
     permissions:
       issues: write

@@ -4,7 +4,7 @@
 
 provider_installation {
   dev_overrides {
-    "cyrilgdn/postgresql" = "./postgresql"
+    "rlmartin/postgresql" = "./postgresql"
   }
   direct {}
 }

@@ -1,1 +1,1 @@
-See [Github releases](https://github.com/cyrilgdn/terraform-provider-postgresql/releases/)
+See [Github releases](https://github.com/rlmartin/terraform-provider-postgresql/releases/)

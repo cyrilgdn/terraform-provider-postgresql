@@ -44,6 +44,7 @@ const (
 	featurePubWithoutTruncate
 	featureFunction
 	featureServer
+	featureView
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
 )
@@ -117,6 +118,8 @@ var (
 		featureServer: semver.MustParseRange(">=10.0.0"),
 
 		featureDatabaseOwnerRole: semver.MustParseRange(">=15.0.0"),
+
+		featureView: semver.MustParseRange(">15.0.0"),
 
 		// New privileges rules in version 16
 		// https://www.postgresql.org/docs/16/release-16.html#RELEASE-16-PRIVILEGES
