@@ -73,11 +73,8 @@ func resourcePostgreSQLTask() *schema.Resource {
 }
 
 func resourcePostgreSQLTaskCreate(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureTask) {
-		return fmt.Errorf(
-			"postgresql_task resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
+	if err := runChecks(db); err != nil {
+		return err
 	}
 
 	if err := createView(db, d); err != nil {
@@ -93,11 +90,8 @@ func resourcePostgreSQLTaskCreate(db *DBConnection, d *schema.ResourceData) erro
 }
 
 func resourcePostgreSQLTaskRead(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureTask) {
-		return fmt.Errorf(
-			"postgresql_task resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
+	if err := runChecks(db); err != nil {
+		return err
 	}
 
 	err := resourcePostgreSQLTaskReadImpl(db, d)
@@ -116,11 +110,8 @@ func resourcePostgreSQLTaskRead(db *DBConnection, d *schema.ResourceData) error 
 }
 
 func resourcePostgreSQLTaskUpdate(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureTask) {
-		return fmt.Errorf(
-			"postgresql_task resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
+	if err := runChecks(db); err != nil {
+		return err
 	}
 
 	if err := createView(db, d); err != nil {
@@ -136,11 +127,8 @@ func resourcePostgreSQLTaskUpdate(db *DBConnection, d *schema.ResourceData) erro
 }
 
 func resourcePostgreSQLTaskDelete(db *DBConnection, d *schema.ResourceData) error {
-	if !db.featureSupported(featureTask) {
-		return fmt.Errorf(
-			"postgresql_task resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
+	if err := runChecks(db); err != nil {
+		return err
 	}
 
 	// Drop task command
@@ -169,11 +157,8 @@ func resourcePostgreSQLTaskDelete(db *DBConnection, d *schema.ResourceData) erro
 }
 
 func resourcePostgreSQLTaskExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featureTask) {
-		return false, fmt.Errorf(
-			"postgresql_task resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
+	if err := runChecks(db); err != nil {
+		return err
 	}
 
 	taskID := d.Id()
