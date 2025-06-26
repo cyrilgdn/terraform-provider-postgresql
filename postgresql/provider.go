@@ -44,7 +44,7 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PGHOST", nil),
-				Description: "Name of PostgreSQL server address",
+				Description: "Name of PostgreSQL server address to connect to",
 			},
 			"port": {
 				Type:        schema.TypeInt,
