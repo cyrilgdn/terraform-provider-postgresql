@@ -296,7 +296,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 					createOpts = append(createOpts, "UNENCRYPTED")
 				}
 				createOpts = append(createOpts,
-					fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val))) // pqQuoteLiteral includes single quotes
+					fmt.Sprintf("%s '%s'", opt.sqlKey, pqQuoteLiteral(val)))
 			}
 
 		case roleValidUntilAttr:
@@ -797,7 +797,7 @@ func setRolePassword(txn *sql.Tx, d *schema.ResourceData) error {
 	var password string
 	if v, ok := getWO(d, rolePasswordWOAttr); ok {
 		password = v // use the value from password_wo and reset the password state.
-		d.Set(rolePasswordAttr, nil)
+		d.Set(rolePasswordAttr, "")
 	} else if v, ok := d.GetOk(rolePasswordAttr); ok && v.(string) != "" {
 		password = v.(string) // use the clear-text password
 	} else {
