@@ -35,6 +35,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleAuditAttr                           = "audit"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +174,15 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleAuditAttr: {
+				Type: schema.TypeList,
+				Elem: &schema.Schema{
+					Type:         schema.TypeString,
+					ValidateFunc: validation.StringInSlice([]string{"ALL", "READ", "WRITE", "FUNCTION", "ROLE", "DDL", "MISC", "MISC_SET"}, false),
+				},
+				Optional:    true,
+				Description: "List of audit classes to apply to the role. Allowed values: ALL, READ, WRITE, FUNCTION, ROLE, DDL, MISC, MISC_SET",
+			},
 		},
 	}
 }
@@ -308,6 +318,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setAudit(txn, d); err != nil {
 		return err
 	}
 
@@ -471,6 +485,20 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
+
+	var auditClasses string
+	auditSQL := fmt.Sprintf(`SELECT setting FROM pg_roles
+        JOIN pg_settings ON rolname = $1 AND name = 'pgaudit.log'`)
+	err = db.QueryRow(auditSQL, roleID).Scan(&auditClasses)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("Error reading audit classes: %w", err)
+	}
+
+	if auditClasses != "" {
+		d.Set(roleAuditAttr, strings.Split(auditClasses, ","))
+	} else {
+		d.Set(roleAuditAttr, nil)
+	}
 
 	d.SetId(roleName)
 
@@ -686,6 +714,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err := setAudit(txn, d); err != nil {
 		return err
 	}
 
@@ -1060,5 +1092,36 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
 		}
 	}
+	return nil
+}
+
+func setAudit(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleAuditAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	auditClasses := d.Get(roleAuditAttr).([]interface{})
+
+	if len(auditClasses) > 0 {
+		classes := strings.Join(func() []string {
+			result := make([]string, len(auditClasses))
+			for i, class := range auditClasses {
+				result[i] = pq.QuoteLiteral(class.(string))
+			}
+			return result
+		}(), ", ")
+
+		sql := fmt.Sprintf("ALTER ROLE %s SET pgaudit.log TO %s", pq.QuoteIdentifier(roleName), classes)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set audit classes %s for role %s: %w", classes, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf("ALTER ROLE %s RESET pgaudit.log", pq.QuoteIdentifier(roleName))
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset audit classes for role %s: %w", roleName, err)
+		}
+	}
+
 	return nil
 }
