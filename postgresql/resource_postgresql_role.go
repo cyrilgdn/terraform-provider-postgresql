@@ -35,6 +35,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleCommentAttr                         = "comment"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +174,11 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleCommentAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "The comment to set for the role",
+			},
 		},
 	}
 }
@@ -308,6 +314,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setRoleComment(txn, d); err != nil {
 		return err
 	}
 
@@ -689,6 +699,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err := setRoleComment(txn, d); err != nil {
+		return err
+	}
+
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
@@ -1060,5 +1074,28 @@ func setAssumeRole(txn *sql.Tx, d *schema.ResourceData) error {
 			return fmt.Errorf("could not reset role for %s: %w", roleName, err)
 		}
 	}
+	return nil
+}
+
+func setRoleComment(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleCommentAttr) {
+		return nil
+	}
+
+	comment := d.Get(roleCommentAttr).(string)
+	roleName := d.Get(roleNameAttr).(string)
+
+	if comment != "" {
+		sql := fmt.Sprintf("COMMENT ON ROLE %s IS '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(comment))
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("Error setting comment on role %s: %w", roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf("COMMENT ON ROLE %s IS NULL", pq.QuoteIdentifier(roleName))
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("Error clearing comment on role %s: %w", roleName, err)
+		}
+	}
+
 	return nil
 }
