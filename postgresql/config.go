@@ -183,6 +183,7 @@ type Config struct {
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
+	ProxyURL                        string
 }
 
 // Client struct holding connection string
@@ -290,7 +291,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var db *sql.DB
 		var err error
 		if c.config.Scheme == "postgres" {
-			db, err = sql.Open(proxyDriverName, dsn)
+			db = sql.OpenDB(proxyConnector{
+				dsn:      dsn,
+				proxyURL: c.config.ProxyURL,
+			})
 		} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
 			db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
 		} else {

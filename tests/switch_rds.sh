@@ -30,3 +30,4 @@ export PGUSER=rds
 export PGPASSWORD=rds
 export PGSSLMODE=disable
 export PGSUPERUSER=false
+export PGPROXY=""

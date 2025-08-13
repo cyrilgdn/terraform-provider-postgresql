@@ -186,6 +186,7 @@ The following arguments are supported:
 * `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `proxy_url` - (Optional) SOCKS5 proxy URL. Must be a valid URL with schema `socks5` or `socks5h`.
 
 ## GoCloud
 
@@ -332,7 +333,9 @@ provider "postgresql" {
 
 ### SOCKS5 Proxy Support
 
-The provider supports connecting via a SOCKS5 proxy, but when the `postgres` scheme is used. It can be configured by setting the `ALL_PROXY` or `all_proxy` environment variable to a value like `socks5://127.0.0.1:1080`.
+The provider supports connecting via a SOCKS5 proxy, but only when the `postgres` scheme is used. It can be configured
+by setting the `proxy_url` provider attribute, or `PGPROXY`, `ALL_PROXY` or `all_proxy` environment variable to a value
+like `socks5://127.0.0.1:1080`.
 
 The `NO_PROXY` or `no_proxy` environment can also be set to opt out of proxying for specific hostnames or ports.
 
