@@ -3,9 +3,11 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -21,8 +23,12 @@ import (
 )
 
 const (
-	defaultProviderMaxOpenConnections = 20
-	defaultExpectedPostgreSQLVersion  = "9.0.0"
+	defaultProviderMaxOpenConnections = 20 // sql.DB Default
+	defaultProviderMaxIdleConnections = 0
+	// Keep connection lifetimes short by default, to prevent blocking 'destroy' actions on database instance resources.
+	defaultProviderConnectionMaxIdleTime = time.Second * 5
+	defaultProviderConnectionMaxLifetime = time.Second * 10
+	defaultExpectedPostgreSQLVersion     = "9.0.0"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -192,6 +198,35 @@ func Provider() *schema.Provider {
 				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
+			"max_idle_connections": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				Default:  defaultProviderMaxIdleConnections,
+				Description: "Maximum number of idle connections to hold for the database. " +
+					"NOTE: Idle connections that aren't cleaned-up can cause problems if a database is destroyed in " +
+					"the same plan. The default is 0 to prevent that issue.",
+				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			"connection_max_idle_time": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  defaultProviderConnectionMaxIdleTime.String(),
+				Description: "Duration to hold idle connections to the database. Setting to 0 will hold connections " + "" +
+					"forever. " +
+					"NOTE: Idle connections that aren't cleaned-up can cause problems if a database is destroyed in " +
+					"the same plan. This should be > 0 to prevent that.",
+				ValidateFunc: validateParsableDuration,
+			},
+			"connection_max_lifetime": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  defaultProviderConnectionMaxLifetime.String(),
+				Description: "Maximum lifetime of any connections to the database. Setting to 0 will hold " +
+					"connections forever. " +
+					"NOTE: Idle connections that aren't cleaned-up can cause problems if a database is destroyed in " +
+					"the same plan. This should be > 0 to prevent that.",
+				ValidateFunc: validateParsableDuration,
+			},
 			"expected_version": {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -232,6 +267,13 @@ func Provider() *schema.Provider {
 func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
 	if _, err := semver.ParseTolerant(v.(string)); err != nil {
 		errors = append(errors, fmt.Errorf("invalid version (%q): %w", v.(string), err))
+	}
+	return
+}
+
+func validateParsableDuration(v any, _ string) (warnings []string, errors []error) {
+	if _, err := time.ParseDuration(v.(string)); err != nil {
+		errors = append(errors, fmt.Errorf("invalid duration (%q): %w", v.(string), err))
 	}
 	return
 }
@@ -367,6 +409,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		password = d.Get("password").(string)
 	}
 
+	// Safe to ignore the error, since this is already checked in validation
+	connMaxIdleTime, _ := time.ParseDuration(d.Get("connection_max_idle_time").(string))
+	connMaxLifetime, _ := time.ParseDuration(d.Get("connection_max_lifetime").(string))
+
 	config := Config{
 		Scheme:                          d.Get("scheme").(string),
 		Host:                            host,
@@ -379,6 +425,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		ApplicationName:                 "Terraform provider",
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
 		MaxConns:                        d.Get("max_connections").(int),
+		MaxIdleConns:                    d.Get("max_idle_connections").(int),
+		ConnMaxIdleTime:                 connMaxIdleTime,
+		ConnMaxLifetime:                 connMaxLifetime,
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),

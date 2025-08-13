@@ -172,6 +172,15 @@ The following arguments are supported:
   default is `180s`.  Zero or not specified means wait indefinitely.
 * `max_connections` - (Optional) Set the maximum number of open connections to
   the database. The default is `20`.  Zero means unlimited open connections.
+* `max_idle_connections` - (Optional) Maximum number of idle connections to hold for the database. NOTE: Idle
+  connections that aren't cleaned-up can cause problems if a database is destroyed in the same plan. The default is 0 to
+  prevent that issue.
+* `connection_max_idle_time` - (Optional) Duration to hold idle connections to the database. Setting to 0 will hold
+  connections forever. NOTE: Idle connections that aren't cleaned-up can cause problems if a database is destroyed in
+  the same plan. This should be > 0 to prevent that.
+* `connection_max_lifetime` - (Optional) Maximum lifetime of any connections to the database. Setting to 0 will hold
+  connections forever. NOTE: Idle connections that aren't cleaned-up can cause problems if a database is destroyed in
+  the same plan. This should be > 0 to prevent that.
 * `expected_version` - (Optional) Specify a hint to Terraform regarding the
   expected version that the provider will be talking with.  This is a required
   hint in order for Terraform to talk with an ancient version of PostgreSQL.
