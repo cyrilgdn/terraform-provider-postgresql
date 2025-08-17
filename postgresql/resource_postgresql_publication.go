@@ -17,6 +17,7 @@ const (
 	pubDatabaseAttr                = "database"
 	pubAllTablesAttr               = "all_tables"
 	pubTablesAttr                  = "tables"
+	pubTablesInSchemasAttr         = "tables_in_schemas"
 	pubDropCascadeAttr             = "drop_cascade"
 	pubPublishAttr                 = "publish_param"
 	pubPublishViaPartitionRootAttr = "publish_via_partition_root_param"
@@ -56,12 +57,16 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				ValidateFunc: validation.StringIsNotEmpty,
 			},
 			pubTablesAttr: {
-				Type:          schema.TypeSet,
-				Optional:      true,
-				Computed:      true,
-				ForceNew:      false,
-				Elem:          &schema.Schema{Type: schema.TypeString},
-				Description:   "Sets the tables list to publish",
+				Type:     schema.TypeSet,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+				Elem: &schema.Schema{
+					Type:                  schema.TypeString,
+					DiffSuppressFunc:      suppressComputedOnlyTables,
+					DiffSuppressOnRefresh: true,
+				},
+				Description:   "Specifies a list of tables to add to the publication",
 				ConflictsWith: []string{pubAllTablesAttr},
 			},
 			pubAllTablesAttr: {
@@ -70,6 +75,15 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Computed:    true,
 				ForceNew:    true,
 				Description: "Sets the tables list to publish to ALL tables",
+			},
+			pubTablesInSchemasAttr: {
+				Type:          schema.TypeSet,
+				Optional:      true,
+				Computed:      true,
+				ForceNew:      false,
+				Elem:          &schema.Schema{Type: schema.TypeString},
+				Description:   "Marks the publication as one that replicates changes for all tables in the specified schemas, including tables created in the future",
+				ConflictsWith: []string{pubAllTablesAttr},
 			},
 			pubPublishAttr: {
 				Type:        schema.TypeList,
@@ -93,6 +107,36 @@ func resourcePostgreSQLPublication() *schema.Resource {
 			},
 		},
 	}
+}
+
+// The computed value for the pubTablesAttr field (which comes from pg_catalog.pg_publication_tables)
+// includes all tables in the publication -- including those from the schemas defined in pubTablesInSchemasAttr
+// So we need to suppress diffs for those tables that aren't referenced explicitly
+func suppressComputedOnlyTables(k, old string, new string, d *schema.ResourceData) bool {
+	// If the table isn't intended to be removed, just use the normal diff function
+	if new != "" {
+		return old == new
+	}
+
+	raw := d.Get(pubTablesInSchemasAttr)
+	schemaList := []string{}
+	for _, s := range raw.(*schema.Set).List() {
+		schemaList = append(schemaList, s.(string))
+	}
+
+	schemaAndTable := strings.Split(old, ".")
+
+	if len(schemaAndTable) != 2 {
+		// this table doesn't include a schema name
+		return old == new
+	}
+
+	// if this table belongs to a schema defined in pubTablesInSchemasAttr
+	// we can ignore it
+	if sliceContainsStr(schemaList, schemaAndTable[0]) {
+		return true
+	}
+	return old == new
 }
 
 func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceData) error {
@@ -119,8 +163,12 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 		return fmt.Errorf("could not update publication tables: %w", err)
 	}
 
+	if err := setPubTablesInSchemas(txn, d); err != nil {
+		return fmt.Errorf("could not update publication schemas: %w", err)
+	}
+
 	if err := setPubParams(txn, d, db.featureSupported(featurePublishViaRoot)); err != nil {
-		return fmt.Errorf("could not update publication tables: %w", err)
+		return fmt.Errorf("could not update publication params: %w", err)
 	}
 
 	if err := setPubName(txn, d); err != nil {
@@ -195,6 +243,41 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	for _, query := range queries {
 		if _, err := txn.Exec(query); err != nil {
 			return fmt.Errorf("could not alter publication table: %w", err)
+		}
+	}
+	return nil
+}
+
+func setPubTablesInSchemas(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(pubTablesInSchemasAttr) {
+		return nil
+	}
+
+	var queries []string
+	pubName := d.Get(pubNameAttr).(string)
+
+	oraw, nraw := d.GetChange(pubTablesInSchemasAttr)
+	oldList := oraw.(*schema.Set).List()
+	newList := nraw.(*schema.Set).List()
+	if elem, ok := isUniqueArr(newList); !ok {
+		return fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesInSchemasAttr)
+	}
+	dropped := arrayDifference(oldList, newList)
+	added := arrayDifference(newList, oldList)
+
+	for _, p := range added {
+		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLES IN SCHEMA %s", pubName, p.(string))
+		queries = append(queries, query)
+	}
+
+	for _, p := range dropped {
+		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLES IN SCHEMA %s", pubName, p.(string))
+		queries = append(queries, query)
+	}
+
+	for _, query := range queries {
+		if _, err := txn.Exec(query); err != nil {
+			return fmt.Errorf("could not alter publication schemas: %w", err)
 		}
 	}
 	return nil
@@ -445,28 +528,40 @@ func getDatabaseForPublication(d *schema.ResourceData, databaseName string) stri
 }
 
 func getTablesForPublication(d *schema.ResourceData) (string, error) {
-	var tablesString string
-	setTables, ok := d.GetOk(pubTablesAttr)
+	setTables, tablesOk := d.GetOk(pubTablesAttr)
+	setTablesInSchemas, schemasOk := d.GetOk(pubTablesInSchemasAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 
 	if isAllOk {
 		if isAllTables.(bool) {
-			tablesString = "FOR ALL TABLES"
+			return "FOR ALL TABLES", nil
 		}
 	}
-	if ok {
+	var tablesStrings []string
+	if tablesOk {
 		tables := setTables.(*schema.Set).List()
 		var tlist []string
 		if elem, ok := isUniqueArr(tables); !ok {
-			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
+			return "", fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
 		for _, t := range tables {
 			tlist = append(tlist, quoteTableName(t.(string)))
 		}
-		tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
+		tablesStrings = append(tablesStrings, fmt.Sprintf("TABLE %s", strings.Join(tlist, ", ")))
+	}
+	if schemasOk {
+		schemas := setTablesInSchemas.(*schema.Set).List()
+		var slist []string
+		if elem, ok := isUniqueArr(schemas); !ok {
+			return "", fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesInSchemasAttr)
+		}
+		for _, s := range schemas {
+			slist = append(slist, s.(string))
+		}
+		tablesStrings = append(tablesStrings, fmt.Sprintf("TABLES IN SCHEMA %s", strings.Join(slist, ", ")))
 	}
 
-	return tablesString, nil
+	return fmt.Sprintf("FOR %s", strings.Join(tablesStrings, ", ")), nil
 }
 
 func validatedPublicationPublishParams(paramList []interface{}) ([]string, error) {
