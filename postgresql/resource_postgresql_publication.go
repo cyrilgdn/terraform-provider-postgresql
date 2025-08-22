@@ -421,10 +421,14 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 				}
 			}
 
-			// Check if there's a schema that has all its tables included
-			// This would indicate TABLES IN SCHEMA was used
+			// Find the schema that has the most tables and where all tables from that schema are included
+			// This is more likely to be the schema specified in tables_in_schema
+			var bestSchema string
+			var bestTableCount int
+			var bestTotalTables int
+
 			for _, schema := range schemas {
-				// Count tables in this schema
+				// Count tables in this schema that are in the publication
 				schemaQuery := `SELECT COUNT(*) FROM pg_catalog.pg_publication_tables WHERE pubname = $1 AND schemaname = $2`
 				var tableCount int
 				err := txn.QueryRow(schemaQuery, pqQuoteLiteral(PublicationName), schema).Scan(&tableCount)
@@ -433,11 +437,26 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 					totalSchemaTablesQuery := `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE'`
 					var totalSchemaTables int
 					err := txn.QueryRow(totalSchemaTablesQuery, schema).Scan(&totalSchemaTables)
-					if err == nil && tableCount == totalSchemaTables && tableCount > 0 {
-						// This schema has all its tables included, likely TABLES IN SCHEMA
-						d.Set(pubTablesInSchemaAttr, schema)
-						break
+					if err == nil && tableCount > 0 {
+						// If this schema has all its tables included, it's a candidate
+						if tableCount == totalSchemaTables {
+							// Prefer schemas with more tables (more likely to be the main schema)
+							if tableCount > bestTableCount {
+								bestSchema = schema
+								bestTableCount = tableCount
+								bestTotalTables = totalSchemaTables
+							}
+						}
 					}
+				}
+			}
+
+			// Only set tables_in_schema if we found a schema where all tables are included
+			if bestSchema != "" && bestTableCount == bestTotalTables && bestTableCount > 0 {
+				// Additional check: make sure this schema has significantly more tables than others
+				// to avoid false positives with small schemas
+				if bestTableCount >= 3 || len(schemas) == 1 {
+					d.Set(pubTablesInSchemaAttr, bestSchema)
 				}
 			}
 		}
