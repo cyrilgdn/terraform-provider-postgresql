@@ -490,9 +490,9 @@ func TestAccPostgresqlPublication_TablesAndTablesInSchema(t *testing.T) {
 	defer teardown()
 	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2", "test_schema.test_table_3"}
 	createTestTables(t, dbSuffix, testTables, "")
-
+	
 	dbName, _ := getTestDBNames(dbSuffix)
-
+	
 	// Create additional tables in a different schema
 	dbExecute(t, config.connStr(dbName), "CREATE SCHEMA IF NOT EXISTS another_schema")
 	dbExecute(t, config.connStr(dbName), "CREATE TABLE another_schema.test_table_4 (id serial PRIMARY KEY)")
@@ -556,6 +556,8 @@ resource "postgresql_publication" "test" {
 		},
 	})
 }
+
+
 
 func checkPublicationExists(txn *sql.Tx, pubName string) (bool, error) {
 	var _rez bool
