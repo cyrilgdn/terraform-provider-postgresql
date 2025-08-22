@@ -78,7 +78,7 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				Computed:      true,
 				ForceNew:      true,
 				Description:   "Sets the schema to publish ALL tables from",
-				ConflictsWith: []string{pubAllTablesAttr, pubTablesAttr},
+				ConflictsWith: []string{pubAllTablesAttr},
 			},
 
 			pubPublishAttr: {
@@ -407,7 +407,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	d.Set(pubAllTablesAttr, puballtables)
 	
 	// Check if this publication uses TABLES IN SCHEMA
-	if len(tables) == 0 && !puballtables {
+	if !puballtables {
 		// Query to check if this publication uses TABLES IN SCHEMA
 		query = `SELECT DISTINCT schemaname FROM pg_catalog.pg_publication_tables WHERE pubname = $1`
 		rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
@@ -420,8 +420,25 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 					schemas = append(schemas, schema)
 				}
 			}
-			if len(schemas) == 1 {
-				d.Set(pubTablesInSchemaAttr, schemas[0])
+			
+			// Check if there's a schema that has all its tables included
+			// This would indicate TABLES IN SCHEMA was used
+			for _, schema := range schemas {
+				// Count tables in this schema
+				schemaQuery := `SELECT COUNT(*) FROM pg_catalog.pg_publication_tables WHERE pubname = $1 AND schemaname = $2`
+				var tableCount int
+				err := txn.QueryRow(schemaQuery, pqQuoteLiteral(PublicationName), schema).Scan(&tableCount)
+				if err == nil {
+					// Count total tables in this schema
+					totalSchemaTablesQuery := `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE'`
+					var totalSchemaTables int
+					err := txn.QueryRow(totalSchemaTablesQuery, schema).Scan(&totalSchemaTables)
+					if err == nil && tableCount == totalSchemaTables && tableCount > 0 {
+						// This schema has all its tables included, likely TABLES IN SCHEMA
+						d.Set(pubTablesInSchemaAttr, schema)
+						break
+					}
+				}
 			}
 		}
 	}
@@ -477,6 +494,7 @@ func getDatabaseForPublication(d *schema.ResourceData, databaseName string) stri
 
 func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	var tablesString string
+	var tableParts []string
 	setTables, ok := d.GetOk(pubTablesAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 	tablesInSchema, isTablesInSchemaOk := d.GetOk(pubTablesInSchemaAttr)
@@ -486,20 +504,43 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 			tablesString = "FOR ALL TABLES"
 		}
 	}
+
+	// Handle tables_in_schema
 	if isTablesInSchemaOk {
 		schemaName := tablesInSchema.(string)
-		tablesString = fmt.Sprintf("TABLES IN SCHEMA %s", pq.QuoteIdentifier(schemaName))
+		tableParts = append(tableParts, fmt.Sprintf("TABLES IN SCHEMA %s", pq.QuoteIdentifier(schemaName)))
 	}
+
+	// Handle specific tables
 	if ok {
 		tables := setTables.(*schema.Set).List()
 		var tlist []string
 		if elem, ok := isUniqueArr(tables); !ok {
 			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
+		
+		// Validate that no tables belong to schemas specified in tables_in_schema
+		if isTablesInSchemaOk {
+			schemaName := tablesInSchema.(string)
+			for _, t := range tables {
+				tableName := t.(string)
+				if strings.HasPrefix(tableName, schemaName+".") {
+					return "", fmt.Errorf("table '%s' belongs to schema '%s' which is already specified in tables_in_schema", tableName, schemaName)
+				}
+			}
+		}
+		
 		for _, t := range tables {
 			tlist = append(tlist, quoteTableName(t.(string)))
 		}
-		tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
+		if len(tlist) > 0 {
+			tableParts = append(tableParts, fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", ")))
+		}
+	}
+
+	// Combine both parts
+	if len(tableParts) > 0 {
+		tablesString = strings.Join(tableParts, ", ")
 	}
 
 	return tablesString, nil

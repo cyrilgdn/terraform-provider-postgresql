@@ -482,6 +482,158 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlPublication_TablesAndTablesInSchema(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2", "test_schema.test_table_3"}
+	createTestTables(t, dbSuffix, testTables, "")
+	
+	// Create additional tables in a different schema
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE SCHEMA IF NOT EXISTS another_schema")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE another_schema.test_table_4 (id serial PRIMARY KEY)")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE another_schema.test_table_5 (id serial PRIMARY KEY)")
+
+	dbName, _ := getTestDBNames(dbSuffix)
+	testAccPostgresqlPublicationTablesAndTablesInSchemaConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name            = "combined_publication"
+	database        = "%s"
+	tables_in_schema = "test_schema"
+	tables          = ["another_schema.test_table_4", "another_schema.test_table_5"]
+}
+`, dbName)
+
+	testAccPostgresqlPublicationTablesInSchemaConflictConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name            = "conflict_publication"
+	database        = "%s"
+	tables_in_schema = "test_schema"
+	tables          = ["test_schema.test_table_1", "another_schema.test_table_4"]
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
+			testCheckCompatibleVersion(t, featurePubTruncate)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlPublicationTablesAndTablesInSchemaConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "combined_publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "tables_in_schema", "test_schema"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.#", pubTablesAttr), "5"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubTablesAttr), "test_schema.test_table_1"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubTablesAttr), "test_schema.test_table_2"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.2", pubTablesAttr), "test_schema.test_table_3"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.3", pubTablesAttr), "another_schema.test_table_4"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.4", pubTablesAttr), "another_schema.test_table_5"),
+				),
+			},
+			{
+				Config:      testAccPostgresqlPublicationTablesInSchemaConflictConfig,
+				ExpectError: regexp.MustCompile("table 'test_schema.test_table_1' belongs to schema 'test_schema' which is already specified in tables_in_schema"),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlPublication_RealWorldExample(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+	
+	// Create test tables similar to the real-world example
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE SCHEMA IF NOT EXISTS public")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE public.orders (id serial PRIMARY KEY)")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE public.trades (id serial PRIMARY KEY)")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE public.trading_plans (id serial PRIMARY KEY)")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE public.user_price_alerts (id serial PRIMARY KEY)")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE public.user_trading_settings (id serial PRIMARY KEY)")
+	
+	// Create _timescaledb_internal schema and tables
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE SCHEMA IF NOT EXISTS _timescaledb_internal")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE _timescaledb_internal.chunk_1 (id serial PRIMARY KEY)")
+	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE _timescaledb_internal.chunk_2 (id serial PRIMARY KEY)")
+
+	dbName, _ := getTestDBNames(dbSuffix)
+	testAccPostgresqlPublicationRealWorldConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name            = "dbz_publication"
+	database        = "%s"
+	tables_in_schema = "_timescaledb_internal"
+	tables          = ["public.orders", "public.trades", "public.trading_plans", "public.user_price_alerts", "public.user_trading_settings"]
+	publish_param   = ["insert", "update"]
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
+			testCheckCompatibleVersion(t, featurePubTruncate)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlPublicationRealWorldConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "dbz_publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "tables_in_schema", "_timescaledb_internal"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.#", pubTablesAttr), "7"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubTablesAttr), "public.orders"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubTablesAttr), "public.trades"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.2", pubTablesAttr), "public.trading_plans"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.3", pubTablesAttr), "public.user_price_alerts"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.4", pubTablesAttr), "public.user_trading_settings"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.5", pubTablesAttr), "_timescaledb_internal.chunk_1"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.6", pubTablesAttr), "_timescaledb_internal.chunk_2"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.#", pubPublishAttr), "2"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.0", pubPublishAttr), "insert"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", fmt.Sprintf("%s.1", pubPublishAttr), "update"),
+				),
+			},
+		},
+	})
+}
+
 func checkPublicationExists(txn *sql.Tx, pubName string) (bool, error) {
 	var _rez bool
 	err := txn.QueryRow("SELECT TRUE from pg_catalog.pg_publication WHERE pubname=$1", pubName).Scan(&_rez)
@@ -661,7 +813,7 @@ resource "postgresql_publication" "test" {
 	name            = "publication"
 	database        = "%s"
 	tables_in_schema = "test_schema"
-	tables          = ["test.table1"]
+	tables          = ["test_schema.table1"]
 }
 `, dbName)
 
@@ -684,7 +836,7 @@ resource "postgresql_publication" "test" {
 			},
 			{
 				Config:      testAccPostgresqlPublicationTablesInSchemaTablesConflictConfig,
-				ExpectError: regexp.MustCompile("Conflicting configuration arguments.*"),
+				ExpectError: regexp.MustCompile("table 'test_schema.table1' belongs to schema 'test_schema' which is already specified in tables_in_schema"),
 			},
 		},
 	})
