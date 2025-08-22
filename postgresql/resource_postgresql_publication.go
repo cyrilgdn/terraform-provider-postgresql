@@ -512,8 +512,6 @@ func getDatabaseForPublication(d *schema.ResourceData, databaseName string) stri
 }
 
 func getTablesForPublication(d *schema.ResourceData) (string, error) {
-	var tablesString string
-	var tableParts []string
 	setTables, ok := d.GetOk(pubTablesAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 	tablesInSchema, isTablesInSchemaOk := d.GetOk(pubTablesInSchemaAttr)
@@ -523,50 +521,50 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 		return "FOR ALL TABLES", nil
 	}
 
-	// Handle specific tables first
-	if ok {
+	// Case 1: Only tables_in_schema specified
+	if !ok && isTablesInSchemaOk {
+		schemaName := tablesInSchema.(string)
+		return fmt.Sprintf("FOR TABLES IN SCHEMA %s", pq.QuoteIdentifier(schemaName)), nil
+	}
+
+	// Case 2: Only specific tables specified
+	if ok && !isTablesInSchemaOk {
 		tables := setTables.(*schema.Set).List()
 		var tlist []string
 		if elem, ok := isUniqueArr(tables); !ok {
-			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
+			return "", fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
 
+		for _, t := range tables {
+			tlist = append(tlist, quoteTableName(t.(string)))
+		}
+		return fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", ")), nil
+	}
+
+	// Case 3: Both tables and tables_in_schema specified
+	if ok && isTablesInSchemaOk {
+		tables := setTables.(*schema.Set).List()
+		var tlist []string
+
 		// Validate that no tables belong to schemas specified in tables_in_schema
-		if isTablesInSchemaOk {
-			schemaName := tablesInSchema.(string)
-			for _, t := range tables {
-				tableName := t.(string)
-				if strings.HasPrefix(tableName, schemaName+".") {
-					return "", fmt.Errorf("table '%s' belongs to schema '%s' which is already specified in tables_in_schema", tableName, schemaName)
-				}
+		schemaName := tablesInSchema.(string)
+		for _, t := range tables {
+			tableName := t.(string)
+			if strings.HasPrefix(tableName, schemaName+".") {
+				return "", fmt.Errorf("table '%s' belongs to schema '%s' which is already specified in tables_in_schema", tableName, schemaName)
 			}
 		}
 
 		for _, t := range tables {
 			tlist = append(tlist, quoteTableName(t.(string)))
 		}
-		if len(tlist) > 0 {
-			tableParts = append(tableParts, fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", ")))
-		}
+
+		schemaName = tablesInSchema.(string)
+		return fmt.Sprintf("FOR TABLE %s, TABLES IN SCHEMA %s", strings.Join(tlist, ", "), pq.QuoteIdentifier(schemaName)), nil
 	}
 
-	// Handle tables_in_schema (add after specific tables)
-	if isTablesInSchemaOk {
-		schemaName := tablesInSchema.(string)
-		tableParts = append(tableParts, fmt.Sprintf("TABLES IN SCHEMA %s", pq.QuoteIdentifier(schemaName)))
-	}
-
-	// Combine both parts
-	if len(tableParts) > 0 {
-		// If we only have tables_in_schema (no specific tables), we need to add FOR
-		if !ok && isTablesInSchemaOk {
-			tablesString = fmt.Sprintf("FOR %s", strings.Join(tableParts, ", "))
-		} else {
-			tablesString = strings.Join(tableParts, ", ")
-		}
-	}
-
-	return tablesString, nil
+	// Case 4: Nothing specified (should not happen due to schema validation)
+	return "", nil
 }
 
 func validatedPublicationPublishParams(paramList []interface{}) ([]string, error) {
