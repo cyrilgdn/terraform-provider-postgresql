@@ -32,6 +32,8 @@ resource "postgresql_publication" "combined_publication" {
   tables          = ["another_schema.table1", "another_schema.table2"]
 }
 
+
+
 ## Argument Reference
 
 - `name` - (Required) The name of the publication.

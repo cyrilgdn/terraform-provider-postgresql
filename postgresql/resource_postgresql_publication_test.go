@@ -485,17 +485,18 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 func TestAccPostgresqlPublication_TablesAndTablesInSchema(t *testing.T) {
 	skipIfNotAcc(t)
 
+	config := getTestConfig(t)
 	dbSuffix, teardown := setupTestDatabase(t, true, true)
 	defer teardown()
 	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2", "test_schema.test_table_3"}
 	createTestTables(t, dbSuffix, testTables, "")
 
-	// Create additional tables in a different schema
-	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE SCHEMA IF NOT EXISTS another_schema")
-	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE another_schema.test_table_4 (id serial PRIMARY KEY)")
-	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE another_schema.test_table_5 (id serial PRIMARY KEY)")
-
 	dbName, _ := getTestDBNames(dbSuffix)
+
+	// Create additional tables in a different schema
+	dbExecute(t, config.connStr(dbName), "CREATE SCHEMA IF NOT EXISTS another_schema")
+	dbExecute(t, config.connStr(dbName), "CREATE TABLE another_schema.test_table_4 (id serial PRIMARY KEY)")
+	dbExecute(t, config.connStr(dbName), "CREATE TABLE another_schema.test_table_5 (id serial PRIMARY KEY)")
 	testAccPostgresqlPublicationTablesAndTablesInSchemaConfig := fmt.Sprintf(`
 resource "postgresql_publication" "test" {
 	name            = "combined_publication"
