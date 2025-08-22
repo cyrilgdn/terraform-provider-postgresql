@@ -18,6 +18,12 @@ resource "postgresql_publication" "publication" {
   name  = "publication"
   tables = ["public.test","another_schema.test"]
 }
+
+# Publish all tables in a specific schema
+resource "postgresql_publication" "schema_publication" {
+  name            = "schema_publication"
+  tables_in_schema = "public"
+}
 ```
 
 ## Argument Reference
@@ -26,6 +32,7 @@ resource "postgresql_publication" "publication" {
 - `database` - (Optional) Which database to create the publication on. Defaults to provider database.
 - `tables` - (Optional) Which tables add to the publication. By defaults no tables added. Format of table is `<schema_name>.<table_name>`. If `<schema_name>` is not specified - default database schema will be used.  Table string must be listed in alphabetical order.
 - `all_tables` - (Optional) Should be ALL TABLES added to the publication. Defaults to 'false'
+- `tables_in_schema` - (Optional) Sets the schema to publish ALL tables from. Conflicts with `tables` and `all_tables`.
 - `owner` - (Optional) Who owns the publication. Defaults to provider user.
 - `drop_cascade` - (Optional) Should all subsequent resources of the publication be dropped. Defaults to 'false'
 - `publish_param` - (Optional) Which 'publish' options should be turned on. Default to 'insert','update','delete'

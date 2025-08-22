@@ -17,6 +17,7 @@ const (
 	pubDatabaseAttr                = "database"
 	pubAllTablesAttr               = "all_tables"
 	pubTablesAttr                  = "tables"
+	pubTablesInSchemaAttr          = "tables_in_schema"
 	pubDropCascadeAttr             = "drop_cascade"
 	pubPublishAttr                 = "publish_param"
 	pubPublishViaPartitionRootAttr = "publish_via_partition_root_param"
@@ -71,6 +72,15 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				ForceNew:    true,
 				Description: "Sets the tables list to publish to ALL tables",
 			},
+			pubTablesInSchemaAttr: {
+				Type:          schema.TypeString,
+				Optional:      true,
+				Computed:      true,
+				ForceNew:      true,
+				Description:   "Sets the schema to publish ALL tables from",
+				ConflictsWith: []string{pubAllTablesAttr, pubTablesAttr},
+			},
+
 			pubPublishAttr: {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -395,6 +405,27 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	d.Set(pubOwnerAttr, pubowner)
 	d.Set(pubTablesAttr, tables)
 	d.Set(pubAllTablesAttr, puballtables)
+	
+	// Check if this publication uses TABLES IN SCHEMA
+	if len(tables) == 0 && !puballtables {
+		// Query to check if this publication uses TABLES IN SCHEMA
+		query = `SELECT DISTINCT schemaname FROM pg_catalog.pg_publication_tables WHERE pubname = $1`
+		rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
+		if err == nil {
+			defer rows.Close()
+			var schemas []string
+			for rows.Next() {
+				var schema string
+				if err := rows.Scan(&schema); err == nil {
+					schemas = append(schemas, schema)
+				}
+			}
+			if len(schemas) == 1 {
+				d.Set(pubTablesInSchemaAttr, schemas[0])
+			}
+		}
+	}
+	
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
 		d.Set(pubPublishViaPartitionRootAttr, pubviaroot)
@@ -448,11 +479,16 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	var tablesString string
 	setTables, ok := d.GetOk(pubTablesAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
+	tablesInSchema, isTablesInSchemaOk := d.GetOk(pubTablesInSchemaAttr)
 
 	if isAllOk {
 		if isAllTables.(bool) {
 			tablesString = "FOR ALL TABLES"
 		}
+	}
+	if isTablesInSchemaOk {
+		schemaName := tablesInSchema.(string)
+		tablesString = fmt.Sprintf("TABLES IN SCHEMA %s", pq.QuoteIdentifier(schemaName))
 	}
 	if ok {
 		tables := setTables.(*schema.Set).List()
