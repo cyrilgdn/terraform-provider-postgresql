@@ -405,7 +405,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	d.Set(pubOwnerAttr, pubowner)
 	d.Set(pubTablesAttr, tables)
 	d.Set(pubAllTablesAttr, puballtables)
-	
+
 	// Check if this publication uses TABLES IN SCHEMA
 	if !puballtables {
 		// Query to check if this publication uses TABLES IN SCHEMA
@@ -420,7 +420,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 					schemas = append(schemas, schema)
 				}
 			}
-			
+
 			// Check if there's a schema that has all its tables included
 			// This would indicate TABLES IN SCHEMA was used
 			for _, schema := range schemas {
@@ -442,7 +442,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 			}
 		}
 	}
-	
+
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
 		d.Set(pubPublishViaPartitionRootAttr, pubviaroot)
@@ -511,7 +511,7 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 		if elem, ok := isUniqueArr(tables); !ok {
 			return tablesString, fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
 		}
-		
+
 		// Validate that no tables belong to schemas specified in tables_in_schema
 		if isTablesInSchemaOk {
 			schemaName := tablesInSchema.(string)
@@ -522,7 +522,7 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 				}
 			}
 		}
-		
+
 		for _, t := range tables {
 			tlist = append(tlist, quoteTableName(t.(string)))
 		}
