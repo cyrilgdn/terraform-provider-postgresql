@@ -489,7 +489,7 @@ func TestAccPostgresqlPublication_TablesAndTablesInSchema(t *testing.T) {
 	defer teardown()
 	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2", "test_schema.test_table_3"}
 	createTestTables(t, dbSuffix, testTables, "")
-	
+
 	// Create additional tables in a different schema
 	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE SCHEMA IF NOT EXISTS another_schema")
 	dbExecute(t, getTestDBConfig(t, dbSuffix), "CREATE TABLE another_schema.test_table_4 (id serial PRIMARY KEY)")
