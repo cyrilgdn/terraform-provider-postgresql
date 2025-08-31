@@ -57,7 +57,7 @@ func testAccCheckPostgresqlReplicationSlotDestroy(s *terraform.State) error {
 		exists, err := checkReplicationSlotExists(txn, getReplicationSlotNameFromID(rs.Primary.ID))
 
 		if err != nil {
-			return fmt.Errorf("Error checking replication slot %s", err)
+			return fmt.Errorf("error checking replication slot %s", err)
 		}
 
 		if exists {
@@ -99,7 +99,7 @@ func testAccCheckPostgresqlReplicationSlotExists(n string) resource.TestCheckFun
 		exists, err := checkReplicationSlotExists(txn, extName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking replication slot %s", err)
+			return fmt.Errorf("error checking replication slot %s", err)
 		}
 
 		if !exists {
@@ -157,7 +157,7 @@ func checkReplicationSlotExists(txn *sql.Tx, slotName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about replication slot: %s", err)
+		return false, fmt.Errorf("error reading info about replication slot: %s", err)
 	}
 
 	return true, nil
