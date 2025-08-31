@@ -1,8 +1,8 @@
 module github.com/terraform-providers/terraform-provider-postgresql
 
-go 1.23.0
+go 1.24.0
 
-toolchain go1.23.2
+toolchain go1.24.2
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
@@ -13,13 +13,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.2.12
 	github.com/aws/aws-sdk-go-v2/service/sts v1.21.1
 	github.com/blang/semver v3.5.1+incompatible
+	github.com/hashicorp/go-cty v1.5.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.37.0
 	github.com/lib/pq v1.10.9
 	github.com/sean-/postgresql-acl v0.0.0-20161225120419-d10489e5d217
 	github.com/stretchr/testify v1.9.0
 	gocloud.dev v0.34.0
 	golang.org/x/net v0.39.0
-	golang.org/x/oauth2 v0.26.0
+	golang.org/x/oauth2 v0.27.0
 	google.golang.org/api v0.134.0
 )
 
@@ -40,7 +41,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.13.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.1 // indirect
 	github.com/aws/smithy-go v1.14.0 // indirect
-	github.com/cloudflare/circl v1.6.0 // indirect
+	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
@@ -55,7 +56,6 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-checkpoint v0.5.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-cty v1.5.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-plugin v1.6.3 // indirect
