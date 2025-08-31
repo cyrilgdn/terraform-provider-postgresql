@@ -16,9 +16,9 @@ import (
 func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
-	var tableObjects = []interface{}{"o1", "o2"}
-	var tableColumns = []interface{}{"col1", "col2"}
-	var fdwObjects = []interface{}{"baz"}
+	var tableObjects = []any{"o1", "o2"}
+	var tableColumns = []any{"col1", "col2"}
+	var fdwObjects = []any{"baz"}
 
 	cases := []struct {
 		resource   *schema.ResourceData
@@ -26,7 +26,7 @@ func TestCreateGrantQuery(t *testing.T) {
 		expected   string
 	}{
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "table",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -35,7 +35,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "sequence",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -44,7 +44,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT SELECT ON ALL SEQUENCES IN SCHEMA %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "function",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -53,7 +53,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "procedure",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -62,7 +62,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "routine",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -71,7 +71,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT EXECUTE ON ALL ROUTINES IN SCHEMA %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type":       "TABLE",
 				"schema":            databaseName,
 				"role":              roleName,
@@ -81,7 +81,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA %s TO %s WITH GRANT OPTION", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "database",
 				"database":    databaseName,
 				"role":        roleName,
@@ -90,7 +90,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT CREATE ON DATABASE %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "database",
 				"database":    databaseName,
 				"role":        roleName,
@@ -99,7 +99,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT CREATE,CONNECT ON DATABASE %s TO %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type":       "DATABASE",
 				"database":          databaseName,
 				"role":              roleName,
@@ -109,7 +109,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s WITH GRANT OPTION", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "table",
 				"objects":     tableObjects,
 				"schema":      databaseName,
@@ -119,9 +119,9 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf(`GRANT SELECT ON TABLE %[1]s."o2",%[1]s."o1" TO %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "column",
-				"objects":     []interface{}{"o1"},
+				"objects":     []any{"o1"},
 				"columns":     tableColumns,
 				"schema":      databaseName,
 				"role":        roleName,
@@ -130,7 +130,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf(`GRANT SELECT (%[2]s,%[3]s) ON TABLE %[1]s."o1" TO %[4]s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier("col2"), pq.QuoteIdentifier("col1"), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "foreign_data_wrapper",
 				"objects":     fdwObjects,
 				"role":        roleName,
@@ -139,7 +139,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf(`GRANT USAGE ON FOREIGN DATA WRAPPER "baz" TO %s`, pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type":       "foreign_data_wrapper",
 				"objects":           fdwObjects,
 				"role":              roleName,
@@ -149,7 +149,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf(`GRANT ALL PRIVILEGES ON FOREIGN DATA WRAPPER "baz" TO %s WITH GRANT OPTION`, pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "foreign_server",
 				"objects":     fdwObjects,
 				"role":        roleName,
@@ -158,7 +158,7 @@ func TestCreateGrantQuery(t *testing.T) {
 			expected:   fmt.Sprintf(`GRANT USAGE ON FOREIGN SERVER "baz" TO %s`, pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type":       "foreign_server",
 				"objects":           fdwObjects,
 				"role":              roleName,
@@ -172,7 +172,7 @@ func TestCreateGrantQuery(t *testing.T) {
 	for _, c := range cases {
 		out := createGrantQuery(c.resource, c.privileges)
 		if out != c.expected {
-			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
+			t.Fatalf("error matching output and expected: %#v vs %#v", out, c.expected)
 		}
 	}
 }
@@ -180,16 +180,16 @@ func TestCreateGrantQuery(t *testing.T) {
 func TestCreateRevokeQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
-	var tableObjects = []interface{}{"o1", "o2"}
-	var tableColumns = []interface{}{"col1", "col2"}
-	var fdwObjects = []interface{}{"baz"}
+	var tableObjects = []any{"o1", "o2"}
+	var tableColumns = []any{"col1", "col2"}
+	var fdwObjects = []any{"baz"}
 
 	cases := []struct {
 		resource *schema.ResourceData
 		expected string
 	}{
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "table",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -197,7 +197,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "sequence",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -205,7 +205,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "function",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -213,7 +213,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "procedure",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -221,7 +221,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL PROCEDURES IN SCHEMA %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "routine",
 				"schema":      databaseName,
 				"role":        roleName,
@@ -229,7 +229,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL ROUTINES IN SCHEMA %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "database",
 				"database":    databaseName,
 				"role":        roleName,
@@ -237,7 +237,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "DATABASE",
 				"database":    databaseName,
 				"role":        roleName,
@@ -245,7 +245,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "table",
 				"objects":     tableObjects,
 				"schema":      databaseName,
@@ -254,28 +254,28 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON TABLE %[1]s."o2",%[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "table",
 				"objects":     tableObjects,
 				"schema":      databaseName,
 				"role":        roleName,
-				"privileges":  []interface{}{"INSERT", "UPDATE"},
+				"privileges":  []any{"INSERT", "UPDATE"},
 			}),
 			expected: fmt.Sprintf(`REVOKE UPDATE,INSERT ON TABLE %[1]s."o2",%[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "column",
-				"objects":     []interface{}{"o1"},
+				"objects":     []any{"o1"},
 				"schema":      databaseName,
 				"columns":     tableColumns,
 				"role":        roleName,
-				"privileges":  []interface{}{"SELECT"},
+				"privileges":  []any{"SELECT"},
 			}),
 			expected: fmt.Sprintf(`REVOKE SELECT ("col2","col1") ON TABLE %[1]s."o1" FROM %s`, pq.QuoteIdentifier(databaseName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "foreign_data_wrapper",
 				"objects":     fdwObjects,
 				"role":        roleName,
@@ -283,7 +283,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 			expected: fmt.Sprintf(`REVOKE ALL PRIVILEGES ON FOREIGN DATA WRAPPER "baz" FROM %s`, pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]interface{}{
+			resource: schema.TestResourceDataRaw(t, resourcePostgreSQLGrant().Schema, map[string]any{
 				"object_type": "foreign_server",
 				"objects":     fdwObjects,
 				"role":        roleName,
@@ -295,7 +295,7 @@ func TestCreateRevokeQuery(t *testing.T) {
 	for _, c := range cases {
 		out := createRevokeQuery(c.resource.Get)
 		if out != c.expected {
-			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
+			t.Fatalf("error matching output and expected: %#v vs %#v", out, c.expected)
 		}
 	}
 }

@@ -55,7 +55,7 @@ func resourcePostgreSQLUserMapping() *schema.Resource {
 func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -70,8 +70,8 @@ func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceDat
 	if options, ok := d.GetOk(userMappingOptionsAttr); ok {
 		fmt.Fprint(b, " OPTIONS ( ")
 		cnt := 0
-		len := len(options.(map[string]interface{}))
-		for k, v := range options.(map[string]interface{}) {
+		len := len(options.(map[string]any))
+		for k, v := range options.(map[string]any) {
 			fmt.Fprint(b, " ", pq.QuoteIdentifier(k), " ", pq.QuoteLiteral(v.(string)))
 			if cnt < len-1 {
 				fmt.Fprint(b, ", ")
@@ -82,7 +82,7 @@ func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceDat
 	}
 
 	if _, err := db.Exec(b.String()); err != nil {
-		return fmt.Errorf("Could not create user mapping: %w", err)
+		return fmt.Errorf("could not create user mapping: %w", err)
 	}
 
 	d.SetId(generateUserMappingID(d))
@@ -93,7 +93,7 @@ func resourcePostgreSQLUserMappingCreate(db *DBConnection, d *schema.ResourceDat
 func resourcePostgreSQLUserMappingRead(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -127,10 +127,10 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading user mapping: %w", err)
+		return fmt.Errorf("error reading user mapping: %w", err)
 	}
 
-	mappedOptions := make(map[string]interface{})
+	mappedOptions := make(map[string]any)
 	for _, v := range userMappingOptions {
 		pair := strings.SplitN(v, "=", 2)
 		mappedOptions[pair[0]] = pair[1]
@@ -147,7 +147,7 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 func resourcePostgreSQLUserMappingDelete(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -167,7 +167,7 @@ func resourcePostgreSQLUserMappingDelete(db *DBConnection, d *schema.ResourceDat
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting user mapping: %w", err)
+		return fmt.Errorf("error deleting user mapping: %w", err)
 	}
 
 	d.SetId("")
@@ -178,7 +178,7 @@ func resourcePostgreSQLUserMappingDelete(db *DBConnection, d *schema.ResourceDat
 func resourcePostgreSQLUserMappingUpdate(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -204,11 +204,11 @@ func setUserMappingOptionsIfChanged(db *DBConnection, d *schema.ResourceData) er
 	oldOptions, newOptions := d.GetChange(userMappingOptionsAttr)
 	fmt.Fprint(b, " OPTIONS ( ")
 	cnt := 0
-	len := len(newOptions.(map[string]interface{}))
-	toRemove := oldOptions.(map[string]interface{})
-	for k, v := range newOptions.(map[string]interface{}) {
+	len := len(newOptions.(map[string]any))
+	toRemove := oldOptions.(map[string]any)
+	for k, v := range newOptions.(map[string]any) {
 		operation := "ADD"
-		if oldOptions.(map[string]interface{})[k] != nil {
+		if oldOptions.(map[string]any)[k] != nil {
 			operation = "SET"
 			delete(toRemove, k)
 		}
@@ -230,7 +230,7 @@ func setUserMappingOptionsIfChanged(db *DBConnection, d *schema.ResourceData) er
 	fmt.Fprint(b, " ) ")
 
 	if _, err := db.Exec(b.String()); err != nil {
-		return fmt.Errorf("Error updating user mapping options: %w", err)
+		return fmt.Errorf("error updating user mapping options: %w", err)
 	}
 
 	return nil

@@ -82,7 +82,7 @@ func skipIfNotSuperuser(t *testing.T) {
 }
 
 // dbExecute is a test helper to create a pool, execute one query then close the pool
-func dbExecute(t *testing.T, dsn, query string, args ...interface{}) {
+func dbExecute(t *testing.T, dsn, query string, args ...any) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatalf("could to create connection pool: %v", err)

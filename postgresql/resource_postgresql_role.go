@@ -414,7 +414,7 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+		return fmt.Errorf("error committing schema: %w", err)
 	}
 
 	d.SetId("")
@@ -459,7 +459,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		"rolconfig",
 	}
 
-	values := []interface{}{
+	values := []any{
 		&roleRoles,
 		&roleName,
 		&roleSuperuser,
@@ -497,7 +497,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading ROLE: %w", err)
+		return fmt.Errorf("error reading ROLE: %w", err)
 	}
 
 	d.Set(roleNameAttr, roleName)
@@ -568,7 +568,7 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 			var result = strings.Split(strings.TrimPrefix(config, roleIdleInTransactionSessionTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
-				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
+				return -1, fmt.Errorf("error reading statement_timeout: %w", err)
 			}
 			return res, nil
 		}
@@ -585,7 +585,7 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
-				return -1, fmt.Errorf("Error reading statement_timeout: %w", err)
+				return -1, fmt.Errorf("error reading statement_timeout: %w", err)
 			}
 			return res, nil
 		}
@@ -642,7 +642,7 @@ func readRolePassword(db *DBConnection, d *schema.ResourceData, roleCanLogin boo
 		// They don't have a password
 		return "", nil
 	case err != nil:
-		return "", fmt.Errorf("Error reading role: %w", err)
+		return "", fmt.Errorf("error reading role: %w", err)
 	}
 	// If the password isn't already in md5 format, but hashing the input
 	// matches the password in the database for the user, they are the same
@@ -765,12 +765,12 @@ func setRoleName(txn *sql.Tx, d *schema.ResourceData) error {
 	o := oraw.(string)
 	n := nraw.(string)
 	if n == "" {
-		return errors.New("Error setting role name to an empty string")
+		return errors.New("error setting role name to an empty string")
 	}
 
 	sql := fmt.Sprintf("ALTER ROLE %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role NAME: %w", err)
+		return fmt.Errorf("error updating role NAME: %w", err)
 	}
 
 	d.SetId(n)
@@ -807,7 +807,7 @@ func setRolePassword(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(password))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role password: %w", err)
+		return fmt.Errorf("error updating role password: %w", err)
 	}
 
 	return nil
@@ -830,7 +830,7 @@ func setRoleBypassRLS(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) err
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role BYPASSRLS: %w", err)
+		return fmt.Errorf("error updating role BYPASSRLS: %w", err)
 	}
 
 	return nil
@@ -845,7 +845,7 @@ func setRoleConnLimit(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s CONNECTION LIMIT %d", pq.QuoteIdentifier(roleName), connLimit)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role CONNECTION LIMIT: %w", err)
+		return fmt.Errorf("error updating role CONNECTION LIMIT: %w", err)
 	}
 
 	return nil
@@ -864,7 +864,7 @@ func setRoleCreateDB(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role CREATEDB: %w", err)
+		return fmt.Errorf("error updating role CREATEDB: %w", err)
 	}
 
 	return nil
@@ -883,7 +883,7 @@ func setRoleCreateRole(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role CREATEROLE: %w", err)
+		return fmt.Errorf("error updating role CREATEROLE: %w", err)
 	}
 
 	return nil
@@ -902,7 +902,7 @@ func setRoleInherit(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role INHERIT: %w", err)
+		return fmt.Errorf("error updating role INHERIT: %w", err)
 	}
 
 	return nil
@@ -921,7 +921,7 @@ func setRoleLogin(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role LOGIN: %w", err)
+		return fmt.Errorf("error updating role LOGIN: %w", err)
 	}
 
 	return nil
@@ -940,7 +940,7 @@ func setRoleReplication(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role REPLICATION: %w", err)
+		return fmt.Errorf("error updating role REPLICATION: %w", err)
 	}
 
 	return nil
@@ -959,7 +959,7 @@ func setRoleSuperuser(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s WITH %s", pq.QuoteIdentifier(roleName), tok)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role SUPERUSER: %w", err)
+		return fmt.Errorf("error updating role SUPERUSER: %w", err)
 	}
 
 	return nil
@@ -980,7 +980,7 @@ func setRoleValidUntil(txn *sql.Tx, d *schema.ResourceData) error {
 	roleName := d.Get(roleNameAttr).(string)
 	sql := fmt.Sprintf("ALTER ROLE %s VALID UNTIL '%s'", pq.QuoteIdentifier(roleName), pqQuoteLiteral(validUntil))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating role VALID UNTIL: %w", err)
+		return fmt.Errorf("error updating role VALID UNTIL: %w", err)
 	}
 
 	return nil
@@ -1044,7 +1044,7 @@ func grantRoles(txn *sql.Tx, d *schema.ResourceData) error {
 
 func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
 	role := d.Get(roleNameAttr).(string)
-	searchPathInterface := d.Get(roleSearchPathAttr).([]interface{})
+	searchPathInterface := d.Get(roleSearchPathAttr).([]any)
 
 	var searchPathString []string
 	if len(searchPathInterface) > 0 {

@@ -249,7 +249,7 @@ func testAccCheckPostgresqlRoleDestroy(s *terraform.State) error {
 		exists, err := checkRoleExists(client, rs.Primary.ID)
 
 		if err != nil {
-			return fmt.Errorf("Error checking role %s", err)
+			return fmt.Errorf("error checking role %s", err)
 		}
 
 		if exists {
@@ -266,7 +266,7 @@ func testAccCheckPostgresqlRoleExists(roleName string, grantedRoles []string, se
 
 		exists, err := checkRoleExists(client, roleName)
 		if err != nil {
-			return fmt.Errorf("Error checking role %s", err)
+			return fmt.Errorf("error checking role %s", err)
 		}
 
 		if !exists {
@@ -299,7 +299,7 @@ func checkRoleExists(client *Client, roleName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about role: %s", err)
+		return false, fmt.Errorf("error reading info about role: %s", err)
 	}
 
 	return true, nil
@@ -332,7 +332,7 @@ func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) 
 		roleName,
 	)
 	if err != nil {
-		return fmt.Errorf("Error reading granted roles: %v", err)
+		return fmt.Errorf("error reading granted roles: %v", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -344,7 +344,7 @@ func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) 
 	for rows.Next() {
 		var grantedRole string
 		if err := rows.Scan(&grantedRole); err != nil {
-			return fmt.Errorf("Error scanning granted role: %v", err)
+			return fmt.Errorf("error scanning granted role: %v", err)
 		}
 		grantedRoles = append(grantedRoles, grantedRole)
 	}
@@ -375,7 +375,7 @@ func checkSearchPath(client *Client, roleName string, expectedSearchPath []strin
 	if err != nil && err == sql.ErrNoRows {
 		searchPathStr = "\"$user\", public"
 	} else if err != nil {
-		return fmt.Errorf("Error reading search_path: %v", err)
+		return fmt.Errorf("error reading search_path: %v", err)
 	}
 
 	searchPath := strings.Split(searchPathStr, ", ")

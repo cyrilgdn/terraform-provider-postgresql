@@ -132,7 +132,6 @@ func TestAccPostgresqlDefaultPrivileges_GrantOwner(t *testing.T) {
 	defer teardown()
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
 	dbName, roleName := getTestDBNames(dbSuffix)
 
 	// We set PGUSER as owner as he will create the test table
@@ -185,7 +184,7 @@ resource "postgresql_default_privileges" "test_ro" {
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 
 					// check if connected user does not have test_owner granted anymore.
-					checkUserMembership(t, dsn, config.Username, "test_owner", false),
+					checkUserMembership(t, config.Username, "test_owner", false),
 				),
 			},
 		},

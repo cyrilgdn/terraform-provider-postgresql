@@ -197,8 +197,6 @@ func TestAccPostgresqlDatabase_GrantOwner(t *testing.T) {
 	skipIfNotAcc(t)
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
-
 	var stateConfig = `
 resource postgresql_role "test_owner" {
        name = "test_owner"
@@ -221,7 +219,7 @@ resource postgresql_database "test_db" {
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
 					// check if connected user does not have test_owner granted anymore.
-					checkUserMembership(t, dsn, config.Username, "test_owner", false),
+					checkUserMembership(t, config.Username, "test_owner", false),
 				),
 			},
 		},
@@ -263,7 +261,7 @@ resource postgresql_database "test_db" {
 					resource.TestCheckResourceAttr("postgresql_database.test_db", "owner", "test_owner"),
 
 					// check if connected user still have test_owner granted.
-					checkUserMembership(t, dsn, config.Username, "test_owner", true),
+					checkUserMembership(t, config.Username, "test_owner", true),
 				),
 			},
 		},
@@ -343,7 +341,7 @@ resource postgresql_database "test_db" {
 }
 
 func checkUserMembership(
-	t *testing.T, dsn, member, role string, shouldHaveRole bool,
+	t *testing.T, member, role string, shouldHaveRole bool,
 ) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		client := testAccProvider.Meta().(*Client)
@@ -406,7 +404,7 @@ func checkTableOwnership(
 				"User %s should be owner of %s but is not", owner, tableName,
 			)
 		case err != nil:
-			t.Fatalf("Error checking table ownership. %v", err)
+			t.Fatalf("error checking table ownership. %v", err)
 
 		}
 
@@ -426,7 +424,7 @@ func testAccCheckPostgresqlDatabaseDestroy(s *terraform.State) error {
 		exists, err := checkDatabaseExists(client, rs.Primary.ID)
 
 		if err != nil {
-			return fmt.Errorf("Error checking db %s", err)
+			return fmt.Errorf("error checking db %s", err)
 		}
 
 		if exists {
@@ -452,7 +450,7 @@ func testAccCheckPostgresqlDatabaseExists(n string) resource.TestCheckFunc {
 		exists, err := checkDatabaseExists(client, rs.Primary.ID)
 
 		if err != nil {
-			return fmt.Errorf("Error checking db %s", err)
+			return fmt.Errorf("error checking db %s", err)
 		}
 
 		if !exists {
@@ -474,7 +472,7 @@ func checkDatabaseExists(client *Client, dbName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about database: %s", err)
+		return false, fmt.Errorf("error reading info about database: %s", err)
 	}
 
 	return true, nil

@@ -17,18 +17,18 @@ func TestCreateGrantRoleQuery(t *testing.T) {
 	var grantRoleName = "bar"
 
 	cases := []struct {
-		resource map[string]interface{}
+		resource map[string]any
 		expected string
 	}{
 		{
-			resource: map[string]interface{}{
+			resource: map[string]any{
 				"role":       roleName,
 				"grant_role": grantRoleName,
 			},
 			expected: fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: map[string]interface{}{
+			resource: map[string]any{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": false,
@@ -36,7 +36,7 @@ func TestCreateGrantRoleQuery(t *testing.T) {
 			expected: fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName)),
 		},
 		{
-			resource: map[string]interface{}{
+			resource: map[string]any{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": true,
@@ -48,7 +48,7 @@ func TestCreateGrantRoleQuery(t *testing.T) {
 	for _, c := range cases {
 		out := createGrantRoleQuery(schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, c.resource))
 		if out != c.expected {
-			t.Fatalf("Error matching output and expected: %#v vs %#v", out, c.expected)
+			t.Fatalf("error matching output and expected: %#v vs %#v", out, c.expected)
 		}
 	}
 }
@@ -60,23 +60,23 @@ func TestRevokeRoleQuery(t *testing.T) {
 	expected := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(grantRoleName), pq.QuoteIdentifier(roleName))
 
 	cases := []struct {
-		resource map[string]interface{}
+		resource map[string]any
 	}{
 		{
-			resource: map[string]interface{}{
+			resource: map[string]any{
 				"role":       roleName,
 				"grant_role": grantRoleName,
 			},
 		},
 		{
-			resource: map[string]interface{}{
+			resource: map[string]any{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": false,
 			},
 		},
 		{
-			resource: map[string]interface{}{
+			resource: map[string]any{
 				"role":              roleName,
 				"grant_role":        grantRoleName,
 				"with_admin_option": true,
@@ -87,7 +87,7 @@ func TestRevokeRoleQuery(t *testing.T) {
 	for _, c := range cases {
 		out := createRevokeRoleQuery(schema.TestResourceDataRaw(t, resourcePostgreSQLGrantRole().Schema, c.resource))
 		if out != expected {
-			t.Fatalf("Error matching output and expected: %#v vs %#v", out, expected)
+			t.Fatalf("error matching output and expected: %#v vs %#v", out, expected)
 		}
 	}
 }

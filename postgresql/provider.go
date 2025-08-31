@@ -229,7 +229,7 @@ func Provider() *schema.Provider {
 	}
 }
 
-func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
+func validateExpectedVersion(v any, key string) (warnings []string, errors []error) {
 	if _, err := semver.ParseTolerant(v.(string)); err != nil {
 		errors = append(errors, fmt.Errorf("invalid version (%q): %w", v.(string), err))
 	}
@@ -330,7 +330,7 @@ func acquireAzureOauthToken(tenantId string) (string, error) {
 	return token.Token, nil
 }
 
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+func providerConfigure(d *schema.ResourceData) (any, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
 		sslMode = sslModeRaw.(string)
@@ -389,7 +389,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
-		if spec, ok := value.([]interface{})[0].(map[string]interface{}); ok {
+		if spec, ok := value.([]any)[0].(map[string]interface{}); ok {
 			config.SSLClientCert = &ClientCertificateConfig{
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
