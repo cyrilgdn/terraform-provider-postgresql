@@ -344,8 +344,9 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 
 	// PostgreSQL 9.2.21 on x86_64-apple-darwin16.5.0, compiled by Apple LLVM version 8.1.0 (clang-802.0.42), 64-bit
 	// PostgreSQL 9.6.7, compiled by Visual C++ build 1800, 64-bit
+	// PostgreSQL 13.14_TDE_[...] (Ubuntu [...]) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu [...]) [...], 64-bit
 	fields := strings.FieldsFunc(pgVersion, func(c rune) bool {
-		return unicode.IsSpace(c) || c == ','
+		return unicode.IsSpace(c) || c == ',' || c == '_'
 	})
 	if len(fields) < 2 {
 		return nil, fmt.Errorf("error determining the server version: %q", pgVersion)
