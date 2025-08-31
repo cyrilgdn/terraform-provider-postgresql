@@ -128,7 +128,7 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	queryExists := "SELECT TRUE FROM pg_catalog.pg_stat_subscription WHERE subname = $1"
 	err = txn.QueryRow(queryExists, pqQuoteLiteral(subName)).Scan(&subExists)
 	if err != nil {
-		return fmt.Errorf("Failed to check subscription: %w", err)
+		return fmt.Errorf("failed to check subscription: %w", err)
 	}
 
 	if !subExists {
@@ -151,7 +151,7 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 
 		setPublications, ok := d.GetOk("publications")
 		if !ok {
-			return fmt.Errorf("Attribute publications is not set")
+			return fmt.Errorf("attribute publications is not set")
 		}
 		publications := setPublications.(*schema.Set).List()
 		d.Set("publications", publications)
@@ -249,7 +249,7 @@ func getPublicationsForSubscription(d *schema.ResourceData) (string, error) {
 	setPublications, ok := d.GetOk("publications")
 
 	if !ok {
-		return publicationsString, fmt.Errorf("Attribute publications is not set")
+		return publicationsString, fmt.Errorf("attribute publications is not set")
 	}
 
 	publications := setPublications.(*schema.Set).List()
@@ -268,7 +268,7 @@ func getConnInfoForSubscription(d *schema.ResourceData) (string, error) {
 	var connInfo string
 	setConnInfo, ok := d.GetOk("conninfo")
 	if !ok {
-		return connInfo, fmt.Errorf("Attribute conninfo is not set")
+		return connInfo, fmt.Errorf("attribute conninfo is not set")
 	}
 	return setConnInfo.(string), nil
 }
@@ -296,7 +296,7 @@ func getDBSubscriptionName(d *schema.ResourceData, client *Client) (string, stri
 	if subName == "" {
 		parsed := strings.Split(d.Id(), ".")
 		if len(parsed) != 2 {
-			return "", "", fmt.Errorf("Subscription ID %s has not the expected format 'database.subscriptionName': %v", d.Id(), parsed)
+			return "", "", fmt.Errorf("subscription ID %s has not the expected format 'database.subscriptionName': %v", d.Id(), parsed)
 		}
 		database = parsed[0]
 		subName = parsed[1]

@@ -61,7 +61,7 @@ func testAccCheckPostgresqlExtensionDestroy(s *terraform.State) error {
 		exists, err := checkExtensionExists(txn, getExtensionNameFromID(rs.Primary.ID))
 
 		if err != nil {
-			return fmt.Errorf("Error checking extension %s", err)
+			return fmt.Errorf("error checking extension %s", err)
 		}
 
 		if exists {
@@ -103,7 +103,7 @@ func testAccCheckPostgresqlExtensionExists(n string) resource.TestCheckFunc {
 		exists, err := checkExtensionExists(txn, extName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking extension %s", err)
+			return fmt.Errorf("error checking extension %s", err)
 		}
 
 		if !exists {
@@ -161,7 +161,7 @@ func checkExtensionExists(txn *sql.Tx, extensionName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about extension: %s", err)
+		return false, fmt.Errorf("error reading info about extension: %s", err)
 	}
 
 	return true, nil
@@ -301,7 +301,7 @@ func testAccCheckExtensionDependency(extName string) resource.TestCheckFunc {
 
 		exists, err := checkExtensionExists(txn, extName)
 		if err != nil {
-			return fmt.Errorf("Error checking extension %s", err)
+			return fmt.Errorf("error checking extension %s", err)
 		}
 		if !exists {
 			return fmt.Errorf("Extension %s not found", extName)
