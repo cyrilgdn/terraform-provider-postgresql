@@ -103,7 +103,7 @@ func TestArePrivilegesEqual(t *testing.T) {
 	}
 }
 
-func buildPrivilegesSet(grants ...interface{}) *schema.Set {
+func buildPrivilegesSet(grants ...any) *schema.Set {
 	return schema.NewSet(schema.HashString, grants)
 }
 

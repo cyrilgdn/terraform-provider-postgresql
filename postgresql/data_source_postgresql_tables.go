@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -110,9 +111,13 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing rows: %v\n", err)
+		}
+	}()
 
-	tables := make([]interface{}, 0)
+	tables := make([]any, 0)
 	for rows.Next() {
 		var object_name string
 		var schema_name string
@@ -122,7 +127,7 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 			return fmt.Errorf("could not scan table output for database: %w", err)
 		}
 
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		result["object_name"] = object_name
 		result["schema_name"] = schema_name
 		result["table_type"] = table_type
@@ -138,22 +143,22 @@ func dataSourcePostgreSQLTablesRead(db *DBConnection, d *schema.ResourceData) er
 func generateDataSourceTablesID(d *schema.ResourceData, databaseName string) string {
 	return strings.Join([]string{
 		databaseName,
-		generatePatternArrayString(d.Get("schemas").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("table_types").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("like_any_patterns").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("like_all_patterns").([]interface{}), queryArrayKeywordAll),
-		generatePatternArrayString(d.Get("not_like_all_patterns").([]interface{}), queryArrayKeywordAll),
+		generatePatternArrayString(d.Get("schemas").([]any), queryArrayKeywordAny),
+		generatePatternArrayString(d.Get("table_types").([]any), queryArrayKeywordAny),
+		generatePatternArrayString(d.Get("like_any_patterns").([]any), queryArrayKeywordAny),
+		generatePatternArrayString(d.Get("like_all_patterns").([]any), queryArrayKeywordAll),
+		generatePatternArrayString(d.Get("not_like_all_patterns").([]any), queryArrayKeywordAll),
 		d.Get("regex_pattern").(string),
 	}, "_")
 }
 
 func applyTableDataSourceQueryFilters(query string, queryConcatKeyword string, d *schema.ResourceData) string {
 	filters := []string{}
-	schemasTypeFilter := applyTypeMatchingToQuery(tableSchemaKeyword, d.Get("schemas").([]interface{}))
+	schemasTypeFilter := applyTypeMatchingToQuery(tableSchemaKeyword, d.Get("schemas").([]any))
 	if len(schemasTypeFilter) > 0 {
 		filters = append(filters, schemasTypeFilter)
 	}
-	tableTypeFilter := applyTypeMatchingToQuery(tableTypeKeyword, d.Get("table_types").([]interface{}))
+	tableTypeFilter := applyTypeMatchingToQuery(tableTypeKeyword, d.Get("table_types").([]any))
 	if len(tableTypeFilter) > 0 {
 		filters = append(filters, tableTypeFilter)
 	}
