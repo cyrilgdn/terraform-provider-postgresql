@@ -300,7 +300,11 @@ func createGoogleCredsFileIfNeeded() error {
 	if err != nil {
 		return fmt.Errorf("could not create temporary file: %w", err)
 	}
-	defer tmpFile.Close()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			fmt.Printf("could not close temporary file: %v", err)
+		}
+	}()
 
 	_, err = tmpFile.WriteString(rawGoogleCredentials)
 	if err != nil {

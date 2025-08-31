@@ -998,7 +998,11 @@ func revokeRoles(txn *sql.Tx, d *schema.ResourceData) error {
 	if err != nil {
 		return fmt.Errorf("could not get roles list for role %s: %w", role, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing rows: %v", err)
+		}
+	}()
 
 	grantedRoles := []string{}
 	for rows.Next() {

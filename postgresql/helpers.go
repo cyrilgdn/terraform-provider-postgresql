@@ -107,7 +107,7 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
-		return false, fmt.Errorf("Error granting role %s to %s: %w", role, member, err)
+		return false, fmt.Errorf("error granting role %s to %s: %w", role, member, err)
 	}
 	return true, nil
 }
@@ -131,7 +131,7 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 	sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
-		return false, fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
+		return false, fmt.Errorf("error revoking role %s from %s: %w", role, member, err)
 	}
 	return true, nil
 }

@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"sort"
@@ -333,7 +334,11 @@ func checkGrantedRoles(client *Client, roleName string, expectedRoles []string) 
 	if err != nil {
 		return fmt.Errorf("Error reading granted roles: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing rows: %v", err)
+		}
+	}()
 
 	grantedRoles := []string{}
 	for rows.Next() {

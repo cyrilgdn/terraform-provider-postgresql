@@ -23,10 +23,7 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 	// Set default privileges to the test role then to public (i.e.: everyone)
 	for _, role := range []string{roleName, "public"} {
 		t.Run(role, func(t *testing.T) {
-			withGrant := true
-			if role == "public" {
-				withGrant = false
-			}
+			withGrant := (role != "public")
 
 			// We set PGUSER as owner as he will create the test table
 			var tfConfig = fmt.Sprintf(`
