@@ -447,3 +447,158 @@ resource "postgresql_role" "role_with_search_path" {
   search_path = ["bar", "foo-with-hyphen"]
 }
 `
+
+func TestAccPostgresqlRole_WriteOnlyPassword_Basic(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "wo_pwd_role" {
+  name        = "wo_pwd_role"
+  login       = true
+  password_wo = "secretpass"
+  password_wo_version = "1"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("wo_pwd_role", nil, nil),
+					resource.TestCheckNoResourceAttr("postgresql_role.wo_pwd_role", "password_wo"), // must be blank
+					resource.TestCheckNoResourceAttr("postgresql_role.wo_pwd_role", "password"),    // must be blank
+					testAccCheckRoleCanLogin(t, "wo_pwd_role", "secretpass"),                       // actually usable
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_WriteOnlyPassword_Switch(t *testing.T) {
+	configPassword := `
+resource "postgresql_role" "switch_role" {
+  name     = "switch_role"
+  login    = true
+  password = "initialpass"
+}`
+
+	configPasswordWO := `
+resource "postgresql_role" "switch_role" {
+  name        = "switch_role"
+  login       = true
+  password_wo = "wopass"
+  password_wo_version = "1"
+}`
+
+	configPasswordWOChangedWithoutVersionChange := `
+resource "postgresql_role" "switch_role" {
+  name        = "switch_role"
+  login       = true
+  password_wo = "wopass123"
+  password_wo_version = "1"
+}`
+
+	configPasswordReturn := `
+resource "postgresql_role" "switch_role" {
+  name     = "switch_role"
+  login    = true
+  password = "revertpass"
+}`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: configPassword,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.switch_role", "password", "initialpass"),
+					testAccCheckRoleCanLogin(t, "switch_role", "initialpass"),
+				),
+			},
+			{
+				Config: configPasswordWO,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckRoleCanLogin(t, "switch_role", "wopass"),
+					resource.TestCheckResourceAttr("postgresql_role.switch_role", "password", ""), // value cleared from state
+				),
+			},
+			{
+				Config: configPasswordWOChangedWithoutVersionChange,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckRoleCanLogin(t, "switch_role", "wopass"), //because the version didn't change, the old password still works
+				),
+			},
+			{
+				Config: configPasswordReturn,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.switch_role", "password", "revertpass"),
+					testAccCheckRoleCanLogin(t, "switch_role", "revertpass"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlRole_WriteOnlyPassword_WithVersioning(t *testing.T) {
+	const roleName = "switch_role"
+
+	configWOv1 := `
+resource "postgresql_role" "switch_role" {
+  name                 = "switch_role"
+  login                = true
+  password_wo          = "wopass1"
+  password_wo_version  = 1
+}`
+
+	configWOv1NewPass := `
+resource "postgresql_role" "switch_role" {
+  name                 = "switch_role"
+  login                = true
+  password_wo          = "wopass2"
+  password_wo_version  = "1"
+}`
+
+	configWOv2 := `
+resource "postgresql_role" "switch_role" {
+  name                 = "switch_role"
+  login                = true
+  password_wo          = "wopass2"
+  password_wo_version  = "2"
+}`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: configWOv1,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.switch_role", "password_wo_version", "1"),
+					testAccCheckRoleCanLogin(t, roleName, "wopass1"),
+				),
+			},
+			{
+				// Update the password but keep the version the same → should still login with old password
+				Config: configWOv1NewPass,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckRoleCanLogin(t, roleName, "wopass1"),
+					resource.TestCheckResourceAttr("postgresql_role.switch_role", "password_wo_version", "1"),
+				),
+			},
+			{
+				// Now bump the version → new password should apply
+				Config: configWOv2,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckRoleCanLogin(t, roleName, "wopass2"),
+					resource.TestCheckResourceAttr("postgresql_role.switch_role", "password_wo_version", "2"),
+				),
+			},
+		},
+	})
+}

@@ -24,6 +24,10 @@ and all but the final ``postgresql_role`` must specify a `skip_drop_role`.
 ~> **Note:** All arguments including role name and password will be stored in the raw state as plain-text.
 [Read more about sensitive data in state](https://www.terraform.io/docs/state/sensitive-data.html).
 
+~> **Note:** For enhanced security, consider using the `password_wo` and `password_wo_version` attributes
+instead of `password`. The write-only password attributes prevent the password from being stored in
+the Terraform state file while still allowing password management through version-controlled updates.
+
 ## Usage
 
 ```hcl
@@ -40,6 +44,45 @@ resource "postgresql_role" "my_replication_role" {
   connection_limit = 5
   password         = "md5c98cbfeb6a347a47eb8e96cfb4c4b890"
 }
+
+# Example using write-only password (password not stored in state)
+resource "postgresql_role" "secure_role" {
+  name                = "secure_role"
+  login               = true
+  password_wo         = "secure_password_123"
+  password_wo_version = "1"
+}
+```
+
+## Write-Only Password Management
+
+The `password_wo` and `password_wo_version` attributes provide a secure way to manage role passwords
+without storing them in the Terraform state file:
+
+* **Security**: The password value is never stored in the state file, reducing the risk of exposure
+* **Version Control**: Password updates are controlled through the `password_wo_version` attribute
+* **Idempotency**: Terraform only updates the password when the version changes, not on every apply
+
+To change a password when using write-only attributes:
+
+1. Update the `password_wo` value with the new password
+2. Increment or change the `password_wo_version` value
+3. Apply the configuration
+
+**Example of password rotation:**
+
+```hcl
+# Initial password setup
+resource "postgresql_role" "app_user" {
+  name                = "app_user"
+  login               = true
+  password_wo         = "initial_password_123"
+  password_wo_version = "1"
+}
+
+# To rotate the password, update both attributes:
+# password_wo         = "new_password_456"
+# password_wo_version = "2"
 ```
 
 ## Argument Reference
@@ -84,6 +127,15 @@ resource "postgresql_role" "my_replication_role" {
 
 * `password` - (Optional) Sets the role's password. A password is only of use
   for roles having the `login` attribute set to true.
+
+* `password_wo` - (Optional) Sets the role's password without storing it in the state file.
+  This is useful for managing passwords securely. Must be used together with `password_wo_version`.
+  Conflicts with `password`.
+
+* `password_wo_version` - (Optional) Prevents applies from updating the role password on every
+  apply unless the value changes. This version string should be updated whenever you want to
+  change the password specified in `password_wo`. Must be used together with `password_wo`.
+  Conflicts with `password`.
 
 * `roles` - (Optional) Defines list of roles which will be granted to this new role.
 
