@@ -96,7 +96,7 @@ func resourcePostgreSQLSecurityLabelUpdateImpl(db *DBConnection, d *schema.Resou
 func resourcePostgreSQLSecurityLabelRead(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureSecurityLabel) {
 		return fmt.Errorf(
-			"Security Label is not supported for this Postgres version (%s)",
+			"security Label is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -127,7 +127,7 @@ func resourcePostgreSQLSecurityLabelReadImpl(db *DBConnection, d *schema.Resourc
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading security label: %w", err)
+		return fmt.Errorf("error reading security label: %w", err)
 	}
 
 	if quoteIdentifier(objectName) != newObjectName || quoteIdentifier(provider) != newProvider {
@@ -148,7 +148,7 @@ func resourcePostgreSQLSecurityLabelReadImpl(db *DBConnection, d *schema.Resourc
 func resourcePostgreSQLSecurityLabelDelete(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureSecurityLabel) {
 		return fmt.Errorf(
-			"Security Label is not supported for this Postgres version (%s)",
+			"security Label is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -166,7 +166,7 @@ func resourcePostgreSQLSecurityLabelDelete(db *DBConnection, d *schema.ResourceD
 func resourcePostgreSQLSecurityLabelUpdate(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Security Label is not supported for this Postgres version (%s)",
+			"security Label is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}

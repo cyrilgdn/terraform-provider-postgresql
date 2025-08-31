@@ -241,7 +241,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	var query string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	if pgSchema != "" {
 		query = `SELECT array_agg(prtype) FROM (
@@ -251,7 +251,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	JOIN pg_namespace ON pg_namespace.oid = namespace
 	WHERE grantee_oid = $1 AND nspname = $2 AND pg_get_userbyid(grantor_oid) = $4;
 `
-		queryArgs = []interface{}{roleOID, pgSchema, objectTypes[objectType], owner}
+		queryArgs = []any{roleOID, pgSchema, objectTypes[objectType], owner}
 	} else {
 		query = `SELECT array_agg(prtype) FROM (
 		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
@@ -259,7 +259,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
 	WHERE grantee_oid = $1 AND namespace = 0 AND pg_get_userbyid(grantor_oid) = $3;
 `
-		queryArgs = []interface{}{roleOID, objectTypes[objectType], owner}
+		queryArgs = []any{roleOID, objectTypes[objectType], owner}
 	}
 
 	// This query aggregates the list of default privileges type (prtype)

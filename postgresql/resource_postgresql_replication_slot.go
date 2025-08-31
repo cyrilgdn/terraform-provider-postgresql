@@ -60,7 +60,7 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating ReplicationSlot: %w", err)
+		return fmt.Errorf("error creating ReplicationSlot: %w", err)
 	}
 
 	d.SetId(generateReplicationSlotID(d, databaseName))
@@ -128,7 +128,7 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading ReplicationSlot: %w", err)
+		return fmt.Errorf("error reading ReplicationSlot: %w", err)
 	}
 
 	d.Set("name", replicationSlotName)
@@ -156,7 +156,7 @@ func resourcePostgreSQLReplicationSlotDelete(db *DBConnection, d *schema.Resourc
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting ReplicationSlot: %w", err)
+		return fmt.Errorf("error deleting ReplicationSlot: %w", err)
 	}
 
 	d.SetId("")
@@ -195,7 +195,7 @@ func getDBReplicationSlotName(d *schema.ResourceData, client *Client) (string, s
 	if replicationSlotName == "" {
 		parsed := strings.Split(d.Id(), ".")
 		if len(parsed) != 2 {
-			return "", "", fmt.Errorf("Replication Slot ID %s has not the expected format 'database.replication_slot': %v", d.Id(), parsed)
+			return "", "", fmt.Errorf("replication Slot ID %s has not the expected format 'database.replication_slot': %v", d.Id(), parsed)
 		}
 		database = parsed[0]
 		replicationSlotName = parsed[1]
