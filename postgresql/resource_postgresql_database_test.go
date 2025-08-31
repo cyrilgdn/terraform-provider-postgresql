@@ -389,7 +389,7 @@ func checkTableOwnership(
 		if err != nil {
 			t.Fatalf("could not create connection pool: %v", err)
 		}
-		closeDB(t, db)
+		defer closeDB(t, db)
 
 		var _rez int
 

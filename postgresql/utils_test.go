@@ -87,7 +87,7 @@ func dbExecute(t *testing.T, dsn, query string, args ...any) {
 	if err != nil {
 		t.Fatalf("could to create connection pool: %v", err)
 	}
-	closeDB(t, db)
+	defer closeDB(t, db)
 
 	// Create the test DB
 	if _, err = db.Exec(query, args...); err != nil {
@@ -192,7 +192,7 @@ func createTestTables(t *testing.T, dbSuffix string, tables []string, owner stri
 		if err != nil {
 			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 		}
-		closeDB(t, db)
+		defer closeDB(t, db)
 
 		if owner != "" && !config.Superuser {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
@@ -223,7 +223,7 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 	if err != nil {
 		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 	}
-	closeDB(t, db)
+	defer closeDB(t, db)
 
 	if owner != "" {
 		if !config.Superuser {
@@ -258,7 +258,7 @@ func createTestSchemas(t *testing.T, dbSuffix string, schemas []string, owner st
 		if err != nil {
 			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 		}
-		closeDB(t, db)
+		defer closeDB(t, db)
 
 		if owner != "" && !config.Superuser {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
@@ -288,7 +288,7 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 	if err != nil {
 		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 	}
-	closeDB(t, db)
+	defer closeDB(t, db)
 
 	if owner != "" {
 		if !config.Superuser {
@@ -322,7 +322,7 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 		if err != nil {
 			t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
 		}
-		closeDB(t, db)
+		defer closeDB(t, db)
 
 		if owner != "" && !config.Superuser {
 			if _, err := db.Exec(fmt.Sprintf("GRANT %s TO CURRENT_USER", owner)); err != nil {
@@ -377,7 +377,7 @@ func connectAsTestRole(t *testing.T, role, dbName string) *sql.DB {
 
 func testCheckTablesPrivileges(t *testing.T, dbName, roleName string, tables []string, allowedPrivileges []string) error {
 	db := connectAsTestRole(t, roleName, dbName)
-	closeDB(t, db)
+	defer closeDB(t, db)
 
 	for _, table := range tables {
 		queries := map[string]string{
@@ -398,7 +398,7 @@ func testCheckTablesPrivileges(t *testing.T, dbName, roleName string, tables []s
 
 func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas []string, allowedPrivileges []string) error {
 	db := connectAsTestRole(t, roleName, dbName)
-	closeDB(t, db)
+	defer closeDB(t, db)
 
 	for _, schema := range schemas {
 		queries := map[string]string{
@@ -417,7 +417,7 @@ func testCheckSchemasPrivileges(t *testing.T, dbName, roleName string, schemas [
 
 func testCheckColumnPrivileges(t *testing.T, dbName, roleName string, tables []string, allowedPrivileges []string, columns []string) error {
 	db := connectAsTestRole(t, roleName, dbName)
-	closeDB(t, db)
+	defer closeDB(t, db)
 
 	columnValues := []string{}
 	for _, col := range columns {
