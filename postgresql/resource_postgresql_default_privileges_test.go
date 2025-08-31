@@ -346,3 +346,55 @@ resource "postgresql_default_privileges" "test_ro" {
 		})
 	}
 }
+
+func TestAccPostgresqlDefaultPrivileges_Routines(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	resourceConfig := fmt.Sprintf(`
+resource "postgresql_default_privileges" "test" {
+	database          = "%s"
+	schema            = "test_schema"
+	owner             = "%s"
+	role              = "%s"
+	object_type       = "routine"
+	privileges        = ["EXECUTE"]
+}
+`, dbName, config.Username, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: resourceConfig,
+				Check: resource.ComposeTestCheckFunc(
+					// Create a test function to check if default privileges are applied
+					func(*terraform.State) error {
+						dbExecute(
+							t, config.connStr(dbName),
+							"CREATE FUNCTION test_schema.test_function() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;",
+						)
+
+						db := connectAsTestRole(t, roleName, dbName)
+						defer closeDB(t, db)
+
+						if _, err := db.Exec("SELECT test_schema.test_function();"); err != nil {
+							t.Fatalf("Expected test role to be able to execute function, got error: %s", err)
+						}
+
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
