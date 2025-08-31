@@ -1446,7 +1446,7 @@ func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
 				if err != nil {
 					t.Fatalf("could not connect to database %s: %v", dbName, err)
 				}
-				deferDBClose(t, db)
+				defer closeDB(t, db)
 
 				if _, err := db.Exec(`
 					ALTER SCHEMA test_schema OWNER TO pg_database_owner;
@@ -1483,7 +1483,7 @@ func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
 func testCheckDatabasesPrivileges(t *testing.T, canCreate bool) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		db := connectAsTestRole(t, "test_grant_role", "test_grant_db")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, "CREATE SCHEMA plop", canCreate); err != nil {
 			return err
@@ -1495,7 +1495,7 @@ func testCheckDatabasesPrivileges(t *testing.T, canCreate bool) func(*terraform.
 func testCheckFunctionExecutable(t *testing.T, role, function string) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		db := connectAsTestRole(t, role, "postgres")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, fmt.Sprintf("SELECT %s()", function), true); err != nil {
 			return err
@@ -1507,7 +1507,7 @@ func testCheckFunctionExecutable(t *testing.T, role, function string) func(*terr
 func testCheckFunctionWithArgsExecutable(t *testing.T, role, function string, args []string) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		db := connectAsTestRole(t, role, "postgres")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, fmt.Sprintf("SELECT %s(%s)", function, strings.Join(args, ", ")), true); err != nil {
 			return err
@@ -1519,7 +1519,7 @@ func testCheckFunctionWithArgsExecutable(t *testing.T, role, function string, ar
 func testCheckProcedureExecutable(t *testing.T, role, procedure string) func(*terraform.State) error {
 	return func(*terraform.State) error {
 		db := connectAsTestRole(t, role, "postgres")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, fmt.Sprintf("CALL %s()", procedure), true); err != nil {
 			return err
@@ -1541,7 +1541,7 @@ func testCheckSchemaPrivileges(t *testing.T, usage, create bool) func(*terraform
 		dbExecute(t, dsn, "GRANT SELECT ON test_schema.test_usage TO test_grant_role")
 
 		db := connectAsTestRole(t, "test_grant_role", "postgres")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, "SELECT 1 FROM test_schema.test_usage", usage); err != nil {
 			return err
@@ -1564,7 +1564,7 @@ func testCheckForeignDataWrapperPrivileges(t *testing.T, usage bool) func(*terra
 			dbExecute(t, dsn, "DROP SERVER IF EXISTS test_srv")
 		}()
 		db := connectAsTestRole(t, "test_role", "postgres")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, "CREATE SERVER test_srv FOREIGN DATA WRAPPER test_fdw", usage); err != nil {
 			return err
@@ -1583,7 +1583,7 @@ func testCheckForeignServerPrivileges(t *testing.T, usage bool) func(*terraform.
 			dbExecute(t, dsn, "DROP FOREIGN TABLE IF EXISTS test_tbl")
 		}()
 		db := connectAsTestRole(t, "test_role", "postgres")
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		if err := testHasGrantForQuery(db, "CREATE FOREIGN TABLE test_tbl() SERVER test_srv", usage); err != nil {
 			return err

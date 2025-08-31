@@ -145,7 +145,7 @@ func checkGrantRole(t *testing.T, dsn, role string, grantRole string, withAdmin 
 		if err != nil {
 			t.Fatalf("could to create connection pool: %v", err)
 		}
-		deferDBClose(t, db)
+		defer closeDB(t, db)
 
 		var _rez int
 		err = db.QueryRow(`
