@@ -48,7 +48,7 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 	plugin := d.Get("plugin").(string)
 	databaseName := getDatabaseForReplicationSlot(d, db.client.databaseName)
 
-	txn, err := startTransaction(db.client, databaseName)
+	txn, err := startReadOnlyTransaction(db.client, databaseName)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func resourcePostgreSQLReplicationSlotExists(db *DBConnection, d *schema.Resourc
 		return false, err
 	}
 
-	txn, err := startTransaction(db.client, database)
+	txn, err := startReadOnlyTransaction(db.client, database)
 	if err != nil {
 		return false, err
 	}
@@ -111,7 +111,7 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 		return err
 	}
 
-	txn, err := startTransaction(db.client, database)
+	txn, err := startReadOnlyTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func resourcePostgreSQLReplicationSlotDelete(db *DBConnection, d *schema.Resourc
 	replicationSlotName := d.Get("name").(string)
 	database := getDatabaseForReplicationSlot(d, db.client.databaseName)
 
-	txn, err := startTransaction(db.client, database)
+	txn, err := startReadOnlyTransaction(db.client, database)
 	if err != nil {
 		return err
 	}
