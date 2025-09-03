@@ -120,6 +120,13 @@ func Provider() *schema.Provider {
 				Description: "Service account to impersonate when using GCP IAM authentication.",
 			},
 
+			"gcp_credentials_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "Path to GCP credentials file",
+			},
+
 			// Connection username can be different than database username with user name maps (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -286,7 +293,13 @@ func getRDSAuthToken(region string, profile string, role string, username string
 	return token, err
 }
 
-func createGoogleCredsFileIfNeeded() error {
+func createGoogleCredsFileIfNeeded(gcpCredentialsPath string) error {
+	const GoogleCredentialsEnvVar = "GOOGLE_APPLICATION_CREDENTIALS"
+
+	if gcpCredentialsPath != "" {
+		return os.Setenv(GoogleCredentialsEnvVar, gcpCredentialsPath)
+	}
+
 	if _, err := google.FindDefaultCredentials(context.Background()); err == nil {
 		return nil
 	}
@@ -311,7 +324,7 @@ func createGoogleCredsFileIfNeeded() error {
 		return fmt.Errorf("could not write in temporary file: %w", err)
 	}
 
-	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
+	return os.Setenv(GoogleCredentialsEnvVar, tmpFile.Name())
 }
 
 func acquireAzureOauthToken(tenantId string) (string, error) {
@@ -399,7 +412,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 	}
 
 	if config.Scheme == "gcppostgres" {
-		if err := createGoogleCredsFileIfNeeded(); err != nil {
+		if err := createGoogleCredsFileIfNeeded(d.Get("gcp_credentials_path").(string)); err != nil {
 			return nil, err
 		}
 	}

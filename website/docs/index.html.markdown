@@ -186,6 +186,7 @@ The following arguments are supported:
 * `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `gcp_credentials_path` - (Optional) The path to the GCP credentials file. This is only used if `scheme` is set to `gcppostgres`.
 
 ## GoCloud
 
@@ -212,7 +213,7 @@ provider "postgresql" {
 
 To enable GoCloud for GCP SQL, set `scheme` to `gcppostgres` and `host` to the connection name of the instance in following format: `project/region/instance` (or `project:region:instance`).
 
-For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file.
+For GCP, GoCloud also requires the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to be set to the service account credentials file. In alternative, you could set `gcp_credentials_path` to the credentials file.
 These credentials can be created here: https://console.cloud.google.com/iam-admin/serviceaccounts
 
 In addition, the provider supports service account impersonation with the `gcp_iam_impersonate_service_account` option. You must ensure:
