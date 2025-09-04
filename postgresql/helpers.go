@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/lib/pq"
 )
@@ -656,4 +657,20 @@ func quoteTableName(tableName string) string {
 		parts[i] = pq.QuoteIdentifier(parts[i])
 	}
 	return strings.Join(parts, ".")
+}
+
+func cloudConfigFromName(name string) (cloud.Configuration, error) {
+	switch strings.ToLower(name) {
+	case "china":
+		return cloud.AzureChina, nil
+
+	case "usgovernment":
+		return cloud.AzureGovernment, nil
+
+	case "public":
+		return cloud.AzurePublic, nil
+
+	default:
+		return cloud.Configuration{}, fmt.Errorf("unsupported Azure Cloud environment: %s", name)
+	}
 }
