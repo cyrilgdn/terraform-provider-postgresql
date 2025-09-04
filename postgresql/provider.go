@@ -207,6 +207,7 @@ func Provider() *schema.Provider {
 			"postgresql_extension":                 resourcePostgreSQLExtension(),
 			"postgresql_grant":                     resourcePostgreSQLGrant(),
 			"postgresql_grant_role":                resourcePostgreSQLGrantRole(),
+			"postgresql_event_trigger":             resourcePostgreSQLEventTrigger(),
 			"postgresql_replication_slot":          resourcePostgreSQLReplicationSlot(),
 			"postgresql_publication":               resourcePostgreSQLPublication(),
 			"postgresql_subscription":              resourcePostgreSQLSubscription(),
