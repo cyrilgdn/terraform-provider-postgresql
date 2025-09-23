@@ -303,7 +303,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 		}
 		if err != nil {
 			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
+			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
 		// We don't want to retain connection
@@ -366,17 +366,17 @@ func openImpersonatedGCPDBConnection(ctx context.Context, dsn string, targetServ
 		Scopes:          []string{"https://www.googleapis.com/auth/sqlservice.admin"},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Error creating token source with service account impersonation of %s: %w", targetServiceAccountEmail, err)
+		return nil, fmt.Errorf("error creating token source with service account impersonation of %s: %w", targetServiceAccountEmail, err)
 	}
 	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), ts)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating HTTP client with service account impersonation of %s: %w", targetServiceAccountEmail, err)
+		return nil, fmt.Errorf("error creating HTTP client with service account impersonation of %s: %w", targetServiceAccountEmail, err)
 	}
 	certSource := cloudsql.NewCertSourceWithIAM(client, ts)
 	opener := gcppostgres.URLOpener{CertSource: certSource}
 	dbURL, err := url.Parse(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing connection string: %w", err)
+		return nil, fmt.Errorf("error parsing connection string: %w", err)
 	}
 	return opener.OpenPostgresURL(ctx, dbURL)
 }
