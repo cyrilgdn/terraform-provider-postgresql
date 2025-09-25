@@ -26,3 +26,11 @@ resource "postgresql_replication_slot" "my_slot" {
 * `name` - (Required) The name of the replication slot.
 * `plugin` - (Required) Sets the output plugin.
 * `database` - (Optional) Which database to create the replication slot on. Defaults to provider database.
+
+## Import
+
+Replication slot can be imported using this format:
+
+```
+$ terraform import postgresql_replication_slot.my_slot {{database_name}}.{{replication_slot_name}}
+```
