@@ -147,6 +147,12 @@ func Provider() *schema.Provider {
 				Optional:   true,
 				Deprecated: "Rename PostgreSQL provider `ssl_mode` attribute to `sslmode`",
 			},
+			"sslnegotiation": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "postgres",
+				Description: "This option controls how SSL encryption is negotiated with the server, if SSL is used. In the default postgres mode, the client first asks the server if SSL is supported. In direct mode, the client starts the standard SSL handshake directly after establishing the TCP/IP connection.",
+			},
 			"clientcert": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -380,6 +386,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		DatabaseUsername:                d.Get("database_username").(string),
 		Superuser:                       d.Get("superuser").(bool),
 		SSLMode:                         sslMode,
+		SSLNegotiation:                  d.Get("sslnegotiation").(string),
 		ApplicationName:                 "Terraform provider",
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
 		MaxConns:                        d.Get("max_connections").(int),
