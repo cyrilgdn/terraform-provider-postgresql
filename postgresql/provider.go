@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -21,8 +22,11 @@ import (
 )
 
 const (
-	defaultProviderMaxOpenConnections = 20
-	defaultExpectedPostgreSQLVersion  = "9.0.0"
+	defaultProviderMaxOpenConnections            = 20
+	defaultProviderConnMaxLifetimeSeconds        = 300
+	defaultProviderMaxConnRetries                = 5
+	defaultProviderConnectionRetryTimeoutSeconds = 5
+	defaultExpectedPostgreSQLVersion             = "9.0.0"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -185,11 +189,32 @@ func Provider() *schema.Provider {
 				Description:  "Maximum wait for connection, in seconds. Zero or not specified means wait indefinitely.",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
+			"max_conn_retries": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderMaxConnRetries,
+				Description:  "Maximum number of connection retries.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
+			"connection_retry_timeout_seconds": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderConnectionRetryTimeoutSeconds,
+				Description:  "Maximum wait for connection retries, in seconds.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
 			"max_connections": {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Default:      defaultProviderMaxOpenConnections,
 				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
+				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			"conn_max_lifetime_seconds": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderConnMaxLifetimeSeconds,
+				Description:  "Maximum lifetime of a connection, in seconds. Zero means unlimited.",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
 			"expected_version": {
@@ -382,7 +407,10 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		SSLMode:                         sslMode,
 		ApplicationName:                 "Terraform provider",
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
+		MaxConnRetries:                  d.Get("max_conn_retries").(int),
+		ConnectionRetryTimeoutSeconds:   d.Get("connection_retry_timeout_seconds").(int),
 		MaxConns:                        d.Get("max_connections").(int),
+		ConnMaxLifetimeSeconds:          d.Get("conn_max_lifetime_seconds").(int),
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),

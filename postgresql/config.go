@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	_ "github.com/lib/pq" // PostgreSQL db
 	"gocloud.dev/gcp"
 	"gocloud.dev/gcp/cloudsql"
@@ -178,6 +180,9 @@ type Config struct {
 	ApplicationName                 string
 	Timeout                         int
 	ConnectTimeoutSec               int
+	MaxConnRetries                  int
+	ConnectionRetryTimeoutSeconds   int
+	ConnMaxLifetimeSeconds          int
 	MaxConns                        int
 	ExpectedVersion                 semver.Version
 	SSLClientCert                   *ClientCertificateConfig
@@ -282,6 +287,7 @@ func (c *Config) getDatabaseUsername() string {
 func (c *Client) Connect() (*DBConnection, error) {
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
+	ctx := context.Background()
 
 	dsn := c.config.connStr(c.databaseName)
 	conn, found := dbRegistry[dsn]
@@ -289,19 +295,32 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 		var db *sql.DB
 		var err error
-		if c.config.Scheme == "postgres" {
-			db, err = sql.Open(proxyDriverName, dsn)
-		} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
-			db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
-		} else {
-			db, err = postgres.Open(context.Background(), dsn)
-		}
+		retryCount := 0
 
-		if err == nil {
-			err = db.Ping()
-		}
-		if err != nil {
-			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
+		connectRetryTimeout := time.Duration(c.config.ConnectionRetryTimeoutSeconds) * time.Second
+		retryError := retry.RetryContext(ctx, connectRetryTimeout, func() *retry.RetryError {
+			if c.config.Scheme == "postgres" {
+				db, err = sql.Open(proxyDriverName, dsn)
+			} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
+				db, err = openImpersonatedGCPDBConnection(ctx, dsn, c.config.GCPIAMImpersonateServiceAccount)
+			} else {
+				db, err = postgres.Open(ctx, dsn)
+			}
+			if err == nil {
+				err = db.PingContext(ctx)
+			}
+
+			retryCount++
+			if err != nil {
+				if retryCount >= c.config.MaxConnRetries {
+					return retry.NonRetryableError(err)
+				}
+				return retry.RetryableError(err)
+			}
+			return nil
+		})
+		if retryError != nil {
+			errString := strings.Replace(retryError.Error(), c.config.Password, "XXXX", 2)
 			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
@@ -310,6 +329,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 		// we don't keep opened connection in case of the db has to be dropped in the plan.
 		db.SetMaxIdleConns(0)
 		db.SetMaxOpenConns(c.config.MaxConns)
+		db.SetConnMaxLifetime(time.Duration(c.config.ConnMaxLifetimeSeconds) * time.Second)
 
 		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
 		version := &c.config.ExpectedVersion
