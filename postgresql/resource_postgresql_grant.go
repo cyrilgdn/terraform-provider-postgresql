@@ -30,11 +30,12 @@ var objectTypes = map[string]string{
 	"table":    "r",
 	"sequence": "S",
 	"function": "f",
+	"routine":  "f",
 	"type":     "T",
 	"schema":   "n",
 }
 
-type ResourceSchemeGetter func(string) interface{}
+type ResourceSchemeGetter func(string) any
 
 func resourcePostgreSQLGrant() *schema.Resource {
 	return &schema.Resource{
@@ -708,7 +709,7 @@ func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData, usePrevious bool)
 	getter := d.Get
 
 	if usePrevious {
-		getter = func(name string) interface{} {
+		getter = func(name string) any {
 			if d.HasChange(name) {
 				old, _ := d.GetChange(name)
 				return old

@@ -228,7 +228,7 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 
 	sql := b.String()
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error creating database %q: %w", dbName, err)
+		return fmt.Errorf("error creating database %q: %w", dbName, err)
 	}
 
 	// Set err outside of the return so that the deferred revoke can override err
@@ -268,7 +268,7 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 			// Template databases must have this attribute cleared before
 			// they can be dropped.
 			if err := doSetDBIsTemplate(db, dbName, false); err != nil {
-				return fmt.Errorf("Error updating database IS_TEMPLATE during DROP DATABASE: %w", err)
+				return fmt.Errorf("error updating database IS_TEMPLATE during DROP DATABASE: %w", err)
 			}
 		}
 	}
@@ -289,7 +289,7 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 
 	sql := fmt.Sprintf("DROP DATABASE %s %s", pq.QuoteIdentifier(dbName), dropWithForce)
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error dropping database: %w", err)
+		return fmt.Errorf("error dropping database: %w", err)
 	}
 
 	d.SetId("")
@@ -322,7 +322,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading database: %w", err)
+		return fmt.Errorf("error reading database: %w", err)
 	}
 
 	var dbEncoding, dbCollation, dbCType, dbTablespaceName string
@@ -354,7 +354,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading database: %w", err)
+		return fmt.Errorf("error reading database: %w", err)
 	}
 
 	d.Set(dbNameAttr, dbName)
@@ -375,7 +375,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		dbSQL := fmt.Sprintf(dbSQLFmt, "d.datallowconn")
 		err = db.QueryRow(dbSQL, dbId).Scan(&dbAllowConns)
 		if err != nil {
-			return fmt.Errorf("Error reading ALLOW_CONNECTIONS property for DATABASE: %w", err)
+			return fmt.Errorf("error reading ALLOW_CONNECTIONS property for DATABASE: %w", err)
 		}
 
 		d.Set(dbAllowConnsAttr, dbAllowConns)
@@ -386,7 +386,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		dbSQL := fmt.Sprintf(dbSQLFmt, "d.datistemplate")
 		err = db.QueryRow(dbSQL, dbId).Scan(&dbIsTemplate)
 		if err != nil {
-			return fmt.Errorf("Error reading IS_TEMPLATE property for DATABASE: %w", err)
+			return fmt.Errorf("error reading IS_TEMPLATE property for DATABASE: %w", err)
 		}
 
 		d.Set(dbIsTemplateAttr, dbIsTemplate)
@@ -438,12 +438,12 @@ func setDBName(db QueryAble, d *schema.ResourceData) error {
 	o := oraw.(string)
 	n := nraw.(string)
 	if n == "" {
-		return errors.New("Error setting database name to an empty string")
+		return errors.New("error setting database name to an empty string")
 	}
 
 	sql := fmt.Sprintf("ALTER DATABASE %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database name: %w", err)
+		return fmt.Errorf("error updating database name: %w", err)
 	}
 	d.SetId(n)
 
@@ -482,7 +482,7 @@ func setDBOwner(db *DBConnection, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER DATABASE %s OWNER TO %s", pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(owner))
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database OWNER: %w", err)
+		return fmt.Errorf("error updating database OWNER: %w", err)
 	}
 
 	return err
@@ -513,7 +513,7 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 
 	currentOwner, err := getDatabaseOwner(db, dbName)
 	if err != nil {
-		return fmt.Errorf("Error getting current database OWNER: %w", err)
+		return fmt.Errorf("error getting current database OWNER: %w", err)
 	}
 
 	newOwner := d.Get(dbOwnerAttr).(string)
@@ -533,7 +533,7 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 	}
 	sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
 	if _, err := lockTxn.Exec(sql); err != nil {
-		return fmt.Errorf("Error reassigning objects owned by '%s': %w", currentOwner, err)
+		return fmt.Errorf("error reassigning objects owned by '%s': %w", currentOwner, err)
 	}
 
 	if err := lockTxn.Commit(); err != nil {
@@ -557,7 +557,7 @@ func setDBTablespace(db QueryAble, d *schema.ResourceData) error {
 	}
 
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database TABLESPACE: %w", err)
+		return fmt.Errorf("error updating database TABLESPACE: %w", err)
 	}
 
 	return nil
@@ -572,7 +572,7 @@ func setDBConnLimit(db QueryAble, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	sql := fmt.Sprintf("ALTER DATABASE %s CONNECTION LIMIT = %d", pq.QuoteIdentifier(dbName), connLimit)
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database CONNECTION LIMIT: %w", err)
+		return fmt.Errorf("error updating database CONNECTION LIMIT: %w", err)
 	}
 
 	return nil
@@ -591,7 +591,7 @@ func setDBAllowConns(db *DBConnection, d *schema.ResourceData) error {
 	dbName := d.Get(dbNameAttr).(string)
 	sql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS %t", pq.QuoteIdentifier(dbName), allowConns)
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database ALLOW_CONNECTIONS: %w", err)
+		return fmt.Errorf("error updating database ALLOW_CONNECTIONS: %w", err)
 	}
 
 	return nil
@@ -603,7 +603,7 @@ func setDBIsTemplate(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	if err := doSetDBIsTemplate(db, d.Get(dbNameAttr).(string), d.Get(dbIsTemplateAttr).(bool)); err != nil {
-		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
+		return fmt.Errorf("error updating database IS_TEMPLATE: %w", err)
 	}
 
 	return nil
@@ -616,7 +616,7 @@ func doSetDBIsTemplate(db *DBConnection, dbName string, isTemplate bool) error {
 
 	sql := fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE %t", pq.QuoteIdentifier(dbName), isTemplate)
 	if _, err := db.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating database IS_TEMPLATE: %w", err)
+		return fmt.Errorf("error updating database IS_TEMPLATE: %w", err)
 	}
 
 	return nil
@@ -629,7 +629,7 @@ func terminateBConnections(db *DBConnection, dbName string) error {
 		alterSql := fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS false", pq.QuoteIdentifier(dbName))
 
 		if _, err := db.Exec(alterSql); err != nil {
-			return fmt.Errorf("Error blocking connections to database: %w", err)
+			return fmt.Errorf("error blocking connections to database: %w", err)
 		}
 	}
 	pid := "procpid"
@@ -638,7 +638,7 @@ func terminateBConnections(db *DBConnection, dbName string) error {
 	}
 	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
 	if _, err := db.Exec(terminateSql); err != nil {
-		return fmt.Errorf("Error terminating database connections: %w", err)
+		return fmt.Errorf("error terminating database connections: %w", err)
 	}
 
 	return nil

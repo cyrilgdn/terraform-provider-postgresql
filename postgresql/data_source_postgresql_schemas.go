@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -103,7 +104,11 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing rows: %v", err)
+		}
+	}()
 
 	schemas := []string{}
 	for rows.Next() {
@@ -124,9 +129,9 @@ func dataSourcePostgreSQLSchemasRead(db *DBConnection, d *schema.ResourceData) e
 func generateDataSourceSchemasID(d *schema.ResourceData, databaseName string) string {
 	return strings.Join([]string{
 		databaseName, strconv.FormatBool(d.Get("include_system_schemas").(bool)),
-		generatePatternArrayString(d.Get("like_any_patterns").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("like_all_patterns").([]interface{}), queryArrayKeywordAll),
-		generatePatternArrayString(d.Get("not_like_all_patterns").([]interface{}), queryArrayKeywordAll),
+		generatePatternArrayString(d.Get("like_any_patterns").([]any), queryArrayKeywordAny),
+		generatePatternArrayString(d.Get("like_all_patterns").([]any), queryArrayKeywordAll),
+		generatePatternArrayString(d.Get("not_like_all_patterns").([]any), queryArrayKeywordAll),
 		d.Get("regex_pattern").(string),
 	}, "_")
 }

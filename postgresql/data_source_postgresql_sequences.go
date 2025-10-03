@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -102,9 +103,13 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing rows: %v", err)
+		}
+	}()
 
-	sequences := make([]interface{}, 0)
+	sequences := make([]any, 0)
 	for rows.Next() {
 		var object_name string
 		var schema_name string
@@ -114,7 +119,7 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 			return fmt.Errorf("could not scan sequence output for database: %w", err)
 		}
 
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		result["object_name"] = object_name
 		result["schema_name"] = schema_name
 		result["data_type"] = data_type
@@ -130,17 +135,17 @@ func dataSourcePostgreSQLSequencesRead(db *DBConnection, d *schema.ResourceData)
 func generateDataSourceSequencesID(d *schema.ResourceData, databaseName string) string {
 	return strings.Join([]string{
 		databaseName,
-		generatePatternArrayString(d.Get("schemas").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("like_any_patterns").([]interface{}), queryArrayKeywordAny),
-		generatePatternArrayString(d.Get("like_all_patterns").([]interface{}), queryArrayKeywordAll),
-		generatePatternArrayString(d.Get("not_like_all_patterns").([]interface{}), queryArrayKeywordAll),
+		generatePatternArrayString(d.Get("schemas").([]any), queryArrayKeywordAny),
+		generatePatternArrayString(d.Get("like_any_patterns").([]any), queryArrayKeywordAny),
+		generatePatternArrayString(d.Get("like_all_patterns").([]any), queryArrayKeywordAll),
+		generatePatternArrayString(d.Get("not_like_all_patterns").([]any), queryArrayKeywordAll),
 		d.Get("regex_pattern").(string),
 	}, "_")
 }
 
 func applySequenceDataSourceQueryFilters(query string, queryConcatKeyword string, d *schema.ResourceData) string {
 	filters := []string{}
-	schemasTypeFilter := applyTypeMatchingToQuery(sequenceSchemaKeyword, d.Get("schemas").([]interface{}))
+	schemasTypeFilter := applyTypeMatchingToQuery(sequenceSchemaKeyword, d.Get("schemas").([]any))
 	if len(schemasTypeFilter) > 0 {
 		filters = append(filters, schemasTypeFilter)
 	}

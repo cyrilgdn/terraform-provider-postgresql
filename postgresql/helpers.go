@@ -11,8 +11,8 @@ import (
 	"github.com/lib/pq"
 )
 
-func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, interface{}) error {
-	return func(d *schema.ResourceData, meta interface{}) error {
+func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, any) error {
+	return func(d *schema.ResourceData, meta any) error {
 		client := meta.(*Client)
 
 		db, err := client.Connect()
@@ -24,8 +24,8 @@ func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*sc
 	}
 }
 
-func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, interface{}) (bool, error) {
-	return func(d *schema.ResourceData, meta interface{}) (bool, error) {
+func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, any) (bool, error) {
+	return func(d *schema.ResourceData, meta any) (bool, error) {
 		client := meta.(*Client)
 
 		db, err := client.Connect()
@@ -39,9 +39,9 @@ func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, er
 
 // QueryAble is a DB connection (sql.DB/Tx)
 type QueryAble interface {
-	Exec(query string, args ...interface{}) (sql.Result, error)
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	QueryRow(query string, args ...interface{}) *sql.Row
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
 }
 
 // pqQuoteLiteral returns a string literal safe for inclusion in a PostgreSQL
@@ -49,8 +49,8 @@ type QueryAble interface {
 // single quotes in SQL (i.e. fmt.Sprintf(`'%s'`, pqQuoteLiteral("str"))).  See
 // quote_literal_internal() in postgresql/backend/utils/adt/quote.c:77.
 func pqQuoteLiteral(in string) string {
-	in = strings.Replace(in, `\`, `\\`, -1)
-	in = strings.Replace(in, `'`, `''`, -1)
+	in = strings.ReplaceAll(in, `\`, `\\`)
+	in = strings.ReplaceAll(in, `'`, `''`)
 	return in
 }
 
@@ -107,7 +107,7 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 	sql := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
-		return false, fmt.Errorf("Error granting role %s to %s: %w", role, member, err)
+		return false, fmt.Errorf("error granting role %s to %s: %w", role, member, err)
 	}
 	return true, nil
 }
@@ -131,7 +131,7 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 	sql := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(role), pq.QuoteIdentifier(member))
 	if _, err := db.Exec(sql); err != nil {
-		return false, fmt.Errorf("Error revoking role %s from %s: %w", role, member, err)
+		return false, fmt.Errorf("error revoking role %s from %s: %w", role, member, err)
 	}
 	return true, nil
 }
@@ -295,7 +295,7 @@ func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
 
 	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
 	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitly")
-	implicits := []interface{}{}
+	implicits := []any{}
 	for _, p := range allowedPrivileges[objectType] {
 		if p != "ALL" {
 			implicits = append(implicits, p)
@@ -306,7 +306,7 @@ func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
 }
 
 func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
-	s := make([]interface{}, len(arr))
+	s := make([]any, len(arr))
 	for i, v := range arr {
 		s[i] = string(v)
 	}
@@ -314,7 +314,7 @@ func pgArrayToSet(arr pq.ByteaArray) *schema.Set {
 }
 
 func stringSliceToSet(slice []string) *schema.Set {
-	s := make([]interface{}, len(slice))
+	s := make([]any, len(slice))
 	for i, v := range slice {
 		s[i] = v
 	}
@@ -459,12 +459,12 @@ func getDatabase(d *schema.ResourceData, databaseName string) string {
 
 func getDatabaseOwner(db QueryAble, database string) (string, error) {
 	dbQueryString := "$1"
-	dbQueryValues := []interface{}{database}
+	dbQueryValues := []any{database}
 
 	// Empty means current DB
 	if database == "" {
 		dbQueryString = "current_database()"
-		dbQueryValues = []interface{}{}
+		dbQueryValues = []any{}
 
 	}
 	query := fmt.Sprintf(`
@@ -599,8 +599,8 @@ func pgLockDatabase(txn *sql.Tx, database string) error {
 	return nil
 }
 
-func arrayDifference(a, b []interface{}) (diff []interface{}) {
-	m := make(map[interface{}]bool)
+func arrayDifference(a, b []any) (diff []any) {
+	m := make(map[any]bool)
 
 	for _, item := range b {
 		m[item] = true
@@ -614,8 +614,8 @@ func arrayDifference(a, b []interface{}) (diff []interface{}) {
 	return
 }
 
-func isUniqueArr(arr []interface{}) (interface{}, bool) {
-	keys := make(map[interface{}]bool, len(arr))
+func isUniqueArr(arr []any) (any, bool) {
+	keys := make(map[any]bool, len(arr))
 	for _, entry := range arr {
 		if _, value := keys[entry]; value {
 			return entry, false
