@@ -53,10 +53,11 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 					"table",
 					"sequence",
 					"function",
+					"routine",
 					"type",
 					"schema",
 				}, false),
-				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type, schema)",
+				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, routine, type, schema)",
 			},
 			"privileges": {
 				Type:        schema.TypeSet,
@@ -83,6 +84,13 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 	if pgSchema != "" && objectType == "schema" && !db.featureSupported(featurePrivilegesOnSchemas) {
 		return fmt.Errorf(
 			"changing default privileges for schemas is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
+	if objectType == "routine" && !db.featureSupported(featureRoutine) {
+		return fmt.Errorf(
+			"object type ROUTINE is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -117,6 +125,13 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 			)
 		}
 		return fmt.Errorf("cannot specify `schema` when `object_type` is `schema`")
+	}
+
+	if objectType == "routine" && !db.featureSupported(featureRoutine) {
+		return fmt.Errorf(
+			"object type ROUTINE is not supported for this Postgres version (%s)",
+			db.version,
+		)
 	}
 
 	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {

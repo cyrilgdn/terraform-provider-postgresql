@@ -30,6 +30,7 @@ var objectTypes = map[string]string{
 	"table":    "r",
 	"sequence": "S",
 	"function": "f",
+	"routine":  "f",
 	"type":     "T",
 	"schema":   "n",
 }
