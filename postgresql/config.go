@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -239,9 +240,16 @@ func (c *Config) connParams() []string {
 		params["sslrootcert"] = c.SSLRootCertPath
 	}
 
+	// Sort keys to ensure consistent DSN generation across multiple calls
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
 	paramsArray := []string{}
-	for key, value := range params {
-		paramsArray = append(paramsArray, fmt.Sprintf("%s=%s", key, url.QueryEscape(value)))
+	for _, key := range keys {
+		paramsArray = append(paramsArray, fmt.Sprintf("%s=%s", key, url.QueryEscape(params[key])))
 	}
 
 	return paramsArray
@@ -285,6 +293,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 	dsn := c.config.connStr(c.databaseName)
 	conn, found := dbRegistry[dsn]
+
 	if !found {
 
 		var db *sql.DB
@@ -305,12 +314,6 @@ func (c *Client) Connect() (*DBConnection, error) {
 			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dropped in the plan.
-		db.SetMaxIdleConns(0)
-		db.SetMaxOpenConns(c.config.MaxConns)
-
 		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
 		version := &c.config.ExpectedVersion
 		if defaultVersion.Equals(c.config.ExpectedVersion) {
@@ -327,6 +330,19 @@ func (c *Client) Connect() (*DBConnection, error) {
 			c,
 			*version,
 		}
+
+		if conn.featureSupported(featureForceDropDatabase) {
+			// Connections can be forcefully closed when dropping a database.
+			db.SetMaxIdleConns(c.config.MaxConns)
+		} else {
+			// We don't want to retain connection
+			// So when we connect on a specific database which might be managed by terraform,
+			// we don't keep opened connection in case of the db has to be dropped in the plan.
+			db.SetMaxIdleConns(0)
+		}
+
+		db.SetMaxOpenConns(c.config.MaxConns)
+
 		dbRegistry[dsn] = conn
 	}
 
