@@ -63,6 +63,13 @@ func resourcePostgreSQLSubscription() *schema.Resource {
 				Description:  "Name of the replication slot to use. The default behavior is to use the name of the subscription for the slot name",
 				ValidateFunc: validation.StringIsNotEmpty,
 			},
+			"enabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Default:     true,
+				Description: "Specifies whether the subscription should be actively replicating or whether it should just be set up but not started yet. The default is true.",
+			},
 		},
 	}
 }
