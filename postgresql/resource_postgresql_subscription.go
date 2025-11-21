@@ -319,8 +319,9 @@ func getOptionalParameters(d *schema.ResourceData) string {
 
 	createSlot, okCreate := d.GetOkExists("create_slot") //nolint:staticcheck
 	slotName, okName := d.GetOk("slot_name")
+	enabled, okEnabled := d.GetOk("enabled")
 
-	if !okCreate && !okName {
+	if !okCreate && !okName && !okEnabled {
 		// use default behavior, no WITH statement
 		return ""
 	}
@@ -331,6 +332,9 @@ func getOptionalParameters(d *schema.ResourceData) string {
 	}
 	if okName {
 		params = append(params, fmt.Sprintf("%s = %s", "slot_name", pq.QuoteLiteral(slotName.(string))))
+	}
+	if okEnabled {
+		params = append(params, fmt.Sprintf("%s = %t", "enabled", enabled.(bool)))
 	}
 
 	returnValue = fmt.Sprintf(parameterSQLTemplate, strings.Join(params, ", "))
