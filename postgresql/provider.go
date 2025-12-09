@@ -78,6 +78,14 @@ func Provider() *schema.Provider {
 					"(see: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html)",
 			},
 
+			"aws_rds_endpoint": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "",
+				Description: "Use this endpoint instead of the host when generating the authentication token. " +
+					"This is useful when using a different hostname for connection to connect through a proxy or VPN.",
+			},
+
 			"aws_rds_iam_profile": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -236,8 +244,10 @@ func validateExpectedVersion(v any, key string) (warnings []string, errors []err
 	return
 }
 
-func getRDSAuthToken(region string, profile string, role string, username string, host string, port int) (string, error) {
-	endpoint := fmt.Sprintf("%s:%d", host, port)
+func getRDSAuthToken(region string, profile string, role string, username string, endpoint string, host string, port int) (string, error) {
+	if endpoint == "" {
+		endpoint = fmt.Sprintf("%s:%d", host, port)
+	}
 
 	ctx := context.Background()
 
@@ -351,9 +361,10 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 	if d.Get("aws_rds_iam_auth").(bool) {
 		profile := d.Get("aws_rds_iam_profile").(string)
 		region := d.Get("aws_rds_iam_region").(string)
+		endpoint := d.Get("aws_rds_endpoint").(string)
 		role := d.Get("aws_rds_iam_provider_role_arn").(string)
 		var err error
-		password, err = getRDSAuthToken(region, profile, role, username, host, port)
+		password, err = getRDSAuthToken(region, profile, role, username, endpoint, host, port)
 		if err != nil {
 			return nil, err
 		}
