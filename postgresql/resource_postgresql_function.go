@@ -129,7 +129,7 @@ func resourcePostgreSQLFunction() *schema.Resource {
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 					return normalizeFunctionBody(new) == old
 				},
-				StateFunc: func(val interface{}) string {
+				StateFunc: func(val any) string {
 					return normalizeFunctionBody(val.(string))
 				},
 			},
@@ -279,7 +279,7 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading function: %w", err)
+		return fmt.Errorf("error reading function: %w", err)
 	}
 
 	if err := txn.Commit(); err != nil {
@@ -293,10 +293,10 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return err
 	}
 
-	var args []map[string]interface{}
+	var args []map[string]any
 
 	for _, a := range pgFunction.Args {
-		args = append(args, map[string]interface{}{
+		args = append(args, map[string]any{
 			funcArgTypeAttr:    a.Type,
 			funcArgNameAttr:    a.Name,
 			funcArgModeAttr:    a.Mode,
@@ -541,5 +541,5 @@ func quoteSignature(s string) (signature string, err error) {
 		return fmt.Sprintf("%s.%s(%s)", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(name), args), nil
 	}
 
-	return "", fmt.Errorf("Incorrect signature format \"%s\". The expected format is schema.function_name(arguments)", s)
+	return "", fmt.Errorf("incorrect signature format \"%s\". The expected format is schema.function_name(arguments)", s)
 }

@@ -111,7 +111,7 @@ func resourcePostgreSQLExtensionCreate(db *DBConnection, d *schema.ResourceData)
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating extension: %w", err)
+		return fmt.Errorf("error creating extension: %w", err)
 	}
 
 	d.SetId(generateExtensionID(d, databaseName))
@@ -192,7 +192,7 @@ func resourcePostgreSQLExtensionReadImpl(db *DBConnection, d *schema.ResourceDat
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading extension: %w", err)
+		return fmt.Errorf("error reading extension: %w", err)
 	}
 
 	d.Set(extNameAttr, extName)
@@ -232,7 +232,7 @@ func resourcePostgreSQLExtensionDelete(db *DBConnection, d *schema.ResourceData)
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting extension: %w", err)
+		return fmt.Errorf("error deleting extension: %w", err)
 	}
 
 	d.SetId("")
@@ -266,7 +266,7 @@ func resourcePostgreSQLExtensionUpdate(db *DBConnection, d *schema.ResourceData)
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error updating extension: %w", err)
+		return fmt.Errorf("error updating extension: %w", err)
 	}
 
 	return resourcePostgreSQLExtensionReadImpl(db, d)
@@ -281,13 +281,13 @@ func setExtSchema(txn *sql.Tx, d *schema.ResourceData) error {
 	_, nraw := d.GetChange(extSchemaAttr)
 	n := nraw.(string)
 	if n == "" {
-		return errors.New("Error setting extension name to an empty string")
+		return errors.New("error setting extension name to an empty string")
 	}
 
 	sql := fmt.Sprintf("ALTER EXTENSION %s SET SCHEMA %s",
 		pq.QuoteIdentifier(extName), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating extension SCHEMA: %w", err)
+		return fmt.Errorf("error updating extension SCHEMA: %w", err)
 	}
 
 	return nil
@@ -311,7 +311,7 @@ func setExtVersion(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating extension version: %w", err)
+		return fmt.Errorf("error updating extension version: %w", err)
 	}
 
 	return nil

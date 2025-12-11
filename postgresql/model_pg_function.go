@@ -70,10 +70,10 @@ func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 	argOutput := "void"
 
 	if args, ok := d.GetOk(funcArgAttr); ok {
-		args := args.([]interface{})
+		args := args.([]any)
 
 		for _, arg := range args {
-			arg := arg.(map[string]interface{})
+			arg := arg.(map[string]any)
 
 			var pgArg PGFunctionArg
 

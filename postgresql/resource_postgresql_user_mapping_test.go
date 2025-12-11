@@ -87,7 +87,7 @@ func checkUserMappingExists(txn *sql.Tx, username string, serverName string) (bo
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about user mapping: %s", err)
+		return false, fmt.Errorf("error reading info about user mapping: %s", err)
 	}
 
 	return true, nil
@@ -111,7 +111,7 @@ func testAccCheckPostgresqlUserMappingDestroy(s *terraform.State) error {
 		exists, err := checkUserMappingExists(txn, splitted[0], splitted[1])
 
 		if err != nil {
-			return fmt.Errorf("Error checking user mapping %s", err)
+			return fmt.Errorf("error checking user mapping %s", err)
 		}
 
 		if exists {
@@ -153,7 +153,7 @@ func testAccCheckPostgresqlUserMappingExists(n string) resource.TestCheckFunc {
 		exists, err := checkUserMappingExists(txn, username, serverName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking user mapping %s", err)
+			return fmt.Errorf("error checking user mapping %s", err)
 		}
 
 		if !exists {

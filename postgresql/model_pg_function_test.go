@@ -243,7 +243,7 @@ func mockFunctionResourceData(t *testing.T, obj PGFunction) *schema.ResourceData
 
 	state.ID = ""
 	// Build the attribute map from ForemanModel
-	attributes := make(map[string]interface{})
+	attributes := make(map[string]any)
 
 	attributes["name"] = obj.Name
 	attributes["returns"] = obj.Returns
@@ -254,10 +254,10 @@ func mockFunctionResourceData(t *testing.T, obj PGFunction) *schema.ResourceData
 	attributes["parallel"] = obj.Parallel
 	attributes["volatility"] = obj.Volatility
 
-	var args []interface{}
+	var args []any
 
 	for _, a := range obj.Args {
-		args = append(args, map[string]interface{}{
+		args = append(args, map[string]any{
 			"type":    a.Type,
 			"name":    a.Name,
 			"mode":    a.Mode,

@@ -128,7 +128,7 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error updating publication: %w", err)
+		return fmt.Errorf("error updating publication: %w", err)
 	}
 	return resourcePostgreSQLPublicationReadImpl(db, d)
 }
@@ -143,7 +143,7 @@ func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
 	database := d.Get(pubDatabaseAttr).(string)
 	sql := fmt.Sprintf("ALTER PUBLICATION %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating publication name: %w", err)
+		return fmt.Errorf("error updating publication name: %w", err)
 	}
 	d.SetId(generatePublicationID(d, database))
 	return nil
@@ -160,7 +160,7 @@ func setPubOwner(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := fmt.Sprintf("ALTER PUBLICATION %s OWNER TO %s", pubName, n)
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating publication owner: %w", err)
+		return fmt.Errorf("error updating publication owner: %w", err)
 	}
 	return nil
 }
@@ -205,12 +205,12 @@ func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) e
 	paramAlterTemplate := "ALTER PUBLICATION %s %s"
 	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled)
 	if err != nil {
-		return fmt.Errorf("Error getting publication parameters: %w", err)
+		return fmt.Errorf("error getting publication parameters: %w", err)
 	}
 	if publicationParametersString != "" {
 		sql := fmt.Sprintf(paramAlterTemplate, pubName, publicationParametersString)
 		if _, err := txn.Exec(sql); err != nil {
-			return fmt.Errorf("Error updating publication parameters: %w", err)
+			return fmt.Errorf("error updating publication parameters: %w", err)
 		}
 	}
 	return nil
@@ -243,14 +243,14 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	sql := fmt.Sprintf("CREATE PUBLICATION %s %s %s", name, tables, publicationParameters)
 
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error creating Publication: %w", err)
+		return fmt.Errorf("error creating Publication: %w", err)
 	}
 	if err := setPubOwner(txn, d); err != nil {
 		return fmt.Errorf("could not set publication owner during creation: %w", err)
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating Publication: %w", err)
+		return fmt.Errorf("error creating Publication: %w", err)
 	}
 
 	d.SetId(generatePublicationID(d, databaseName))
@@ -325,7 +325,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	var puballtables, pubinsert, pubupdate, pubdelete, pubtruncate, pubviaroot bool
 	var pubowner string
 	columns := []string{"puballtables", "pubinsert", "pubupdate", "pubdelete", "r.rolname as pubownername"}
-	values := []interface{}{
+	values := []any{
 		&puballtables,
 		&pubinsert,
 		&pubupdate,
@@ -351,7 +351,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading publication info: %w", err)
+		return fmt.Errorf("error reading publication info: %w", err)
 	}
 
 	query = `SELECT CONCAT(schemaname,'.',tablename) as fulltablename ` +
@@ -362,7 +362,11 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	if err != nil {
 		return fmt.Errorf("could not get publication tables: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing rows: %v", err)
+		}
+	}()
 
 	for rows.Next() {
 		var table string
@@ -373,7 +377,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		tables = append(tables, table)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("Got rows.Err: %w", err)
+		return fmt.Errorf("got rows.Err: %w", err)
 	}
 
 	if pubinsert {
@@ -429,7 +433,7 @@ func resourcePostgreSQLPublicationDelete(db *DBConnection, d *schema.ResourceDat
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting Publication: %w", err)
+		return fmt.Errorf("error deleting Publication: %w", err)
 	}
 	d.SetId("")
 
@@ -469,7 +473,7 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 	return tablesString, nil
 }
 
-func validatedPublicationPublishParams(paramList []interface{}) ([]string, error) {
+func validatedPublicationPublishParams(paramList []any) ([]string, error) {
 	var attrs []string
 	if elem, ok := isUniqueArr(paramList); !ok {
 		return make([]string, 0), fmt.Errorf("'%s' is duplicated for attribute `%s`", elem.(string), pubTablesAttr)
@@ -501,7 +505,7 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 		}
 
 		if v, ok := d.GetOk(pubPublishAttr); ok {
-			if paramsList, err := validatedPublicationPublishParams(v.([]interface{})); err != nil {
+			if paramsList, err := validatedPublicationPublishParams(v.([]any)); err != nil {
 				return "", err
 			} else {
 				pubParams["publish"] = fmt.Sprintf("'%s'", strings.Join(paramsList, ", "))
@@ -524,7 +528,7 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 
 		if d.HasChange(pubPublishAttr) {
 			_, nraw := d.GetChange(pubPublishAttr)
-			if paramsList, err := validatedPublicationPublishParams(nraw.([]interface{})); err != nil {
+			if paramsList, err := validatedPublicationPublishParams(nraw.([]any)); err != nil {
 				return "", err
 			} else {
 				pubParams["publish"] = fmt.Sprintf("'%s'", strings.Join(paramsList, ", "))
@@ -561,7 +565,7 @@ func getDBPublicationName(d *schema.ResourceData, client *Client) (string, strin
 	if PublicationName == "" {
 		parsed := strings.Split(d.Id(), ".")
 		if len(parsed) != 2 {
-			return "", "", fmt.Errorf("Publication ID %s has not the expected format 'database.publication_name': %v", d.Id(), parsed)
+			return "", "", fmt.Errorf("publication ID %s has not the expected format 'database.publication_name': %v", d.Id(), parsed)
 		}
 		database = parsed[0]
 		PublicationName = parsed[1]

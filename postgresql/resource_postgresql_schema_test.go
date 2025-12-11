@@ -304,7 +304,7 @@ func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 		exists, err := checkSchemaExists(txn, getExtensionNameFromID(rs.Primary.ID))
 
 		if err != nil {
-			return fmt.Errorf("Error checking schema %s", err)
+			return fmt.Errorf("error checking schema %s", err)
 		}
 
 		if exists {
@@ -346,7 +346,7 @@ func testAccCheckPostgresqlSchemaExists(n string, schemaName string) resource.Te
 		exists, err := checkSchemaExists(txn, schemaName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking schema %s", err)
+			return fmt.Errorf("error checking schema %s", err)
 		}
 
 		if !exists {

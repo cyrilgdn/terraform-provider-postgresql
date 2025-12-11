@@ -31,7 +31,7 @@ func testAccCheckPostgresqlSubscriptionDestroy(s *terraform.State) error {
 		exists, err := checkSubscriptionExists(txn, getSubscriptionNameFromID(rs.Primary.ID))
 
 		if err != nil {
-			return fmt.Errorf("Error checking subscription %s", err)
+			return fmt.Errorf("error checking subscription %s", err)
 		}
 
 		if exists {
@@ -41,7 +41,7 @@ func testAccCheckPostgresqlSubscriptionDestroy(s *terraform.State) error {
 		streams, err := checkSubscriptionStreams(txn, getSubscriptionNameFromID(rs.Primary.ID))
 
 		if err != nil {
-			return fmt.Errorf("Error checking subscription %s", err)
+			return fmt.Errorf("error checking subscription %s", err)
 		}
 
 		if streams {
@@ -60,7 +60,7 @@ func checkSubscriptionExists(txn *sql.Tx, subName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about subscription: %s", err)
+		return false, fmt.Errorf("error reading info about subscription: %s", err)
 	}
 
 	return true, nil
@@ -74,7 +74,7 @@ func checkSubscriptionStreams(txn *sql.Tx, subName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about subscription: %s", err)
+		return false, fmt.Errorf("error reading info about subscription: %s", err)
 	}
 
 	return true, nil
@@ -112,7 +112,7 @@ func testAccCheckPostgresqlSubscriptionExists(n string) resource.TestCheckFunc {
 		exists, err := checkSubscriptionExists(txn, subName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking subscription %s", err)
+			return fmt.Errorf("error checking subscription %s", err)
 		}
 
 		if !exists {
@@ -121,7 +121,7 @@ func testAccCheckPostgresqlSubscriptionExists(n string) resource.TestCheckFunc {
 
 		streams, err := checkSubscriptionStreams(txn, subName)
 		if err != nil {
-			return fmt.Errorf("Error checking subscription %s", err)
+			return fmt.Errorf("error checking subscription %s", err)
 		}
 		if !streams {
 			return fmt.Errorf("Subscription not streaming")
