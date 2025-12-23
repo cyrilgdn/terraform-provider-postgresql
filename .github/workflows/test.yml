@@ -13,7 +13,6 @@ jobs:
     strategy:
       matrix:
         pgversion: [18, 17, 16, 15, 14, 13, 12]
-        # Test master first (error encountered on postgresql_grant test)
 
     env:
       PGVERSION: ${{ matrix.pgversion }}
