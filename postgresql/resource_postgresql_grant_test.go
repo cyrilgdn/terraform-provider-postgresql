@@ -530,6 +530,24 @@ func TestAccPostgresqlGrantObjects(t *testing.T) {
 				),
 			},
 			{
+				Config:      fmt.Sprintf(testGrant, `["test_table", "test_table2", "test_table_does_not_exist"]`),
+				ExpectError: regexp.MustCompile(`relation "test_schema.test_table_does_not_exist" does not exist`),
+			},
+			{
+				// Make sure the above error was rolled back and privileges are intact
+				Config:             fmt.Sprintf(testGrant, `["test_table", "test_table2"]`),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "2"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.0", "test_table"),
+					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.1", "test_table2"),
+					func(*terraform.State) error {
+						return testCheckTablesPrivileges(t, dbName, roleName, testTables, []string{"SELECT"})
+					},
+				),
+			},
+			{
 				Config: fmt.Sprintf(testGrant, `["test_table"]`),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_grant.test", "objects.#", "1"),
