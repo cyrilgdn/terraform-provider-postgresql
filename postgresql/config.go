@@ -183,6 +183,7 @@ type Config struct {
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
+	BinaryParameters                bool
 }
 
 // Client struct holding connection string
@@ -217,11 +218,15 @@ func (c *Config) featureSupported(name featureName) bool {
 func (c *Config) connParams() []string {
 	params := map[string]string{}
 
-	// sslmode and connect_timeout are not allowed with gocloud
+	// sslmode, connect_timeout and binary_parameters are not allowed with gocloud
 	// (TLS is provided by gocloud directly)
 	if c.Scheme == "postgres" {
 		params["sslmode"] = c.SSLMode
 		params["connect_timeout"] = strconv.Itoa(c.ConnectTimeoutSec)
+
+		if c.BinaryParameters {
+			params["binary_parameters"] = "yes"
+		}
 	}
 
 	if c.featureSupported(featureFallbackApplicationName) {
