@@ -172,6 +172,17 @@ The following arguments are supported:
   default is `180s`.  Zero or not specified means wait indefinitely.
 * `max_connections` - (Optional) Set the maximum number of open connections to
   the database. The default is `20`.  Zero means unlimited open connections.
+  Note: this limit is applied per database connection pool. The provider keeps
+  one pool per `(host, user, database)` triple, so when resources span multiple
+  databases the effective total can exceed this number.
+* `max_idle_connections` - (Optional) Maximum number of idle connections retained
+  in each per-database pool. Defaults to `0`, which closes connections immediately
+  after use to ensure managed databases can be dropped without interference.
+  Setting a small positive value (e.g. `2`-`5`) lets `database/sql` reuse
+  connections and significantly reduces churn against PgBouncer or any other
+  connection pooler in front of PostgreSQL. Only enable this if you do not drop
+  databases that the provider connects to, or if you run PostgreSQL `>= 13`
+  where `DROP DATABASE ... WITH (FORCE)` is supported.
 * `expected_version` - (Optional) Specify a hint to Terraform regarding the
   expected version that the provider will be talking with.  This is a required
   hint in order for Terraform to talk with an ancient version of PostgreSQL.

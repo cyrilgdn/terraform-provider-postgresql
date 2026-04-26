@@ -179,6 +179,7 @@ type Config struct {
 	Timeout                         int
 	ConnectTimeoutSec               int
 	MaxConns                        int
+	MaxIdleConns                    int
 	ExpectedVersion                 semver.Version
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
@@ -305,10 +306,14 @@ func (c *Client) Connect() (*DBConnection, error) {
 			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dropped in the plan.
-		db.SetMaxIdleConns(0)
+		// By default we don't retain idle connections: if a database managed by
+		// terraform has to be dropped in the plan, lingering idle sessions in the
+		// pool would prevent DROP DATABASE on PostgreSQL < 13. Operators that
+		// don't drop managed databases (or that run PostgreSQL >= 13 where DROP
+		// DATABASE WITH FORCE is available) can opt in to a small idle pool via
+		// the `max_idle_connections` provider argument to reduce connection
+		// churn against PgBouncer.
+		db.SetMaxIdleConns(c.config.MaxIdleConns)
 		db.SetMaxOpenConns(c.config.MaxConns)
 
 		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)

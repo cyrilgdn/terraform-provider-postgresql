@@ -22,6 +22,7 @@ import (
 
 const (
 	defaultProviderMaxOpenConnections = 20
+	defaultProviderMaxIdleConnections = 0
 	defaultExpectedPostgreSQLVersion  = "9.0.0"
 )
 
@@ -189,8 +190,15 @@ func Provider() *schema.Provider {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Default:      defaultProviderMaxOpenConnections,
-				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
+				Description:  "Maximum number of connections to establish to the database. Zero means unlimited. Note: this limit is applied per database connection pool; one pool is created per (host, user, database) triple, so the effective total can be higher when the provider manages resources across multiple databases.",
 				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			"max_idle_connections": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderMaxIdleConnections,
+				Description:  "Maximum number of idle connections kept open in each per-database pool. Defaults to 0, which closes connections immediately after use to avoid blocking DROP DATABASE. Set to a small positive value (e.g. 2-5) to reuse connections and reduce churn against PgBouncer; only safe when you do not drop databases that the provider also queries, or when running PostgreSQL >= 13 (DROP DATABASE WITH FORCE is supported).",
+				ValidateFunc: validation.IntAtLeast(0),
 			},
 			"expected_version": {
 				Type:         schema.TypeString,
@@ -383,6 +391,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ApplicationName:                 "Terraform provider",
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
 		MaxConns:                        d.Get("max_connections").(int),
+		MaxIdleConns:                    d.Get("max_idle_connections").(int),
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
