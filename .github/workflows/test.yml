@@ -3,7 +3,7 @@ name: test
 on:
   push:
     branches:
-    - main
+      - main
   pull_request:
 
 jobs:
@@ -24,7 +24,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: "1.24"
+
+      - name: Set up Terraform
+        id: setup-terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
 
       - name: test
         run: make test
@@ -33,4 +40,6 @@ jobs:
         run: make vet
 
       - name: testacc
+        env:
+          TF_ACC_TERRAFORM_PATH: ${{ steps.setup-terraform.outputs.terraform-path }}
         run: make testacc
