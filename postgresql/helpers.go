@@ -2,10 +2,16 @@ package postgresql
 
 import (
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"regexp"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/lib/pq"
@@ -368,9 +374,9 @@ func setToPgIdentSimpleList(idents *schema.Set) string {
 	return strings.Join(quotedIdents, ",")
 }
 
-// startTransaction starts a new DB transaction on the specified database.
-// If the database is specified and different from the one configured in the provider,
-// it will create a new connection pool if needed.
+// startTransaction begins a transaction on the given database, retrying BEGIN
+// (and only BEGIN — never Commit or in-transaction statements) up to
+// client.config.MaxRetries times on transient connection errors.
 func startTransaction(client *Client, database string) (*sql.Tx, error) {
 	if database != "" && database != client.databaseName {
 		client = client.config.NewClient(database)
@@ -380,12 +386,64 @@ func startTransaction(client *Client, database string) (*sql.Tx, error) {
 		return nil, err
 	}
 
-	txn, err := db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("could not start transaction: %w", err)
+	maxRetries := client.config.MaxRetries
+	if maxRetries < 0 {
+		maxRetries = 0
 	}
 
-	return txn, nil
+	var lastErr error
+	backoff := 100 * time.Millisecond
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("[DEBUG] postgresql: retrying transaction begin (attempt %d/%d) after transient error: %v",
+				attempt+1, maxRetries+1, lastErr)
+			time.Sleep(backoff)
+			backoff *= 3
+		}
+		txn, err := db.Begin()
+		if err == nil {
+			return txn, nil
+		}
+		lastErr = err
+		if !isTransientConnErr(err) {
+			break
+		}
+	}
+	return nil, fmt.Errorf("could not start transaction: %w", lastErr)
+}
+
+// isTransientConnErr reports whether err is a connection-level failure safe
+// to retry. Includes the *net.OpError path that lib/pq returns raw instead of
+// wrapping in driver.ErrBadConn — without which database/sql's built-in retry
+// would not fire.
+func isTransientConnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, io.EOF) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		switch pqErr.Code {
+		// connection_failure, connection_does_not_exist, admin_shutdown
+		case "08006", "08003", "57P01":
+			return true
+		}
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "broken pipe") {
+		return true
+	}
+	return false
 }
 
 func dbExists(db QueryAble, dbname string) (bool, error) {

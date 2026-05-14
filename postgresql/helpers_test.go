@@ -1,9 +1,16 @@
 package postgresql
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"database/sql/driver"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"syscall"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -105,6 +112,35 @@ func TestArePrivilegesEqual(t *testing.T) {
 
 func buildPrivilegesSet(grants ...any) *schema.Set {
 	return schema.NewSet(schema.HashString, grants)
+}
+
+func TestIsTransientConnErr(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"driver.ErrBadConn", driver.ErrBadConn, true},
+		{"wrapped driver.ErrBadConn", fmt.Errorf("wrap: %w", driver.ErrBadConn), true},
+		{"io.EOF", io.EOF, true},
+		{"net.OpError ECONNRESET", &net.OpError{Op: "read", Err: syscall.ECONNRESET}, true},
+		{"wrapped net.OpError", fmt.Errorf("could not start transaction: %w", &net.OpError{Op: "read", Err: syscall.ECONNRESET}), true},
+		{"syscall.ECONNRESET", syscall.ECONNRESET, true},
+		{"syscall.EPIPE", syscall.EPIPE, true},
+		{"pq error 08006", &pq.Error{Code: "08006"}, true},
+		{"pq error 08003", &pq.Error{Code: "08003"}, true},
+		{"pq error 57P01", &pq.Error{Code: "57P01"}, true},
+		{"pq error 23505 (unique violation)", &pq.Error{Code: "23505"}, false},
+		{"substring connection reset by peer", errors.New("read tcp 1.2.3.4:5432->5.6.7.8:6432: read: connection reset by peer"), true},
+		{"substring broken pipe", errors.New("write: broken pipe"), true},
+		{"random error", errors.New("syntax error at or near \"FOO\""), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, isTransientConnErr(tc.err))
+		})
+	}
 }
 
 func buildResourceData(objectType string, t *testing.T) *schema.ResourceData {

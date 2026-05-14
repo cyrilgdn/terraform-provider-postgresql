@@ -183,6 +183,24 @@ The following arguments are supported:
   connection pooler in front of PostgreSQL. Only enable this if you do not drop
   databases that the provider connects to, or if you run PostgreSQL `>= 13`
   where `DROP DATABASE ... WITH (FORCE)` is supported.
+* `max_total_connections` - (Optional) Cap on the total number of physical
+  PostgreSQL connections held across all per-database pools belonging to this
+  provider configuration. Multiple `provider "postgresql"` blocks (aliases)
+  each get their own independent cap. Defaults to `0` (disabled). Only applies
+  when `scheme` is `postgres`; for `gcppostgres`/`awspostgres` this setting is
+  ignored. See the section
+  [Connection pooling with PgBouncer](#connection-pooling-with-pgbouncer) for
+  when and how to use this.
+* `conn_max_idle_time` - (Optional) Maximum time a connection may sit idle in
+  the pool before it is closed, in seconds. `0` means unlimited; `-1`
+  (default) auto-defaults to `30` when either `max_total_connections` or
+  `max_idle_connections` is set, so idle connections release their slot/pool
+  position periodically and don't become stale behind PgBouncer.
+* `max_retries` - (Optional) Maximum number of times to retry starting a
+  transaction on transient connection errors (`connection reset by peer`,
+  broken pipe, `driver.ErrBadConn`, PgBouncer `admin_shutdown`, etc.).
+  Defaults to `3`. Only the BEGIN itself is retried — never Commit or any
+  statement inside a transaction. Set to `0` to disable.
 * `expected_version` - (Optional) Specify a hint to Terraform regarding the
   expected version that the provider will be talking with.  This is a required
   hint in order for Terraform to talk with an ancient version of PostgreSQL.
@@ -197,6 +215,58 @@ The following arguments are supported:
 * `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+
+## Connection pooling with PgBouncer
+
+PostgreSQL connections are bound to a database at the protocol startup
+message — you cannot switch databases on a live connection. As a consequence,
+this provider keeps **one `*sql.DB` pool per `(host, user, database)` triple**.
+On large plans with many managed databases (e.g. `postgresql_default_privileges`
+or `postgresql_grant` resources spanning dozens of databases), the total number
+of physical TCP connections to a connection pooler like PgBouncer can grow
+beyond the pooler's per-user/per-pool limits and result in errors such as:
+
+```
+Error: could not start transaction: read tcp ...->...:6432: read: connection reset by peer
+```
+
+To bound this, set `max_total_connections` to a cap that fits within your
+PgBouncer limits, and `conn_max_idle_time` so idle connections release their
+slot periodically:
+
+```hcl
+provider "postgresql" {
+  host                  = "pgbouncer.example.com"
+  port                  = 6432
+  username              = "tf"
+  password              = "..."
+
+  max_connections       = 5         # per-pool cap (unchanged behavior)
+  max_total_connections = 15        # cap across all per-database pools of this provider
+  max_idle_connections  = 3
+  conn_max_idle_time    = 30        # seconds
+  max_retries           = 3
+}
+```
+
+Guidelines:
+
+- `max_total_connections` must be set comfortably above `2 * terraform parallelism`
+  (terraform's default is `10`, so use at least `20`). This avoids deadlock when
+  one transaction holds a slot while a nested operation tries to open a second
+  connection to a different database.
+- `max_total_connections` only applies for `scheme = postgres` (the default).
+  For `gcppostgres`/`awspostgres` it is ignored; only `max_connections` (per
+  pool) is respected.
+- The cap is **per provider configuration**, not process-global. If you declare
+  multiple `provider "postgresql"` blocks (with `alias`), each one has its own
+  independent semaphore and its own pool registry — including when two blocks
+  target the same host/user/database with different settings.
+- The provider transparently retries BEGIN on transient connection errors
+  (`connection reset by peer`, `broken pipe`, `driver.ErrBadConn`, PgBouncer
+  `admin_shutdown`) up to `max_retries` times with exponential backoff. Only
+  BEGIN is retried — Commit and statements inside an open transaction are
+  never retried, so no side-effect duplication can occur.
 
 ## GoCloud
 

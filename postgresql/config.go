@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
@@ -48,10 +49,13 @@ const (
 	featureSecurityLabel
 )
 
-var (
-	dbRegistryLock sync.Mutex
-	dbRegistry     map[string]*DBConnection = make(map[string]*DBConnection, 1)
+type registryEntry struct {
+	once sync.Once
+	conn *DBConnection
+	err  error
+}
 
+var (
 	// Mapping of feature flags to versions
 	featureSupported = map[featureName]semver.Range{
 		// CREATE ROLE WITH
@@ -180,10 +184,26 @@ type Config struct {
 	ConnectTimeoutSec               int
 	MaxConns                        int
 	MaxIdleConns                    int
+	MaxTotalConns                   int
+	ConnMaxIdleTimeSec              int
+	MaxRetries                      int
 	ExpectedVersion                 semver.Version
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
+
+	// serverSem and poolRegistry are reference types so Config value copies
+	// made by NewClient share the same underlying state across all
+	// per-database pools belonging to this provider configuration.
+	serverSem    chan struct{}
+	poolRegistry *sync.Map // map[string]*registryEntry
+}
+
+func (c *Config) serverSemAcquireTimeout() time.Duration {
+	if c.ConnectTimeoutSec <= 0 {
+		return 0
+	}
+	return time.Duration(c.ConnectTimeoutSec) * time.Second
 }
 
 // Client struct holding connection string
@@ -194,8 +214,26 @@ type Client struct {
 	databaseName string
 }
 
+// configInitMu is package-level: Config is value-copied by NewClient, so a
+// per-Config mutex would not be shared across copies.
+var configInitMu sync.Mutex
+
+// ensureInit unconditionally takes the mutex — Go's memory model makes
+// double-checked locking on c.poolRegistry / c.serverSem a race.
+func (c *Config) ensureInit() {
+	configInitMu.Lock()
+	defer configInitMu.Unlock()
+	if c.poolRegistry == nil {
+		c.poolRegistry = &sync.Map{}
+	}
+	if c.Scheme == "postgres" && c.MaxTotalConns > 0 && c.serverSem == nil {
+		c.serverSem = make(chan struct{}, c.MaxTotalConns)
+	}
+}
+
 // NewClient returns client config for the specified database.
 func (c *Config) NewClient(database string) *Client {
+	c.ensureInit()
 	return &Client{
 		config:       *c,
 		databaseName: database,
@@ -277,65 +315,83 @@ func (c *Config) getDatabaseUsername() string {
 	return c.Username
 }
 
-// Connect returns a copy to an sql.Open()'ed database connection wrapped in a DBConnection struct.
-// Callers must return their database resources. Use of QueryRow() or Exec() is encouraged.
-// Query() must have their rows.Close()'ed.
+// Connect returns a cached *DBConnection for the receiver's (host, user,
+// database) tuple. Failed attempts are not memoized — the registry entry is
+// removed so the next caller retries from scratch.
 func (c *Client) Connect() (*DBConnection, error) {
-	dbRegistryLock.Lock()
-	defer dbRegistryLock.Unlock()
-
+	c.config.ensureInit()
 	dsn := c.config.connStr(c.databaseName)
-	conn, found := dbRegistry[dsn]
-	if !found {
-
-		var db *sql.DB
-		var err error
-		if c.config.Scheme == "postgres" {
-			db, err = sql.Open(proxyDriverName, dsn)
-		} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
-			db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
-		} else {
-			db, err = postgres.Open(context.Background(), dsn)
+	registry := c.config.poolRegistry
+	entryAny, _ := registry.LoadOrStore(dsn, &registryEntry{})
+	entry := entryAny.(*registryEntry)
+	entry.once.Do(func() {
+		entry.conn, entry.err = c.openAndPing(dsn)
+		if entry.err != nil {
+			registry.CompareAndDelete(dsn, entry)
 		}
+	})
+	return entry.conn, entry.err
+}
 
-		if err == nil {
-			err = db.Ping()
-		}
-		if err != nil {
-			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
-			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
-		}
-
-		// By default we don't retain idle connections: if a database managed by
-		// terraform has to be dropped in the plan, lingering idle sessions in the
-		// pool would prevent DROP DATABASE on PostgreSQL < 13. Operators that
-		// don't drop managed databases (or that run PostgreSQL >= 13 where DROP
-		// DATABASE WITH FORCE is available) can opt in to a small idle pool via
-		// the `max_idle_connections` provider argument to reduce connection
-		// churn against PgBouncer.
-		db.SetMaxIdleConns(c.config.MaxIdleConns)
-		db.SetMaxOpenConns(c.config.MaxConns)
-
-		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
-		version := &c.config.ExpectedVersion
-		if defaultVersion.Equals(c.config.ExpectedVersion) {
-			// Version hint not set by user, need to fingerprint
-			version, err = fingerprintCapabilities(db)
-			if err != nil {
-				_ = db.Close()
-				return nil, fmt.Errorf("error detecting capabilities: %w", err)
-			}
-		}
-
-		conn = &DBConnection{
-			db,
-			c,
-			*version,
-		}
-		dbRegistry[dsn] = conn
+func (c *Client) openAndPing(dsn string) (*DBConnection, error) {
+	var db *sql.DB
+	var err error
+	if c.config.Scheme == "postgres" {
+		db = sql.OpenDB(&proxyConnector{
+			dsn:        dsn,
+			sem:        c.config.serverSem,
+			semLimit:   int32(c.config.MaxTotalConns),
+			semTimeout: c.config.serverSemAcquireTimeout(),
+		})
+	} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
+		db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
+	} else {
+		db, err = postgres.Open(context.Background(), dsn)
 	}
 
-	return conn, nil
+	if err == nil {
+		err = db.Ping()
+	}
+	if err != nil {
+		// Release any physical conn (and proxyConnector semaphore slot) that
+		// Ping may have already acquired — Connect() retries failed entries.
+		if db != nil {
+			_ = db.Close()
+		}
+		errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
+		return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
+	}
+
+	// Default MaxIdleConns=0 closes connections after use so DROP DATABASE
+	// isn't blocked on PostgreSQL < 13. Users may opt in via
+	// max_idle_connections; cap at MaxTotalConns so one pool can't hoard the
+	// whole semaphore budget.
+	maxIdle := c.config.MaxIdleConns
+	if c.config.Scheme == "postgres" && c.config.MaxTotalConns > 0 && maxIdle > c.config.MaxTotalConns {
+		maxIdle = c.config.MaxTotalConns
+	}
+	db.SetMaxIdleConns(maxIdle)
+	db.SetMaxOpenConns(c.config.MaxConns)
+	if c.config.ConnMaxIdleTimeSec > 0 {
+		db.SetConnMaxIdleTime(time.Duration(c.config.ConnMaxIdleTimeSec) * time.Second)
+	}
+
+	defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
+	version := &c.config.ExpectedVersion
+	if defaultVersion.Equals(c.config.ExpectedVersion) {
+		// Version hint not set by user, need to fingerprint
+		version, err = fingerprintCapabilities(db)
+		if err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("error detecting capabilities: %w", err)
+		}
+	}
+
+	return &DBConnection{
+		db,
+		c,
+		*version,
+	}, nil
 }
 
 // fingerprintCapabilities queries PostgreSQL to populate a local catalog of
