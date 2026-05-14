@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -17,9 +18,59 @@ import (
 	"github.com/lib/pq"
 )
 
+// targetDatabaseFromAttr returns the database the resource will actually
+// operate on. It reads the named attribute from ResourceData and falls back
+// to client.databaseName (the maintenance database) when the attribute is
+// absent, empty, or attr == "".
+//
+// d.GetOk on a key absent from the schema is safe — it returns the zero
+// value and ok=false.
+func targetDatabaseFromAttr(d *schema.ResourceData, client *Client, attr string) string {
+	if attr != "" {
+		if v, ok := d.GetOk(attr); ok {
+			if s, _ := v.(string); s != "" {
+				return s
+			}
+		}
+	}
+	return client.databaseName
+}
+
+// acquireDBSlot blocks until the per-database scheduler grants the caller
+// permission to operate on db. Returns a no-op release when the scheduler
+// is disabled.
+func acquireDBSlot(client *Client, db string) (func(), error) {
+	sched := client.config.scheduler
+	if sched == nil {
+		return func() {}, nil
+	}
+	return sched.Acquire(context.Background(), db)
+}
+
+// PGResourceFunc wraps a resource CRUD with per-database scheduler gating,
+// keyed by the "database" attribute (resources that span multiple managed
+// databases — grant, default_privileges, schema, extension, publication,
+// subscription, …) or by client.databaseName for resources that have no
+// such attribute and work against the maintenance database (role,
+// grant_role, security_label, user_mapping, server).
+//
+// Use PGResourceFuncForDB when the target database lives under a different
+// attribute name — notably postgresql_database, whose target is d.Get("name").
 func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, any) error {
+	return PGResourceFuncForDB("database", fn)
+}
+
+// PGResourceFuncForDB is like PGResourceFunc but reads the scheduler key
+// from the named attribute. Pass attr="" to always use client.databaseName.
+func PGResourceFuncForDB(attr string, fn func(*DBConnection, *schema.ResourceData) error) func(*schema.ResourceData, any) error {
 	return func(d *schema.ResourceData, meta any) error {
 		client := meta.(*Client)
+
+		release, err := acquireDBSlot(client, targetDatabaseFromAttr(d, client, attr))
+		if err != nil {
+			return err
+		}
+		defer release()
 
 		db, err := client.Connect()
 		if err != nil {
@@ -30,9 +81,21 @@ func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*sc
 	}
 }
 
+// PGResourceExistsFunc — see PGResourceFunc.
 func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, any) (bool, error) {
+	return PGResourceExistsFuncForDB("database", fn)
+}
+
+// PGResourceExistsFuncForDB — see PGResourceFuncForDB.
+func PGResourceExistsFuncForDB(attr string, fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, any) (bool, error) {
 	return func(d *schema.ResourceData, meta any) (bool, error) {
 		client := meta.(*Client)
+
+		release, err := acquireDBSlot(client, targetDatabaseFromAttr(d, client, attr))
+		if err != nil {
+			return false, err
+		}
+		defer release()
 
 		db, err := client.Connect()
 		if err != nil {

@@ -184,7 +184,7 @@ type Config struct {
 	ConnectTimeoutSec               int
 	MaxConns                        int
 	MaxIdleConns                    int
-	MaxTotalConns                   int
+	MaxConcurrentDatabases          int
 	ConnMaxIdleTimeSec              int
 	MaxRetries                      int
 	ExpectedVersion                 semver.Version
@@ -192,18 +192,11 @@ type Config struct {
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
 
-	// serverSem and poolRegistry are reference types so Config value copies
+	// scheduler and poolRegistry are reference types so Config value copies
 	// made by NewClient share the same underlying state across all
 	// per-database pools belonging to this provider configuration.
-	serverSem    chan struct{}
+	scheduler    *dbScheduler
 	poolRegistry *sync.Map // map[string]*registryEntry
-}
-
-func (c *Config) serverSemAcquireTimeout() time.Duration {
-	if c.ConnectTimeoutSec <= 0 {
-		return 0
-	}
-	return time.Duration(c.ConnectTimeoutSec) * time.Second
 }
 
 // Client struct holding connection string
@@ -219,15 +212,15 @@ type Client struct {
 var configInitMu sync.Mutex
 
 // ensureInit unconditionally takes the mutex — Go's memory model makes
-// double-checked locking on c.poolRegistry / c.serverSem a race.
+// double-checked locking on c.poolRegistry / c.scheduler a race.
 func (c *Config) ensureInit() {
 	configInitMu.Lock()
 	defer configInitMu.Unlock()
 	if c.poolRegistry == nil {
 		c.poolRegistry = &sync.Map{}
 	}
-	if c.Scheme == "postgres" && c.MaxTotalConns > 0 && c.serverSem == nil {
-		c.serverSem = make(chan struct{}, c.MaxTotalConns)
+	if c.MaxConcurrentDatabases > 0 && c.scheduler == nil {
+		c.scheduler = newDBScheduler(c.MaxConcurrentDatabases)
 	}
 }
 
@@ -337,12 +330,7 @@ func (c *Client) openAndPing(dsn string) (*DBConnection, error) {
 	var db *sql.DB
 	var err error
 	if c.config.Scheme == "postgres" {
-		db = sql.OpenDB(&proxyConnector{
-			dsn:        dsn,
-			sem:        c.config.serverSem,
-			semLimit:   int32(c.config.MaxTotalConns),
-			semTimeout: c.config.serverSemAcquireTimeout(),
-		})
+		db = sql.OpenDB(&proxyConnector{dsn: dsn})
 	} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
 		db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
 	} else {
@@ -353,8 +341,8 @@ func (c *Client) openAndPing(dsn string) (*DBConnection, error) {
 		err = db.Ping()
 	}
 	if err != nil {
-		// Release any physical conn (and proxyConnector semaphore slot) that
-		// Ping may have already acquired — Connect() retries failed entries.
+		// Release any physical conn that Ping may have already acquired —
+		// Connect() retries failed entries.
 		if db != nil {
 			_ = db.Close()
 		}
@@ -364,13 +352,8 @@ func (c *Client) openAndPing(dsn string) (*DBConnection, error) {
 
 	// Default MaxIdleConns=0 closes connections after use so DROP DATABASE
 	// isn't blocked on PostgreSQL < 13. Users may opt in via
-	// max_idle_connections; cap at MaxTotalConns so one pool can't hoard the
-	// whole semaphore budget.
-	maxIdle := c.config.MaxIdleConns
-	if c.config.Scheme == "postgres" && c.config.MaxTotalConns > 0 && maxIdle > c.config.MaxTotalConns {
-		maxIdle = c.config.MaxTotalConns
-	}
-	db.SetMaxIdleConns(maxIdle)
+	// max_idle_connections.
+	db.SetMaxIdleConns(c.config.MaxIdleConns)
 	db.SetMaxOpenConns(c.config.MaxConns)
 	if c.config.ConnMaxIdleTimeSec > 0 {
 		db.SetConnMaxIdleTime(time.Duration(c.config.ConnMaxIdleTimeSec) * time.Second)

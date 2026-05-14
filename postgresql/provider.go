@@ -23,13 +23,13 @@ import (
 )
 
 const (
-	defaultProviderMaxOpenConnections  = 20
-	defaultProviderMaxIdleConnections  = 0
-	defaultProviderMaxTotalConnections = 0
-	defaultProviderMaxRetries          = 3
-	defaultProviderConnMaxIdleTimeSec  = -1 // sentinel: -1 = auto, 0 = unlimited, N>0 = seconds
-	defaultAutoIdleTimeSec             = 30
-	defaultExpectedPostgreSQLVersion   = "9.0.0"
+	defaultProviderMaxOpenConnections     = 20
+	defaultProviderMaxIdleConnections     = 0
+	defaultProviderMaxConcurrentDatabases = 0
+	defaultProviderMaxRetries             = 3
+	defaultProviderConnMaxIdleTimeSec     = -1 // sentinel: -1 = auto, 0 = unlimited, N>0 = seconds
+	defaultAutoIdleTimeSec                = 30
+	defaultExpectedPostgreSQLVersion      = "9.0.0"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -206,18 +206,18 @@ func Provider() *schema.Provider {
 				Description:  "Maximum number of idle connections kept open in each per-database pool. Defaults to 0, which closes connections immediately after use to avoid blocking DROP DATABASE. Set to a small positive value (e.g. 2-5) to reuse connections and reduce churn against PgBouncer; only safe when you do not drop databases that the provider also queries, or when running PostgreSQL >= 13 (DROP DATABASE WITH FORCE is supported).",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
-			"max_total_connections": {
+			"max_concurrent_databases": {
 				Type:         schema.TypeInt,
 				Optional:     true,
-				Default:      defaultProviderMaxTotalConnections,
-				Description:  "Cap on the total number of physical PostgreSQL connections held across all per-database pools belonging to this provider configuration. Multiple `provider \"postgresql\"` blocks (aliases) each get their own independent cap. Zero (default) disables the cap. Only applies when `scheme` is `postgres`; gcppostgres/awspostgres bypass this cap. Use this when running through PgBouncer (or any pooler with per-user/pool limits) and the provider manages resources across multiple databases. Recommended to set `>= 2 * terraform parallelism` (default 20) to avoid deadlock on nested transactions; also recommended to set `conn_max_idle_time` so idle connections release slots.",
+				Default:      defaultProviderMaxConcurrentDatabases,
+				Description:  "Maximum number of distinct databases that may be actively worked on at the same time within a single Terraform process. Zero (default) disables the limit. Set to 1 to serialize per-database operations globally; within the active database, goroutines may proceed in parallel up to `max_connections`. Upper bound on physical connections is `max_concurrent_databases * max_connections`. Use this with PgBouncer when the provider manages resources across many databases. This is an IN-PROCESS limit only — it does not coordinate across separate Terraform invocations (multiple PRs / parallel CI jobs).",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
 			"conn_max_idle_time": {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Default:      defaultProviderConnMaxIdleTimeSec,
-				Description:  "Maximum time a connection may be idle before it is closed, in seconds. `0` means unlimited; `-1` (default) auto-defaults to `30` when either `max_total_connections` or `max_idle_connections` is set (so idle connections release their slot/pool position periodically and PgBouncer doesn't see stale sessions).",
+				Description:  "Maximum time a connection may be idle before it is closed, in seconds. `0` means unlimited; `-1` (default) auto-defaults to `30` when `max_idle_connections` is set (so idle connections don't go stale behind PgBouncer).",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
 			"max_retries": {
@@ -407,15 +407,11 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 	}
 
 	scheme := d.Get("scheme").(string)
-	maxTotalConns := d.Get("max_total_connections").(int)
 	maxIdleConns := d.Get("max_idle_connections").(int)
 
 	connMaxIdleTimeSec := d.Get("conn_max_idle_time").(int)
 	if connMaxIdleTimeSec == -1 {
-		// Idle conns hold semaphore slots / can go stale behind PgBouncer.
-		// Skipped for gcppostgres/awspostgres + max_total_connections only,
-		// where the semaphore doesn't apply.
-		if (scheme == "postgres" && maxTotalConns > 0) || maxIdleConns > 0 {
+		if maxIdleConns > 0 {
 			connMaxIdleTimeSec = defaultAutoIdleTimeSec
 			log.Printf("[INFO] postgresql: auto-defaulting conn_max_idle_time to %ds; set an explicit value to override", defaultAutoIdleTimeSec)
 		} else {
@@ -436,7 +432,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
 		MaxConns:                        d.Get("max_connections").(int),
 		MaxIdleConns:                    maxIdleConns,
-		MaxTotalConns:                   maxTotalConns,
+		MaxConcurrentDatabases:          d.Get("max_concurrent_databases").(int),
 		ConnMaxIdleTimeSec:              connMaxIdleTimeSec,
 		MaxRetries:                      d.Get("max_retries").(int),
 		ExpectedVersion:                 version,

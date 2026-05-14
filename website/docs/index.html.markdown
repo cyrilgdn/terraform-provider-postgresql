@@ -183,19 +183,20 @@ The following arguments are supported:
   connection pooler in front of PostgreSQL. Only enable this if you do not drop
   databases that the provider connects to, or if you run PostgreSQL `>= 13`
   where `DROP DATABASE ... WITH (FORCE)` is supported.
-* `max_total_connections` - (Optional) Cap on the total number of physical
-  PostgreSQL connections held across all per-database pools belonging to this
-  provider configuration. Multiple `provider "postgresql"` blocks (aliases)
-  each get their own independent cap. Defaults to `0` (disabled). Only applies
-  when `scheme` is `postgres`; for `gcppostgres`/`awspostgres` this setting is
-  ignored. See the section
+* `max_concurrent_databases` - (Optional) Maximum number of distinct
+  databases that may be actively worked on at the same time within a single
+  Terraform process. Defaults to `0` (disabled). Set to `1` to serialize
+  per-database operations globally; goroutines targeting the active database
+  may still proceed in parallel up to `max_connections`. The upper bound on
+  physical connections is `max_concurrent_databases * max_connections`. See
+  the section
   [Connection pooling with PgBouncer](#connection-pooling-with-pgbouncer) for
-  when and how to use this.
+  when and how to use this. This is an in-process limit only — it does not
+  coordinate across separate Terraform invocations.
 * `conn_max_idle_time` - (Optional) Maximum time a connection may sit idle in
   the pool before it is closed, in seconds. `0` means unlimited; `-1`
-  (default) auto-defaults to `30` when either `max_total_connections` or
-  `max_idle_connections` is set, so idle connections release their slot/pool
-  position periodically and don't become stale behind PgBouncer.
+  (default) auto-defaults to `30` when `max_idle_connections` is set, so idle
+  connections don't go stale behind PgBouncer.
 * `max_retries` - (Optional) Maximum number of times to retry starting a
   transaction on transient connection errors (`connection reset by peer`,
   broken pipe, `driver.ErrBadConn`, PgBouncer `admin_shutdown`, etc.).
@@ -230,38 +231,46 @@ beyond the pooler's per-user/per-pool limits and result in errors such as:
 Error: could not start transaction: read tcp ...->...:6432: read: connection reset by peer
 ```
 
-To bound this, set `max_total_connections` to a cap that fits within your
-PgBouncer limits, and `conn_max_idle_time` so idle connections release their
-slot periodically:
+To bound this, set `max_concurrent_databases` (how many distinct databases
+the provider may touch in parallel) and `max_connections` (per-database
+pool cap). The upper bound on physical TCP connections is the product of
+the two:
 
 ```hcl
 provider "postgresql" {
-  host                  = "pgbouncer.example.com"
-  port                  = 6432
-  username              = "tf"
-  password              = "..."
+  host                     = "pgbouncer.example.com"
+  port                     = 6432
+  username                 = "tf"
+  password                 = "..."
 
-  max_connections       = 5         # per-pool cap (unchanged behavior)
-  max_total_connections = 15        # cap across all per-database pools of this provider
-  max_idle_connections  = 3
-  conn_max_idle_time    = 30        # seconds
-  max_retries           = 3
+  max_concurrent_databases = 1         # only one database touched at a time
+  max_connections          = 1         # serialize within a database
+  max_idle_connections     = 0
+  conn_max_idle_time       = 30        # seconds
+  max_retries              = 5
 }
 ```
 
+With the values above, the provider holds at most one physical connection
+at any time — useful when your PgBouncer per-pool limit is small (e.g. 15)
+and you have many managed databases. Raise the numbers as you find slack:
+`max_concurrent_databases = 3, max_connections = 2` gives up to 6 concurrent
+connections.
+
 Guidelines:
 
-- `max_total_connections` must be set comfortably above `2 * terraform parallelism`
-  (terraform's default is `10`, so use at least `20`). This avoids deadlock when
-  one transaction holds a slot while a nested operation tries to open a second
-  connection to a different database.
-- `max_total_connections` only applies for `scheme = postgres` (the default).
-  For `gcppostgres`/`awspostgres` it is ignored; only `max_connections` (per
-  pool) is respected.
-- The cap is **per provider configuration**, not process-global. If you declare
-  multiple `provider "postgresql"` blocks (with `alias`), each one has its own
-  independent semaphore and its own pool registry — including when two blocks
-  target the same host/user/database with different settings.
+- `max_concurrent_databases` is reentrant by database: multiple goroutines
+  targeting the same database share a slot, so per-database parallelism is
+  preserved. Only goroutines targeting *different* databases beyond the cap
+  wait.
+- The limit is **in-process only**. Separate Terraform invocations
+  (parallel CI jobs, atlantis `--fast`, multiple PR plans against the same
+  database) each get their own scheduler. If cross-process coordination is
+  needed, throttle at the CI level (e.g. an atlantis concurrency group) or
+  ensure your PgBouncer pool is sized for the maximum expected number of
+  concurrent Terraform processes.
+- The cap is **per provider configuration**. Multiple `provider "postgresql"`
+  blocks (with `alias`) each have their own scheduler and pool registry.
 - The provider transparently retries BEGIN on transient connection errors
   (`connection reset by peer`, `broken pipe`, `driver.ErrBadConn`, PgBouncer
   `admin_shutdown`) up to `max_retries` times with exponential backoff. Only

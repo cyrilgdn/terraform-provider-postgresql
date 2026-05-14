@@ -29,11 +29,17 @@ const (
 
 func resourcePostgreSQLDatabase() *schema.Resource {
 	return &schema.Resource{
-		Create: PGResourceFunc(resourcePostgreSQLDatabaseCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLDatabaseRead),
-		Update: PGResourceFunc(resourcePostgreSQLDatabaseUpdate),
-		Delete: PGResourceFunc(resourcePostgreSQLDatabaseDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLDatabaseExists),
+		// Target DB for scheduler gating is the managed database itself
+		// (d.Get("name")), not the maintenance DB the meta-client connects
+		// to. Update's alter_object_ownership path opens a transaction
+		// against the managed DB (see setAlterOwnership), so without this
+		// override two postgresql_database resources for different names
+		// would slip through the cap=1 limit reentrantly.
+		Create: PGResourceFuncForDB(dbNameAttr, resourcePostgreSQLDatabaseCreate),
+		Read:   PGResourceFuncForDB(dbNameAttr, resourcePostgreSQLDatabaseRead),
+		Update: PGResourceFuncForDB(dbNameAttr, resourcePostgreSQLDatabaseUpdate),
+		Delete: PGResourceFuncForDB(dbNameAttr, resourcePostgreSQLDatabaseDelete),
+		Exists: PGResourceExistsFuncForDB(dbNameAttr, resourcePostgreSQLDatabaseExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
