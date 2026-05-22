@@ -26,6 +26,11 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
       - name: test
         run: make test
 
