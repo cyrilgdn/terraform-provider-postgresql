@@ -1,9 +1,11 @@
 package postgresql
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -100,6 +102,62 @@ func TestArePrivilegesEqual(t *testing.T) {
 		assert.NoError(t, err)
 		equal := resourcePrivilegesEqual(configuration.granted, configuration.d)
 		assert.Equal(t, configuration.assertion, equal)
+	}
+}
+
+func TestIsObjectNotFoundError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "undefined_table",
+			err:      &pq.Error{Code: "42P01", Message: "relation \"foo\" does not exist"},
+			expected: true,
+		},
+		{
+			name:     "undefined_function",
+			err:      &pq.Error{Code: "42883", Message: "function foo() does not exist"},
+			expected: true,
+		},
+		{
+			name:     "undefined_object",
+			err:      &pq.Error{Code: "42704", Message: "server \"foo\" does not exist"},
+			expected: true,
+		},
+		{
+			name:     "invalid_schema_name",
+			err:      &pq.Error{Code: "3F000", Message: "schema \"foo\" does not exist"},
+			expected: true,
+		},
+		{
+			name:     "wrapped pq error",
+			err:      fmt.Errorf("could not execute revoke query: %w", &pq.Error{Code: "42P01"}),
+			expected: true,
+		},
+		{
+			name:     "unrelated pq error",
+			err:      &pq.Error{Code: "42501", Message: "permission denied"},
+			expected: false,
+		},
+		{
+			name:     "non-pq error",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isObjectNotFoundError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }
 
