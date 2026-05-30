@@ -572,15 +572,25 @@ func pgLockRole(txn *sql.Tx, role string) error {
 	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
 		return fmt.Errorf("could not disable statement_timeout: %w", err)
 	}
-	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
-		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
-	}
 
+	// Acquire advisory locks on the role and all of its members in a single
+	// statement ordered by OID. Ordering guarantees that concurrent transactions
+	// acquire the shared locks in the same global order, which prevents the
+	// "deadlock detected" errors that occurred when two roles share members and
+	// the (previously unordered) member lock query returned them in different
+	// orders across sessions.
 	if _, err := txn.Exec(
-		"SELECT pg_advisory_xact_lock(member::bigint) FROM pg_auth_members JOIN pg_roles ON roleid = pg_roles.oid WHERE rolname = $1",
+		`SELECT pg_advisory_xact_lock(oid::bigint) FROM (
+			SELECT oid FROM pg_roles WHERE rolname = $1
+			UNION
+			SELECT member AS oid
+				FROM pg_auth_members
+				JOIN pg_roles ON roleid = pg_roles.oid
+				WHERE rolname = $1
+		) AS locks ORDER BY oid`,
 		role,
 	); err != nil {
-		return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
+		return fmt.Errorf("could not get advisory locks for role %s and its members: %w", role, err)
 	}
 
 	return nil
