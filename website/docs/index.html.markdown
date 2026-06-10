@@ -186,6 +186,8 @@ The following arguments are supported:
 * `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `gcp_iam_impersonate_service_account` - (Optional) Service account to impersonate when using GCP IAM authentication, see [GCP](#gcp).
+* `gcp_ip_type` - (Optional) (`gcppostgres` only) The IP address type of the Cloud SQL instance to connect to: `public` or `private`. If unset, the public IP is preferred and the private IP is used as a fallback. Set to `private` for instances without a public IP, see [GCP](#gcp).
 
 ## GoCloud
 
@@ -233,10 +235,27 @@ provider "postgresql" {
 }
 ```
 
-See also: 
+For instances that have no public IP (or to force the private connection path), set `gcp_ip_type` to `private`. The connection then targets the instance's private IP, so the machine running Terraform must have network access to it (e.g. it runs inside the VPC, or reaches it via VPC peering / Cloud VPN / a Cloud Build private worker pool):
+
+```hcl
+provider "postgresql" {
+  scheme   = "gcppostgres"
+  host     = "test-project/europe-west3/test-instance"
+  port     = 5432
+
+  username    = "postgres"
+  password    = "test1234"
+  gcp_ip_type = "private"
+
+  superuser = false
+}
+```
+
+See also:
 
 - https://cloud.google.com/docs/authentication/production
 - https://cloud.google.com/sql/docs/postgres/iam-logins
+- https://cloud.google.com/sql/docs/postgres/private-ip
 
 ---
 **Note**

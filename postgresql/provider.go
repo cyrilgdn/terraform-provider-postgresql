@@ -120,6 +120,17 @@ func Provider() *schema.Provider {
 				Description: "Service account to impersonate when using GCP IAM authentication.",
 			},
 
+			"gcp_ip_type": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "IP address type of the Cloud SQL instance to connect to: `public` or `private`. By default the public IP is preferred, falling back to the private IP.",
+				ValidateFunc: validation.StringInSlice([]string{
+					"public",
+					"private",
+				}, false),
+			},
+
 			// Connection username can be different than database username with user name maps (e.g.: in Azure)
 			// See https://www.postgresql.org/docs/current/auth-username-maps.html
 			"database_username": {
@@ -386,6 +397,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
+		GCPIPType:                       d.Get("gcp_ip_type").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
