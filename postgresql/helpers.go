@@ -279,13 +279,29 @@ var allowedPrivileges = map[string][]string{
 	"column":               {"ALL", "SELECT", "INSERT", "UPDATE", "REFERENCES"},
 }
 
+// allowedPrivilegesForObjectType returns the allowed privileges for a given object type,
+// including version-specific privileges (e.g. MAINTAIN for PG >= 17).
+// If db is nil, only base privileges are returned.
+func allowedPrivilegesForObjectType(objectType string, db *DBConnection) []string {
+	base, ok := allowedPrivileges[objectType]
+	if !ok {
+		return nil
+	}
+	if objectType == "table" && db != nil && db.featureSupported(featureMaintainPrivilege) {
+		extended := make([]string, len(base))
+		copy(extended, base)
+		return append(extended, "MAINTAIN")
+	}
+	return base
+}
+
 // validatePrivileges checks that privileges to apply are allowed for this object type.
-func validatePrivileges(d *schema.ResourceData) error {
+func validatePrivileges(db *DBConnection, d *schema.ResourceData) error {
 	objectType := d.Get("object_type").(string)
 	privileges := d.Get("privileges").(*schema.Set).List()
 
-	allowed, ok := allowedPrivileges[objectType]
-	if !ok {
+	allowed := allowedPrivilegesForObjectType(objectType, db)
+	if allowed == nil {
 		return fmt.Errorf("unknown object type %s", objectType)
 	}
 
@@ -297,7 +313,7 @@ func validatePrivileges(d *schema.ResourceData) error {
 	return nil
 }
 
-func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
+func resourcePrivilegesEqual(granted *schema.Set, db *DBConnection, d *schema.ResourceData) bool {
 	objectType := d.Get("object_type").(string)
 	wanted := d.Get("privileges").(*schema.Set)
 
@@ -312,7 +328,7 @@ func resourcePrivilegesEqual(granted *schema.Set, d *schema.ResourceData) bool {
 	// implicit check: e.g. for object_type schema -> ALL == ["CREATE", "USAGE"]
 	log.Printf("The wanted privilege is 'ALL'. therefore, we will check if the current privileges are ALL implicitly")
 	implicits := []any{}
-	for _, p := range allowedPrivileges[objectType] {
+	for _, p := range allowedPrivilegesForObjectType(objectType, db) {
 		if p != "ALL" {
 			implicits = append(implicits, p)
 		}

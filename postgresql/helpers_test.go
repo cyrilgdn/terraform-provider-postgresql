@@ -100,7 +100,7 @@ func TestArePrivilegesEqual(t *testing.T) {
 	for _, configuration := range tt {
 		err := configuration.d.Set("privileges", configuration.wanted)
 		assert.NoError(t, err)
-		equal := resourcePrivilegesEqual(configuration.granted, configuration.d)
+		equal := resourcePrivilegesEqual(configuration.granted, nil, configuration.d)
 		assert.Equal(t, configuration.assertion, equal)
 	}
 }
