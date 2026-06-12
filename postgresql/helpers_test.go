@@ -51,6 +51,7 @@ func TestQuoteTableName(t *testing.T) {
 var (
 	pg15 = semver.MustParse("15.0.0")
 	pg16 = semver.MustParse("16.0.0")
+	pg17 = semver.MustParse("17.0.0")
 )
 
 func TestArePrivilegesEqual(t *testing.T) {
@@ -90,27 +91,35 @@ func TestArePrivilegesEqual(t *testing.T) {
 			true,
 		},
 		{
-			"table ALL with MAINTAIN on pg16",
+			"table ALL without MAINTAIN on pg16",
 			buildResourceData("table", t),
-			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"),
+			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
 			buildPrivilegesSet("ALL"),
 			pg16,
 			true,
 		},
 		{
-			"table MAINTAIN in granted but pg15 expects no MAINTAIN - should drift",
+			"table ALL with MAINTAIN on pg17",
 			buildResourceData("table", t),
 			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"),
 			buildPrivilegesSet("ALL"),
-			pg15,
+			pg17,
+			true,
+		},
+		{
+			"table MAINTAIN in granted but pg16 expects no MAINTAIN - should drift",
+			buildResourceData("table", t),
+			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"),
+			buildPrivilegesSet("ALL"),
+			pg16,
 			false,
 		},
 		{
-			"table ALL missing MAINTAIN on pg16 - should drift",
+			"table ALL missing MAINTAIN on pg17 - should drift",
 			buildResourceData("table", t),
 			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
 			buildPrivilegesSet("ALL"),
-			pg16,
+			pg17,
 			false,
 		},
 		{
