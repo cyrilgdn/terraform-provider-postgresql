@@ -110,7 +110,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 	}
 	defer deferredRollback(txn)
 
-	return readRoleDefaultPrivileges(txn, d)
+	return readRoleDefaultPrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -138,7 +138,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
 	}
 
-	if err := validatePrivileges(d); err != nil {
+	if err := validatePrivileges(db, d); err != nil {
 		return err
 	}
 
@@ -185,7 +185,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
-	return readRoleDefaultPrivileges(txn, d)
+	return readRoleDefaultPrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -224,7 +224,7 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 	return nil
 }
 
-func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+func readRoleDefaultPrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
@@ -283,7 +283,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	privilegesSet := pgArrayToSet(privileges)
-	privilegesEqual := resourcePrivilegesEqual(privilegesSet, d)
+	privilegesEqual := resourcePrivilegesEqual(privilegesSet, db, d)
 
 	if !privilegesEqual {
 		d.Set("privileges", privilegesSet)
