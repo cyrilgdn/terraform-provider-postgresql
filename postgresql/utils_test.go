@@ -344,6 +344,44 @@ func createTestSequences(t *testing.T, dbSuffix string, sequences []string, owne
 	}
 }
 
+// Based on implementation from https://github.com/ricochet1k/terraform-provider-postgresql/commit/e351e932b97142ab7b55b1b943b0864a3e8953be
+// Original work by @ricochet1k
+func insertTestRows(t *testing.T, dbSuffix string, table string, columns []string, rows [][]interface{}) {
+	config := getTestConfig(t)
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	placeholders := ""
+	args := []interface{}{}
+	paramIndex := 1
+	for i, row := range rows {
+		if i > 0 {
+			placeholders += ", "
+		}
+		placeholders += "("
+		for j, col := range row {
+			if j > 0 {
+				placeholders += ", "
+			}
+			placeholders += fmt.Sprintf("$%d", paramIndex)
+			paramIndex++
+			args = append(args, col)
+		}
+		placeholders += ")"
+	}
+
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES %s;`, table, strings.Join(columns, ", "), placeholders)
+
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatalf("could not query %q: %v", query, err)
+	}
+}
+
 // testHasGrantForQuery executes a query and checks that it fails if
 // we were not allowed or success if we're allowed.
 func testHasGrantForQuery(db *sql.DB, query string, allowed bool) error {

@@ -223,6 +223,7 @@ func Provider() *schema.Provider {
 			"postgresql_schemas":   dataSourcePostgreSQLDatabaseSchemas(),
 			"postgresql_tables":    dataSourcePostgreSQLDatabaseTables(),
 			"postgresql_sequences": dataSourcePostgreSQLDatabaseSequences(),
+			"postgresql_query":     dataSourcePostgreSQLQuery(),
 		},
 
 		ConfigureFunc: providerConfigure,
