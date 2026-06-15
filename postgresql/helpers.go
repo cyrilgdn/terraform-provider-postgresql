@@ -615,6 +615,67 @@ func pgLockDatabase(txn *sql.Tx, database string) error {
 	return nil
 }
 
+func generateGrantLockID(database, objectType, schema, objectName string) string {
+	switch objectType {
+	case "database":
+		return fmt.Sprintf("grant:db:%s", database)
+
+	case "schema":
+		return fmt.Sprintf("grant:schema:%s.%s", database, schema)
+
+	case "foreign_data_wrapper":
+		return fmt.Sprintf("grant:fdw:%s.%s", database, objectName)
+
+	case "foreign_server":
+		return fmt.Sprintf("grant:srv:%s.%s", database, objectName)
+
+	case "table", "sequence", "column":
+		if objectName == "" {
+			return fmt.Sprintf("grant:schema:%s.%s", database, schema)
+		}
+		return fmt.Sprintf("grant:%s:%s.%s.%s", objectType, database, schema, objectName)
+
+	case "function", "procedure", "routine":
+		if objectName == "" {
+			return fmt.Sprintf("grant:schema:%s.%s", database, schema)
+		}
+		funcName := strings.Split(objectName, "(")[0]
+		return fmt.Sprintf("grant:%s:%s.%s.%s", objectType, database, schema, funcName)
+
+	default:
+		return fmt.Sprintf("grant:db:%s", database)
+	}
+}
+
+func pgLockGrantTarget(txn *sql.Tx, d *schema.ResourceData) error {
+	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("could not disable statement_timeout: %w", err)
+	}
+
+	database := d.Get("database").(string)
+	objectType := d.Get("object_type").(string)
+	schemaName := d.Get("schema").(string)
+	objects := d.Get("objects").(*schema.Set)
+
+	if objects.Len() == 0 || objectType == "database" || objectType == "schema" {
+		lockID := generateGrantLockID(database, objectType, schemaName, "")
+		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", lockID); err != nil {
+			return fmt.Errorf("could not acquire advisory lock for %s: %w", lockID, err)
+		}
+		return nil
+	}
+
+	for _, obj := range objects.List() {
+		objectName := obj.(string)
+		lockID := generateGrantLockID(database, objectType, schemaName, objectName)
+		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", lockID); err != nil {
+			return fmt.Errorf("could not acquire advisory lock for %s: %w", lockID, err)
+		}
+	}
+
+	return nil
+}
+
 func arrayDifference(a, b []any) (diff []any) {
 	m := make(map[any]bool)
 
