@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/lib/pq"
 )
 
 func TestAccPostgresqlDatabase_Basic(t *testing.T) {
@@ -556,3 +558,117 @@ resource "postgresql_database" "mydb_default_owner" {
 }
 
 `
+
+func TestAccPostgresqlDatabase_Parameters(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "test_params_db" {
+	name = "test_params_db"
+	
+	parameter {
+		name  = "work_mem"
+		value = "16MB"
+	}
+	
+	parameter {
+		name  = "max_parallel_workers"
+		value = "4"
+		quote = false
+	}
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_params_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_params_db", "name", "test_params_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_params_db", "parameter.#", "2"),
+					testAccCheckDatabaseParameter("postgresql_database.test_params_db", "work_mem", "16MB"),
+					testAccCheckDatabaseParameter("postgresql_database.test_params_db", "max_parallel_workers", "4"),
+				),
+			},
+			{
+				Config: `
+resource "postgresql_database" "test_params_db" {
+	name = "test_params_db"
+	
+	parameter {
+		name  = "work_mem"
+		value = "32MB"
+	}
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.test_params_db"),
+					resource.TestCheckResourceAttr("postgresql_database.test_params_db", "parameter.#", "1"),
+					testAccCheckDatabaseParameter("postgresql_database.test_params_db", "work_mem", "32MB"),
+				),
+			},
+		},
+	})
+}
+
+func testAccCheckDatabaseParameter(resourceName, paramName, expectedValue string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource not found: %s", resourceName)
+		}
+
+		dbName := rs.Primary.Attributes["name"]
+		if dbName == "" {
+			return fmt.Errorf("no database name set")
+		}
+
+		client := testAccProvider.Meta().(*Client)
+		db, err := client.Connect()
+		if err != nil {
+			return fmt.Errorf("could not connect to database: %v", err)
+		}
+
+		var setconfig pq.StringArray
+		err = db.QueryRow(`
+			SELECT s.setconfig 
+			FROM pg_database d
+			LEFT JOIN pg_db_role_setting s ON s.setdatabase = d.oid AND s.setrole = 0
+			WHERE d.datname = $1
+		`, dbName).Scan(&setconfig)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("error reading database configuration: %v", err)
+		}
+
+		// Check if the parameter is set with the expected value
+		expectedConfig := fmt.Sprintf("%s=%s", paramName, expectedValue)
+		found := false
+		for _, config := range setconfig {
+			// Remove surrounding quotes if present (for quoted values)
+			cleanConfig := config
+			if len(config) > 0 && strings.Contains(config, "=") {
+				parts := strings.SplitN(config, "=", 2)
+				if len(parts) == 2 {
+					value := parts[1]
+					// Remove surrounding quotes
+					if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+						value = value[1 : len(value)-1]
+					}
+					cleanConfig = parts[0] + "=" + value
+				}
+			}
+			if cleanConfig == expectedConfig {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Errorf("parameter %s not found with value %s in database configuration (found: %v)", paramName, expectedValue, setconfig)
+		}
+
+		return nil
+	}
+}

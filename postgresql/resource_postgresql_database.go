@@ -25,7 +25,14 @@ const (
 	dbTablespaceAttr       = "tablespace_name"
 	dbTemplateAttr         = "template"
 	dbAlterObjectOwnership = "alter_object_ownership"
+	dbParameterAttr        = "parameter"
+	dbParameterNameAttr    = "name"
+	dbParameterValueAttr   = "value"
+	dbParameterQuoteAttr   = "quote"
 )
+
+// These parameters are not supported by the parameter block as they have discrete attributes
+var ignoredDatabaseConfigurationParameters = []string{}
 
 func resourcePostgreSQLDatabase() *schema.Resource {
 	return &schema.Resource{
@@ -109,6 +116,36 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Default:     false,
 				Description: "If true, the owner of already existing objects will change if the owner changes",
 			},
+			dbParameterAttr: {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Description: "Configuration parameters",
+				Elem:        resourcePostgreSQLDatabaseConfigurationParameter(),
+			},
+		},
+	}
+}
+
+func resourcePostgreSQLDatabaseConfigurationParameter() *schema.Resource {
+	return &schema.Resource{
+		Schema: map[string]*schema.Schema{
+			dbParameterNameAttr: {
+				Type:         schema.TypeString,
+				Required:     true,
+				Description:  "Name of the configuration parameter to set",
+				ValidateFunc: validation.StringNotInSlice(ignoredDatabaseConfigurationParameters, true),
+			},
+			dbParameterValueAttr: {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Value of the configuration parameter",
+			},
+			dbParameterQuoteAttr: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "Quote the parameter value as a literal",
+			},
 		},
 	}
 }
@@ -119,6 +156,11 @@ func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) 
 	}
 
 	d.SetId(d.Get(dbNameAttr).(string))
+
+	// Set configuration parameters if any are specified
+	if err := setDatabaseConfigurationParameters(db, d); err != nil {
+		return err
+	}
 
 	return resourcePostgreSQLDatabaseReadImpl(db, d)
 }
@@ -392,6 +434,22 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		d.Set(dbIsTemplateAttr, dbIsTemplate)
 	}
 
+	// Read configuration parameters
+	var setconfig pq.StringArray
+	err = db.QueryRow(`
+		SELECT s.setconfig 
+		FROM pg_database d
+		LEFT JOIN pg_db_role_setting s ON s.setdatabase = d.oid AND s.setrole = 0
+		WHERE d.datname = $1
+	`, dbId).Scan(&setconfig)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error reading configuration parameters for DATABASE: %w", err)
+	}
+
+	if _, ok := d.GetOk(dbParameterAttr); ok {
+		d.Set(dbParameterAttr, readDatabaseParameters(setconfig, d.Get(dbParameterAttr).(*schema.Set)))
+	}
+
 	return nil
 }
 
@@ -421,6 +479,10 @@ func resourcePostgreSQLDatabaseUpdate(db *DBConnection, d *schema.ResourceData) 
 	}
 
 	if err := setDBIsTemplate(db, d); err != nil {
+		return err
+	}
+
+	if err := setDatabaseConfigurationParameters(db, d); err != nil {
 		return err
 	}
 
@@ -639,6 +701,94 @@ func terminateBConnections(db *DBConnection, dbName string) error {
 	terminateSql = fmt.Sprintf("SELECT pg_terminate_backend(%s) FROM pg_stat_activity WHERE datname = '%s' AND %s <> pg_backend_pid()", pid, dbName, pid)
 	if _, err := db.Exec(terminateSql); err != nil {
 		return fmt.Errorf("error terminating database connections: %w", err)
+	}
+
+	return nil
+}
+
+func readDatabaseParameters(setconfig pq.StringArray, existingParams *schema.Set) *schema.Set {
+	params := make([]interface{}, 0)
+	for _, v := range setconfig {
+		tokens := strings.Split(v, "=")
+		if len(tokens) == 2 && !sliceContainsStr(ignoredDatabaseConfigurationParameters, tokens[0]) {
+			quote := true
+			for _, p := range existingParams.List() {
+				existingParam := p.(map[string]interface{})
+				if existingParam[dbParameterNameAttr].(string) == tokens[0] {
+					quote = existingParam[dbParameterQuoteAttr].(bool)
+				}
+			}
+
+			// Remove surrounding quotes from the value if present
+			// PostgreSQL stores quoted values as: param="value" in setconfig
+			value := tokens[1]
+			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+				value = value[1 : len(value)-1]
+			}
+
+			params = append(params, map[string]interface{}{
+				dbParameterNameAttr:  tokens[0],
+				dbParameterValueAttr: value,
+				dbParameterQuoteAttr: quote,
+			})
+		}
+	}
+	return schema.NewSet(schema.HashResource(resourcePostgreSQLDatabaseConfigurationParameter()), params)
+}
+
+func setDatabaseConfigurationParameters(db *DBConnection, d *schema.ResourceData) error {
+	dbName := d.Get(dbNameAttr).(string)
+
+	// Get old and new parameter sets
+	var oldParams, newParams *schema.Set
+	if d.HasChange(dbParameterAttr) {
+		o, n := d.GetChange(dbParameterAttr)
+		oldParams = o.(*schema.Set)
+		newParams = n.(*schema.Set)
+	} else {
+		// During creation, there are no old params, only new ones
+		oldParams = schema.NewSet(schema.HashResource(resourcePostgreSQLDatabaseConfigurationParameter()), []interface{}{})
+		if v, ok := d.GetOk(dbParameterAttr); ok {
+			newParams = v.(*schema.Set)
+		} else {
+			// No parameters to set
+			return nil
+		}
+	}
+
+	// Reset parameters that were removed
+	for _, p := range oldParams.List() {
+		if !newParams.Contains(p) {
+			param := p.(map[string]interface{})
+			query := fmt.Sprintf(
+				"ALTER DATABASE %s RESET %s",
+				pq.QuoteIdentifier(dbName),
+				pq.QuoteIdentifier(param[dbParameterNameAttr].(string)))
+			log.Printf("[DEBUG] setDatabaseConfigurationParameters: %s", query)
+			if _, err := db.Exec(query); err != nil {
+				return fmt.Errorf("error resetting database parameter %s: %w", param[dbParameterNameAttr].(string), err)
+			}
+		}
+	}
+
+	// Set new or updated parameters
+	for _, p := range newParams.List() {
+		if !oldParams.Contains(p) {
+			param := p.(map[string]interface{})
+			value := param[dbParameterValueAttr].(string)
+			if param[dbParameterQuoteAttr].(bool) {
+				value = pq.QuoteLiteral(value)
+			}
+			query := fmt.Sprintf(
+				"ALTER DATABASE %s SET %s TO %s",
+				pq.QuoteIdentifier(dbName),
+				pq.QuoteIdentifier(param[dbParameterNameAttr].(string)),
+				value)
+			log.Printf("[DEBUG] setDatabaseConfigurationParameters: %s", query)
+			if _, err := db.Exec(query); err != nil {
+				return fmt.Errorf("error setting database parameter %s: %w", param[dbParameterNameAttr].(string), err)
+			}
+		}
 	}
 
 	return nil
