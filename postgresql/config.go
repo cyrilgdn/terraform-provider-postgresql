@@ -41,6 +41,7 @@ const (
 	featurePublishViaRoot
 	featurePubTruncate
 	featurePublication
+	featurePublicationSchemas
 	featurePubWithoutTruncate
 	featureFunction
 	featureServer
@@ -111,6 +112,9 @@ var (
 
 		// publication is Supported
 		featurePublication: semver.MustParseRange(">=10.0.0"),
+
+		// FOR TABLES IN SCHEMA support for publications
+		featurePublicationSchemas: semver.MustParseRange(">=15.0.0"),
 
 		// We do not support CREATE FUNCTION for Postgresql < 8.4
 		featureFunction: semver.MustParseRange(">=8.4.0"),
