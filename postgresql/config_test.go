@@ -22,6 +22,9 @@ func TestConfigConnParams(t *testing.T) {
 		{&Config{ExpectedVersion: semver.MustParse("8.0.0"), ApplicationName: "Terraform provider"}, []string{}},
 		{&Config{SSLClientCert: &ClientCertificateConfig{CertificatePath: "/path/to/public-certificate.pem", KeyPath: "/path/to/private-key.pem"}}, []string{"sslcert=%2Fpath%2Fto%2Fpublic-certificate.pem", "sslkey=%2Fpath%2Fto%2Fprivate-key.pem"}},
 		{&Config{SSLRootCertPath: "/path/to/root.pem"}, []string{"sslrootcert=%2Fpath%2Fto%2Froot.pem"}},
+		{&Config{Scheme: "postgres", SSLMode: "disable", BinaryParameters: true}, []string{"binary_parameters=yes", "connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "postgres", SSLMode: "disable", BinaryParameters: false}, []string{"connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "awspostgres", BinaryParameters: true}, []string{}},
 	}
 
 	for _, test := range tests {

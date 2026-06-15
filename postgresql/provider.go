@@ -199,6 +199,12 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"binary_parameters": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Use binary_parameters connection option to avoid prepared statements. Required when connecting through connection poolers like Odyssey in TRANSACTION mode.",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -386,6 +392,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
+		BinaryParameters:                d.Get("binary_parameters").(bool),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
