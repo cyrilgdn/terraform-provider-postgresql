@@ -251,7 +251,7 @@ func sliceContainsStr(haystack []string, needle string) bool {
 // see: https://www.postgresql.org/docs/current/sql-grant.html
 var allowedPrivileges = map[string][]string{
 	"database":             {"ALL", "CREATE", "CONNECT", "TEMPORARY"},
-	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"},
+	"table":                {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"},
 	"sequence":             {"ALL", "USAGE", "SELECT", "UPDATE"},
 	"schema":               {"ALL", "CREATE", "USAGE"},
 	"function":             {"ALL", "EXECUTE"},
