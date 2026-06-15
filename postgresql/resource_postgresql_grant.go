@@ -100,6 +100,12 @@ func resourcePostgreSQLGrant() *schema.Resource {
 				Default:     false,
 				Description: "Permit the grant recipient to grant it to others",
 			},
+			"ignore_object_not_found": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "If true, do not error when revoking privileges on an object that no longer exists",
+			},
 		},
 	}
 }
@@ -125,7 +131,15 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 	}
 	defer deferredRollback(txn)
 
-	return readRolePrivileges(txn, db, d)
+	if err = readRolePrivileges(txn, db, d); err != nil {
+		if d.Get("ignore_object_not_found").(bool) && isObjectNotFoundError(err) {
+			log.Printf("[WARN] Object not found during privilege read, removing from state: %v", err)
+			d.SetId("")
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -247,12 +261,20 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 
 	owners, err := getRolesToGrant(txn, d)
 	if err != nil {
+		if d.Get("ignore_object_not_found").(bool) {
+			log.Printf("[WARN] Could not determine object owners during grant delete (object may not exist), treating as already destroyed: %v", err)
+			return nil
+		}
 		return err
 	}
 
 	if err := withRolesGranted(txn, owners, func() error {
 		return revokeRolePrivileges(txn, d, false)
 	}); err != nil {
+		if d.Get("ignore_object_not_found").(bool) && isObjectNotFoundError(err) {
+			log.Printf("[WARN] Object not found during REVOKE, treating as already destroyed: %v", err)
+			return nil
+		}
 		return err
 	}
 
