@@ -47,3 +47,17 @@ resource "postgresql_grant_role" "bob_admin" {
 * `role` - (Required) The name of the role that is granted a new membership.
 * `grant_role` - (Required) The name of the role that is added to `role`.
 * `with_admin_option` - (Optional) Giving ability to grant membership to others or not for `role`. (Default: false)
+
+## Import
+
+`postgresql_grant_role` supports importing resources following the format:
+
+```
+<role>@<grant_role>
+```
+
+For example:
+
+```bash
+terraform import postgresql_grant_role.grant_role demo_role@demo_grant_role
+```
