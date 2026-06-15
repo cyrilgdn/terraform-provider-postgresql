@@ -192,6 +192,13 @@ func Provider() *schema.Provider {
 				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
+			"max_idle_connections": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      0,
+				Description:  "Maximum number of idle connections. Zero means no idle connections, useful when Db is managed in the same terraform state.",
+				ValidateFunc: validation.IntAtLeast(-1),
+			},
 			"expected_version": {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -383,6 +390,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ApplicationName:                 "Terraform provider",
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
 		MaxConns:                        d.Get("max_connections").(int),
+		MaxIDleConns:                    d.Get("max_idle_connections").(int),
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),

@@ -183,6 +183,7 @@ type Config struct {
 	Timeout                         int
 	ConnectTimeoutSec               int
 	MaxConns                        int
+	MaxIDleConns                    int
 	ExpectedVersion                 semver.Version
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
@@ -309,10 +310,7 @@ func (c *Client) Connect() (*DBConnection, error) {
 			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 		}
 
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dropped in the plan.
-		db.SetMaxIdleConns(0)
+		db.SetMaxIdleConns(c.config.MaxIDleConns)
 		db.SetMaxOpenConns(c.config.MaxConns)
 
 		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
