@@ -65,3 +65,30 @@ resource "postgresql_grant" "revoke_public" {
   privileges  = []
 }
 ```
+
+## Import
+
+`postgresql_grant` supports importing resources following the format:
+
+```
+<role>@<database>@<object_type>@[<schema>]@[<objects>]@[<columns>]@<with_grant_option>
+```
+
+Field positions have to be maintained. If the resource you are importing doesn't have a value
+for a field (`schema`, `objects` or `columns`), you should use an empty string for that field.
+
+For example:
+
+```tf
+resource "postgresql_grant" "demo" {
+  database    = "test_db"
+  role        = "demo"
+  schema      = "public"
+  object_type = "schema"
+  privileges  = ["USAGE", "CREATE"]
+}
+```
+
+```bash
+terraform import postgresql_grant.demo demo@test_db@schema@public@@@false
+```

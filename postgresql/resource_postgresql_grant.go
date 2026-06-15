@@ -1,9 +1,11 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -43,6 +45,9 @@ func resourcePostgreSQLGrant() *schema.Resource {
 		Update: PGResourceFunc(resourcePostgreSQLGrantUpdate),
 		Read:   PGResourceFunc(resourcePostgreSQLGrantRead),
 		Delete: PGResourceFunc(resourcePostgreSQLGrantDelete),
+		Importer: &schema.ResourceImporter{
+			StateContext: resourcePostgreSQLGrantImport,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -102,6 +107,68 @@ func resourcePostgreSQLGrant() *schema.Resource {
 			},
 		},
 	}
+}
+
+func resourcePostgreSQLGrantImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	importId := d.Id()
+	parts := strings.Split(importId, "@")
+
+	if len(parts) != 7 {
+		return nil, fmt.Errorf("invalid import id. Expected format: <role>@<database>@<object_type>@[<schema>]@[<objects>]@[<columns>]@<with_grant_option>. Got %s", importId)
+	}
+
+	role := parts[0]
+	d.Set("role", role)
+	database := parts[1]
+	d.Set("database", database)
+	objectType := parts[2]
+	d.Set("object_type", objectType)
+	schema_ := parts[3]
+	if objectType != "database" {
+		d.Set("schema", schema_)
+	}
+	objects := strings.Split(parts[4], ",")
+	if objectType == "database" || objectType == "schema" {
+		if parts[4] != "" {
+			return nil, fmt.Errorf("objects not expected for object type %s. Got: %s", objectType, parts[4])
+		}
+	} else {
+		if objectType == "column" {
+			if len(objects) != 1 {
+				return nil, fmt.Errorf("only one object is expected for object type %s. Got: %s", objectType, parts[4])
+			}
+		}
+		objectSet := schema.NewSet(schema.HashString, []any{})
+		for _, object := range objects {
+			objectSet.Add(object)
+		}
+		d.Set("objects", objectSet)
+	}
+
+	columns := strings.Split(parts[5], ",")
+	if objectType == "column" {
+		if len(columns) == 0 {
+			return nil, fmt.Errorf("expected at least one column for object type %s. Got: %s", objectType, parts[5])
+		}
+		columnSet := schema.NewSet(schema.HashString, []any{})
+		for _, column := range columns {
+			columnSet.Add(column)
+		}
+		d.Set("columns", columnSet)
+	} else {
+		if parts[5] != "" {
+			return nil, fmt.Errorf("columns not expected for object type %s. Got: %s", objectType, parts[5])
+		}
+	}
+
+	withGrantOption, err := strconv.ParseBool(parts[6])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing with_grant_option: %w. Got: %s", err, parts[6])
+	}
+	d.Set("with_grant_option", withGrantOption)
+
+	d.SetId(generateGrantID(d)) // Import ID is the same as the generated ID for backwards compatibility
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error {
