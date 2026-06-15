@@ -45,6 +45,7 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "valid_until", "infinity"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_drop_role", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_reassign_owned", "false"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "reassign_owned_to", ""),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "idle_in_transaction_session_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "assume_role", ""),
@@ -232,6 +233,43 @@ resource "postgresql_role" "test_role" {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlRoleExists("test_role", []string{admin}, nil),
 					resource.TestCheckResourceAttr("postgresql_role.test_role", "name", "test_role"),
+				),
+			},
+		},
+	})
+}
+
+// Test reassign_owned_to parameter
+func TestAccPostgresqlRole_ReassignOwnedTo(t *testing.T) {
+	// Get the admin user (usually postgres) who will receive the reassigned objects
+	admin := os.Getenv("PGUSER")
+	if admin == "" {
+		admin = "postgres"
+	}
+
+	config := fmt.Sprintf(`
+resource "postgresql_role" "temp_role" {
+  name              = "temp_role"
+  login             = true
+  password          = "temppass"
+  reassign_owned_to = "%s"
+}
+`, admin)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("temp_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.temp_role", "name", "temp_role"),
+					resource.TestCheckResourceAttr("postgresql_role.temp_role", "reassign_owned_to", admin),
 				),
 			},
 		},

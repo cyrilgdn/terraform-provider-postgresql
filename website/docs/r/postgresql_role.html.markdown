@@ -52,6 +52,14 @@ resource "postgresql_role" "secure_role" {
   password_wo         = "secure_password_123"
   password_wo_version = "1"
 }
+
+# Example with reassign_owned_to
+resource "postgresql_role" "temp_role" {
+  name              = "temp_role"
+  login             = true
+  password          = "temppass"
+  reassign_owned_to = "admin_role"  # Objects will be reassigned to admin_role when this role is dropped
+}
 ```
 
 ## Write-Only Password Management
@@ -165,6 +173,10 @@ resource "postgresql_role" "app_user" {
   second steps taken when removing a ROLE from a database (the second step being
   an implicit
   [`DROP OWNED`](https://www.postgresql.org/docs/current/static/sql-drop-owned.html)).
+
+* `reassign_owned_to` - (Optional) Specifies the role to which objects owned by the role being
+  dropped should be reassigned. If not specified, defaults to the current database user
+  (the user configured in the provider). This is only used when `skip_reassign_owned` is `false`.
 
 * `statement_timeout` - (Optional) Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) setting for this role which allows to abort any statement that takes more than the specified amount of time.
 
