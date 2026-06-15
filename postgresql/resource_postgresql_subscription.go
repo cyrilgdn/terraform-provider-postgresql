@@ -15,6 +15,7 @@ func resourcePostgreSQLSubscription() *schema.Resource {
 	return &schema.Resource{
 		Create:   PGResourceFunc(resourcePostgreSQLSubscriptionCreate),
 		Read:     PGResourceFunc(resourcePostgreSQLSubscriptionRead),
+		Update:   PGResourceFunc(resourcePostgreSQLSubscriptionUpdate),
 		Delete:   PGResourceFunc(resourcePostgreSQLSubscriptionDelete),
 		Exists:   PGResourceExistsFunc(resourcePostgreSQLSubscriptionExists),
 		Importer: &schema.ResourceImporter{StateContext: schema.ImportStatePassthroughContext},
@@ -62,6 +63,12 @@ func resourcePostgreSQLSubscription() *schema.Resource {
 				ForceNew:     true,
 				Description:  "Name of the replication slot to use. The default behavior is to use the name of the subscription for the slot name",
 				ValidateFunc: validation.StringIsNotEmpty,
+			},
+			"enabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "Specifies whether the subscription should be actively replicating or whether it should just be set up but not started yet. The default is true.",
 			},
 		},
 	}
@@ -123,6 +130,7 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	var publications []string
 	var connInfo string
 	var slotName string
+	var enabled bool
 
 	var subExists bool
 	queryExists := "SELECT TRUE FROM pg_catalog.pg_stat_subscription WHERE subname = $1"
@@ -138,8 +146,8 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	}
 
 	// pg_subscription requires superuser permissions, it is okay to fail here
-	query := "SELECT subconninfo, subpublications, subslotname FROM pg_catalog.pg_subscription WHERE subname = $1"
-	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&connInfo, pq.Array(&publications), &slotName)
+	query := "SELECT subconninfo, subpublications, subslotname, subenabled FROM pg_catalog.pg_subscription WHERE subname = $1"
+	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&connInfo, pq.Array(&publications), &slotName, &enabled)
 
 	if err != nil {
 		// we already checked that the subscription exists
@@ -155,9 +163,14 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 		}
 		publications := setPublications.(*schema.Set).List()
 		d.Set("publications", publications)
+		
+		// Set enabled from config since we can't read it from the database
+		enabled := d.Get("enabled").(bool)
+		d.Set("enabled", enabled)
 	} else {
 		d.Set("conninfo", connInfo)
 		d.Set("publications", publications)
+		d.Set("enabled", enabled)
 	}
 	d.Set("name", subName)
 	d.Set("database", databaseName)
@@ -173,6 +186,36 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 	}
 
 	return nil
+}
+
+func resourcePostgreSQLSubscriptionUpdate(db *DBConnection, d *schema.ResourceData) error {
+	subName := d.Get("name").(string)
+	databaseName := getDatabaseForSubscription(d, db.client.databaseName)
+
+	// Check if enabled has changed
+	if d.HasChange("enabled") {
+		enabled := d.Get("enabled").(bool)
+
+		// Subscription operations cannot be done in a transaction
+		client := db.client.config.NewClient(databaseName)
+		conn, err := client.Connect()
+		if err != nil {
+			return fmt.Errorf("could not establish database connection: %w", err)
+		}
+
+		var sql string
+		if enabled {
+			sql = fmt.Sprintf("ALTER SUBSCRIPTION %s ENABLE", pq.QuoteIdentifier(subName))
+		} else {
+			sql = fmt.Sprintf("ALTER SUBSCRIPTION %s DISABLE", pq.QuoteIdentifier(subName))
+		}
+
+		if _, err := conn.Exec(sql); err != nil {
+			return fmt.Errorf("could not execute sql: %w", err)
+		}
+	}
+
+	return resourcePostgreSQLSubscriptionReadImpl(db, d)
 }
 
 func resourcePostgreSQLSubscriptionDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -312,8 +355,9 @@ func getOptionalParameters(d *schema.ResourceData) string {
 
 	createSlot, okCreate := d.GetOkExists("create_slot") //nolint:staticcheck
 	slotName, okName := d.GetOk("slot_name")
+	enabled, okEnabled := d.GetOkExists("enabled") //nolint:staticcheck
 
-	if !okCreate && !okName {
+	if !okCreate && !okName && !okEnabled {
 		// use default behavior, no WITH statement
 		return ""
 	}
@@ -324,6 +368,9 @@ func getOptionalParameters(d *schema.ResourceData) string {
 	}
 	if okName {
 		params = append(params, fmt.Sprintf("%s = %s", "slot_name", pq.QuoteLiteral(slotName.(string))))
+	}
+	if okEnabled {
+		params = append(params, fmt.Sprintf("%s = %t", "enabled", enabled.(bool)))
 	}
 
 	returnValue = fmt.Sprintf(parameterSQLTemplate, strings.Join(params, ", "))
