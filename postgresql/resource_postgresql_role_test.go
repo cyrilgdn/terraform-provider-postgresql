@@ -38,6 +38,7 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "create_role", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "inherit", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "replication", "false"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "enable_logs", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "bypass_row_level_security", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "connection_limit", "-1"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "encrypted_password", "true"),
@@ -116,6 +117,7 @@ resource "postgresql_role" "group_role" {
 resource "postgresql_role" "update_role" {
   name = "update_role2"
   login = true
+  enable_logs = false
   connection_limit = 5
   password = "titi"
   roles = ["${postgresql_role.group_role.name}"]
@@ -147,6 +149,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "enable_logs", "false"),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
@@ -168,6 +171,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "30000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "60000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", "group_role"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "enable_logs", "false"),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
 			},
@@ -186,6 +190,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "enable_logs", "false"),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
@@ -432,6 +437,7 @@ resource "postgresql_role" "role_with_defaults" {
   statement_timeout = 0
   idle_in_transaction_session_timeout = 0
   assume_role = ""
+  enable_logs = false
 }
 
 resource "postgresql_role" "role_with_create_database" {
@@ -451,6 +457,13 @@ resource "postgresql_role" "role_with_search_path" {
   name = "role_with_search_path"
   search_path = ["bar", "foo-with-hyphen"]
 }
+
+resource "postgresql_role" "role_with_log_enabled" {
+	name = "role_with_log_enabled"
+	login = true
+	password = "mypass"
+	enable_logs = false
+  }
 `
 
 func TestAccPostgresqlRole_WriteOnlyPassword_Basic(t *testing.T) {
