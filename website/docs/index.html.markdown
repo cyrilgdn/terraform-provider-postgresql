@@ -186,6 +186,7 @@ The following arguments are supported:
 * `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `azure_environment` - (Optional) The Azure Cloud environment. Possible values are `public`, `usgovernment` and `china`. Defaults to `public`.
 
 ## GoCloud
 

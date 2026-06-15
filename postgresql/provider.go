@@ -7,9 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -21,9 +22,22 @@ import (
 )
 
 const (
-	defaultProviderMaxOpenConnections = 20
-	defaultExpectedPostgreSQLVersion  = "9.0.0"
+	defaultProviderMaxOpenConnections                   = 20
+	defaultExpectedPostgreSQLVersion                    = "9.0.0"
+	serviceName                       cloud.ServiceName = "ossrdbms-aad"
 )
+
+func init() {
+	cloud.AzureChina.Services[serviceName] = cloud.ServiceConfiguration{
+		Audience: "https://ossrdbms-aad.database.chinacloudapi.cn",
+	}
+	cloud.AzureGovernment.Services[serviceName] = cloud.ServiceConfiguration{
+		Audience: "https://ossrdbms-aad.database.usgovcloudapi.net",
+	}
+	cloud.AzurePublic.Services[serviceName] = cloud.ServiceConfiguration{
+		Audience: "https://ossrdbms-aad.database.windows.net",
+	}
+}
 
 // Provider returns a terraform.ResourceProvider.
 func Provider() *schema.Provider {
@@ -104,6 +118,13 @@ func Provider() *schema.Provider {
 				Optional: true,
 				Description: "Use MS Azure identity OAuth token " +
 					"(see: https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication)",
+			},
+
+			"azure_environment": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "public",
+				Description: "MS Azure Cloud environment (see: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs#environment)",
 			},
 
 			"azure_tenant_id": {
@@ -314,14 +335,25 @@ func createGoogleCredsFileIfNeeded() error {
 	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
 }
 
-func acquireAzureOauthToken(tenantId string) (string, error) {
+func acquireAzureOauthToken(environment, tenantId string) (string, error) {
+	cloudConfig, err := cloudConfigFromName(environment)
+	if err != nil {
+		return "", err
+	}
 	credential, err := azidentity.NewDefaultAzureCredential(
-		&azidentity.DefaultAzureCredentialOptions{TenantID: tenantId})
+		&azidentity.DefaultAzureCredentialOptions{
+			ClientOptions: azcore.ClientOptions{
+				Cloud: cloudConfig,
+			},
+			TenantID: tenantId,
+		})
 	if err != nil {
 		return "", err
 	}
 	token, err := credential.GetToken(context.Background(), policy.TokenRequestOptions{
-		Scopes:   []string{"https://ossrdbms-aad.database.windows.net/.default"},
+		Scopes: []string{
+			cloudConfig.Services[serviceName].Audience + "/.default",
+		},
 		TenantID: tenantId,
 	})
 	if err != nil {
@@ -358,12 +390,13 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 			return nil, err
 		}
 	} else if d.Get("azure_identity_auth").(bool) {
+		environment := d.Get("azure_environment").(string)
 		tenantId := d.Get("azure_tenant_id").(string)
 		if tenantId == "" {
 			return nil, fmt.Errorf("postgresql: azure_identity_auth is enabled, azure_tenant_id must be provided also")
 		}
 		var err error
-		password, err = acquireAzureOauthToken(tenantId)
+		password, err = acquireAzureOauthToken(environment, tenantId)
 		if err != nil {
 			return nil, err
 		}
