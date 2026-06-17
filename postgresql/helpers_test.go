@@ -71,7 +71,7 @@ func TestArePrivilegesEqual(t *testing.T) {
 		},
 		{
 			buildResourceData("table", t),
-			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"),
+			buildPrivilegesSet("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"),
 			buildPrivilegesSet("ALL"),
 			true,
 		},
