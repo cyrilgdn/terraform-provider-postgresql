@@ -23,6 +23,10 @@ const (
 	roleCreateRoleAttr                      = "create_role"
 	roleEncryptedPassAttr                   = "encrypted_password"
 	roleIdleInTransactionSessionTimeoutAttr = "idle_in_transaction_session_timeout"
+	roleLogMinDurationStatementAttr         = "log_min_duration_statement"
+	roleLogMinDurationSampleAttr            = "log_min_duration_sample"
+	roleLogStatementSampleRateAttr          = "log_statement_sample_rate"
+	roleLogTransactionSampleRateAttr        = "log_transaction_sample_rate"
 	roleInheritAttr                         = "inherit"
 	roleLoginAttr                           = "login"
 	roleNameAttr                            = "name"
@@ -145,6 +149,30 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:     true,
 				Description:  "Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds",
 				ValidateFunc: validation.IntAtLeast(0),
+			},
+			roleLogMinDurationStatementAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Log a completed statement if it ran for at least the specified amount of time in milliseconds.",
+				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			roleLogMinDurationSampleAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Allows sampling the duration of completed statements that ran for at least the specified amount of time. Sample rate is controlled by log_statement_sample_rate.",
+				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			roleLogStatementSampleRateAttr: {
+				Type:         schema.TypeFloat,
+				Optional:     true,
+				Description:  "Determines the fraction of statements with duration exceeding log_min_duration_sample that will be logged.",
+				ValidateFunc: validation.FloatBetween(0, 1),
+			},
+			roleLogTransactionSampleRateAttr: {
+				Type:         schema.TypeFloat,
+				Optional:     true,
+				Description:  "Sets the fraction of transactions whose statements are all logged, in addition to statements logged for other reasons.",
+				ValidateFunc: validation.FloatBetween(0, 1),
 			},
 			roleInheritAttr: {
 				Type:        schema.TypeBool,
@@ -366,6 +394,22 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = setLogMinDurationStatement(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogMinDurationSample(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogStatementSampleRate(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogTransactionSampleRate(txn, d); err != nil {
+		return err
+	}
+
 	if err = setAssumeRole(txn, d); err != nil {
 		return err
 	}
@@ -531,6 +575,34 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
 
+	logMinDurationStatement, err := readLogMinDurationStatement(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleLogMinDurationStatementAttr, logMinDurationStatement)
+
+	logMinDurationSample, err := readLogMinDurationSample(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleLogMinDurationSampleAttr, logMinDurationSample)
+
+	logStatementSampleRate, err := readLogStatementSampleRate(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleLogStatementSampleRateAttr, logStatementSampleRate)
+
+	logTransactionSampleRate, err := readLogTransactionSampleRate(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleLogTransactionSampleRateAttr, logTransactionSampleRate)
+
 	d.SetId(roleName)
 
 	if _, ok := d.GetOk(rolePasswordAttr); ok {
@@ -569,6 +641,75 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
 				return -1, fmt.Errorf("error reading statement_timeout: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+// readLogMinDurationStatement searches for an log_min_duration_statement entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readLogMinDurationStatement(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, rolelogMinDurationStatementAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, rolelogMinDurationStatementAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("Error reading log_min_duration_statement: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+// readLogMinDurationSample searches for an log_statement_sample_rate entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readLogMinDurationSample(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, rolelogMinDurationSampleAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, rolelogMinDurationSampleAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("Error reading log_min_duration_sample: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+// readLogStatementSampleRate searches for an log_transaction_sample_rate entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readLogStatementSampleRate(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, rolelogStatementSampleRateAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, rolelogStatementSampleRateAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("Error reading log_statement_sample_rate", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+
+// readLogTransactionSampleRate searches for an log_transaction_sample_rate entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readLogTransactionSampleRate(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, rolelogTransactionSampleRateAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, rolelogTransactionSampleRateAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("Error reading log_transaction_sample_rate", err)
 			}
 			return res, nil
 		}
@@ -742,6 +883,22 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogMinDurationStatement(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogMinDurationSample(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogStatementSampleRate(txn, d); err != nil {
+		return err
+	}
+
+	if err = setLogTransactionSampleRate(txn, d); err != nil {
 		return err
 	}
 
@@ -1114,6 +1271,106 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setLogMinDurationStatement(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleLogMinDurationStatementAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	logMinDurationStatement := d.Get(roleLogMinDurationStatementAttr).(int)
+	if logMinDurationStatement != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET log_min_duration_statement TO %d", pq.QuoteIdentifier(roleName), logMinDurationStatement,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set log_min_duration_statement %d for %s: %w", logMinDurationStatement, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET log_min_duration_statement", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset log_min_duration_statement for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setLogMinDurationSample(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleLogMinDurationSampleAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	logMinDurationSample := d.Get(roleLogMinDurationSampleAttr).(int)
+	if logMinDurationSample != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET log_min_duration_sample TO %d", pq.QuoteIdentifier(roleName), logMinDurationSample,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set log_min_duration_sample %d for %s: %w", logMinDurationSample, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET log_min_duration_sample", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset log_min_duration_sample for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setLogStatementSampleRate(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleLogStatementSampleRateAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	logStatementSampleRate := d.Get(roleLogStatementSampleRateAttr).(int)
+	if logStatementSampleRate != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET log_statement_sample_rate TO %d", pq.QuoteIdentifier(roleName), logStatementSampleRate,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set log_statement_sample_rate %d for %s: %w", logStatementSampleRate, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET log_statement_sample_rate", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset log_statement_sample_rate for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setLogTransactionSampleRate(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleLogTransactionSampleRateAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	logTransactionSampleRate := d.Get(roleLogTransactionSampleRateAttr).(int)
+	if logTransactionSampleRate != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET log_transaction_sample_rate TO %d", pq.QuoteIdentifier(roleName), logTransactionSampleRate,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set log_transaction_sample_rate %d for %s: %w", logTransactionSampleRate, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET log_transaction_sample_rate", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset log_transaction_sample_rate for %s: %w", roleName, err)
 		}
 	}
 	return nil
