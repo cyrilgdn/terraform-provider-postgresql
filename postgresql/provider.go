@@ -199,6 +199,12 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"disabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Disable the provider from making any changes to PostgreSQL. When set to true, the provider will not connect to the database.",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -331,6 +337,11 @@ func acquireAzureOauthToken(tenantId string) (string, error) {
 }
 
 func providerConfigure(d *schema.ResourceData) (any, error) {
+	// If disabled, return nil to prevent any database connections
+	if d.Get("disabled").(bool) {
+		return nil, nil
+	}
+
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
 		sslMode = sslModeRaw.(string)
