@@ -36,6 +36,7 @@ const (
 	roleValidUntilAttr                      = "valid_until"
 	roleRolesAttr                           = "roles"
 	roleSearchPathAttr                      = "search_path"
+	roleSearchPathDBAttr                    = "search_path_db"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
 
@@ -102,6 +103,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				MinItems:    0,
 				Description: "Sets the role's search path",
+			},
+			roleSearchPathDBAttr: {
+				Type:        schema.TypeMap,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "Sets the role's search path for specific databases",
 			},
 			roleEncryptedPassAttr: {
 				Type:        schema.TypeBool,
@@ -358,6 +365,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = alterSearchPathDB(txn, d); err != nil {
+		return err
+	}
+
 	if err = setStatementTimeout(txn, d); err != nil {
 		return err
 	}
@@ -515,6 +526,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleBypassRLSAttr, roleBypassRLS)
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
+	
+	searchPathDB, err := readSearchPathDB(db, roleName)
+	if err != nil {
+		return err
+	}
+	d.Set(roleSearchPathDBAttr, searchPathDB)
+	
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
@@ -557,6 +575,48 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 		}
 	}
 	return nil
+}
+
+// readSearchPathDB reads database-specific search_path values for a role.
+// It returns a map of database names to search_path values.
+func readSearchPathDB(db *DBConnection, roleName string) (map[string]interface{}, error) {
+	searchPathDBMap := make(map[string]interface{})
+	
+	// Query to get database-specific search_path settings
+	query := `
+		SELECT d.datname, unnest(rs.setconfig) as config
+		FROM pg_db_role_setting rs
+		JOIN pg_database d ON rs.setdatabase = d.oid
+		JOIN pg_roles r ON rs.setrole = r.oid
+		WHERE r.rolname = $1
+	`
+	
+	rows, err := db.Query(query, roleName)
+	if err != nil {
+		return searchPathDBMap, fmt.Errorf("Error reading search_path_db settings: %w", err)
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var dbName, configItem string
+		if err := rows.Scan(&dbName, &configItem); err != nil {
+			return searchPathDBMap, fmt.Errorf("Error scanning search_path_db row: %w", err)
+		}
+		
+		// Only process search_path settings
+		if strings.HasPrefix(configItem, "search_path=") {
+			path := strings.TrimPrefix(configItem, "search_path=")
+			// Remove quotes if present
+			path = strings.Trim(path, `"`)
+			searchPathDBMap[dbName] = path
+		}
+	}
+	
+	if err := rows.Err(); err != nil {
+		return searchPathDBMap, fmt.Errorf("Error iterating search_path_db rows: %w", err)
+	}
+	
+	return searchPathDBMap, nil
 }
 
 // readIdleInTransactionSessionTimeout searches for an idle_in_transaction_session_timeout entry in the rolconfig array.
@@ -734,6 +794,10 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = alterSearchPath(txn, d); err != nil {
+		return err
+	}
+
+	if err = alterSearchPathDB(txn, d); err != nil {
 		return err
 	}
 
@@ -1065,6 +1129,40 @@ func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
 	)
 	if _, err := txn.Exec(query); err != nil {
 		return fmt.Errorf("could not set search_path %s for %s: %w", searchPath, role, err)
+	}
+	return nil
+}
+
+func alterSearchPathDB(txn *sql.Tx, d *schema.ResourceData) error {
+	role := d.Get(roleNameAttr).(string)
+	searchPathDBMap := d.Get(roleSearchPathDBAttr).(map[string]interface{})
+
+	// Nothing to do if map is empty
+	if len(searchPathDBMap) == 0 {
+		return nil
+	}
+
+	for dbName, searchPathValue := range searchPathDBMap {
+		searchPathString := searchPathValue.(string)
+		if strings.Contains(searchPathString, ", ") {
+			return fmt.Errorf("search_path_db values cannot contain `, `: %v", searchPathString)
+		}
+
+		// Verify the searchPathString isn't empty
+		if searchPathString == "" {
+			return fmt.Errorf("empty search_path value for database %s", dbName)
+		}
+
+		query := fmt.Sprintf(
+			"ALTER ROLE %s IN DATABASE %s SET search_path TO %s",
+			pq.QuoteIdentifier(role),
+			pq.QuoteIdentifier(dbName),
+			pq.QuoteIdentifier(searchPathString),
+		)
+		if _, err := txn.Exec(query); err != nil {
+			return fmt.Errorf("could not set search_path %s for %s in database %s: %w", 
+				searchPathString, role, dbName, err)
+		}
 	}
 	return nil
 }

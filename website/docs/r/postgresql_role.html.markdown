@@ -143,6 +143,12 @@ resource "postgresql_role" "app_user" {
   due to limitations in the implementation, values cannot contain the substring
   `", "`.
 
+* `search_path_db` - (Optional) Alters the search path of this role for specific databases.
+  This is a map where keys are database names and values are schema names.
+  For example, setting `search_path_db = { "db1" = "schema1", "db2" = "schema2" }` will
+  generate `ALTER ROLE role_name IN DATABASE db1 SET search_path TO schema1` and
+  `ALTER ROLE role_name IN DATABASE db2 SET search_path TO schema2`.
+
 * `valid_until` - (Optional) Defines the date and time after which the role's
   password is no longer valid.  Established connections past this `valid_time`
   will have to be manually terminated.  This value corresponds to a PostgreSQL
