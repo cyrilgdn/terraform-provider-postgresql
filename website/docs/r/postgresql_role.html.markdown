@@ -168,6 +168,12 @@ resource "postgresql_role" "app_user" {
 
 * `statement_timeout` - (Optional) Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) setting for this role which allows to abort any statement that takes more than the specified amount of time.
 
+* `idle_in_transaction_session_timeout` - (Optional) Defines [`idle_in_transaction_session_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-IDLE-IN-TRANSACTION-SESSION-TIMEOUT) setting for this role which terminates any session with an open transaction idle for longer than the specified number of milliseconds.
+
+* `client_connection_check_interval` - (Optional) Defines [`client_connection_check_interval`](https://www.postgresql.org/docs/current/runtime-config-connection.html#GUC-CLIENT-CONNECTION-CHECK-INTERVAL) setting for this role which sets the interval in milliseconds between checks that the client is still connected while running a query; `0` (default) disables the checks.
+
+* `parameters` - (Optional) A map of arbitrary per-role configuration parameters applied via [`ALTER ROLE ... SET`](https://www.postgresql.org/docs/current/sql-alterrole.html) (e.g. `lock_timeout`, `work_mem`, `default_transaction_isolation`). Removing a key resets it to the cluster default. Namespaced GUCs such as `pgaudit.log` are allowed. Keys managed by a dedicated attribute (`search_path`, `statement_timeout`, `idle_in_transaction_session_timeout`, `client_connection_check_interval`) are rejected here. The value must match the form PostgreSQL stores in `pg_roles.rolconfig`, otherwise the plan may show perpetual drift.
+
 * `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
 
 ## Import Example

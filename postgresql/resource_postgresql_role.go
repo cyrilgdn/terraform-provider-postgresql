@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,6 +24,7 @@ const (
 	roleCreateRoleAttr                      = "create_role"
 	roleEncryptedPassAttr                   = "encrypted_password"
 	roleIdleInTransactionSessionTimeoutAttr = "idle_in_transaction_session_timeout"
+	roleClientConnectionCheckIntervalAttr   = "client_connection_check_interval"
 	roleInheritAttr                         = "inherit"
 	roleLoginAttr                           = "login"
 	roleNameAttr                            = "name"
@@ -38,10 +40,26 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleParametersAttr                      = "parameters"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
 )
+
+// roleReservedParameters are GUCs already managed by dedicated typed attributes;
+// they must not be set through the generic `parameters` map to avoid two
+// attributes fighting over the same rolconfig entry.
+var roleReservedParameters = map[string]bool{
+	roleSearchPathAttr:                      true,
+	roleStatementTimeoutAttr:                true,
+	roleIdleInTransactionSessionTimeoutAttr: true,
+	roleClientConnectionCheckIntervalAttr:   true,
+}
+
+// validRoleParameterName guards against SQL injection via GUC names, which are
+// interpolated unquoted into ALTER ROLE ... SET. Allows an optional single
+// namespace prefix (e.g. `pgaudit.log`).
+var validRoleParameterName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$`)
 
 func resourcePostgreSQLRole() *schema.Resource {
 	return &schema.Resource{
@@ -146,6 +164,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Description:  "Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
+			roleClientConnectionCheckIntervalAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Sets the time interval in milliseconds between checks that the client is still connected while running queries; 0 disables the checks",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
 			roleInheritAttr: {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -192,6 +216,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role to switch to at login",
+			},
+			roleParametersAttr: {
+				Type:        schema.TypeMap,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "Arbitrary per-role configuration parameters (ALTER ROLE ... SET key TO value). Keys managed by dedicated attributes (search_path, statement_timeout, idle_in_transaction_session_timeout, client_connection_check_interval) are not allowed here.",
 			},
 		},
 	}
@@ -366,7 +396,15 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = setClientConnectionCheckInterval(txn, d); err != nil {
+		return err
+	}
+
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setRoleParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -531,6 +569,15 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
 
+	clientConnectionCheckInterval, err := readClientConnectionCheckInterval(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleClientConnectionCheckIntervalAttr, clientConnectionCheckInterval)
+
+	d.Set(roleParametersAttr, readRoleParameters(roleConfig))
+
 	d.SetId(roleName)
 
 	if _, ok := d.GetOk(rolePasswordAttr); ok {
@@ -569,6 +616,42 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 			res, err := strconv.Atoi(result[0])
 			if err != nil {
 				return -1, fmt.Errorf("error reading statement_timeout: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+// readRoleParameters parses the rolconfig array into a map of GUC name -> value,
+// skipping keys that are managed by dedicated typed attributes.
+func readRoleParameters(roleConfig pq.ByteaArray) map[string]string {
+	params := make(map[string]string)
+	for _, v := range roleConfig {
+		config := string(v)
+		parts := strings.SplitN(config, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := parts[0]
+		if roleReservedParameters[key] {
+			continue
+		}
+		params[key] = parts[1]
+	}
+	return params
+}
+
+// readClientConnectionCheckInterval searches for a client_connection_check_interval entry in the rolconfig array.
+// In case no such value is present, it returns 0.
+func readClientConnectionCheckInterval(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, roleClientConnectionCheckIntervalAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, roleClientConnectionCheckIntervalAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("error reading client_connection_check_interval: %w", err)
 			}
 			return res, nil
 		}
@@ -745,7 +828,15 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = setClientConnectionCheckInterval(txn, d); err != nil {
+		return err
+	}
+
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setRoleParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -1114,6 +1205,73 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setClientConnectionCheckInterval(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleClientConnectionCheckIntervalAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	clientConnectionCheckInterval := d.Get(roleClientConnectionCheckIntervalAttr).(int)
+	if clientConnectionCheckInterval != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET client_connection_check_interval TO %d", pq.QuoteIdentifier(roleName), clientConnectionCheckInterval,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set client_connection_check_interval %d for %s: %w", clientConnectionCheckInterval, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET client_connection_check_interval", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset client_connection_check_interval for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setRoleParameters(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleParametersAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	oldRaw, newRaw := d.GetChange(roleParametersAttr)
+	oldParams := oldRaw.(map[string]any)
+	newParams := newRaw.(map[string]any)
+
+	// RESET parameters that were removed from the map.
+	for key := range oldParams {
+		if _, ok := newParams[key]; ok {
+			continue
+		}
+		if !validRoleParameterName.MatchString(key) {
+			return fmt.Errorf("invalid parameter name %q for %s", key, roleName)
+		}
+		sql := fmt.Sprintf("ALTER ROLE %s RESET %s", pq.QuoteIdentifier(roleName), key)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset parameter %s for %s: %w", key, roleName, err)
+		}
+	}
+
+	// SET (or update) every parameter currently in the map.
+	for key, v := range newParams {
+		if roleReservedParameters[key] {
+			return fmt.Errorf("parameter %q is managed by a dedicated attribute and cannot be set via %s", key, roleParametersAttr)
+		}
+		if !validRoleParameterName.MatchString(key) {
+			return fmt.Errorf("invalid parameter name %q for %s", key, roleName)
+		}
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET %s TO '%s'", pq.QuoteIdentifier(roleName), key, pqQuoteLiteral(v.(string)),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set parameter %s for %s: %w", key, roleName, err)
 		}
 	}
 	return nil
