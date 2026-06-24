@@ -20,6 +20,7 @@ const (
 	pubDropCascadeAttr             = "drop_cascade"
 	pubPublishAttr                 = "publish_param"
 	pubPublishViaPartitionRootAttr = "publish_via_partition_root_param"
+	pubPublishGeneratedColumnsAttr = "publish_generated_columns_param"
 )
 
 func resourcePostgreSQLPublication() *schema.Resource {
@@ -85,6 +86,14 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				ForceNew:    false,
 				Description: "Sets whether changes in a partitioned table using the identity and schema of the partitioned table",
 			},
+			pubPublishGeneratedColumnsAttr: {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				ForceNew:     false,
+				ValidateFunc: validation.StringInSlice([]string{"none", "stored"}, false),
+				Description:  "Sets whether generated columns are replicated ('none' or 'stored')",
+			},
 			pubDropCascadeAttr: {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -119,7 +128,7 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 		return fmt.Errorf("could not update publication tables: %w", err)
 	}
 
-	if err := setPubParams(txn, d, db.featureSupported(featurePublishViaRoot)); err != nil {
+	if err := setPubParams(txn, d, db.featureSupported(featurePublishViaRoot), db.featureSupported(featurePubGeneratedColumns)); err != nil {
 		return fmt.Errorf("could not update publication tables: %w", err)
 	}
 
@@ -200,10 +209,10 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
-func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) error {
+func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool, pubGenColsEnabled bool) error {
 	pubName := d.Get(pubNameAttr).(string)
 	paramAlterTemplate := "ALTER PUBLICATION %s %s"
-	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled)
+	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled, pubGenColsEnabled)
 	if err != nil {
 		return fmt.Errorf("error getting publication parameters: %w", err)
 	}
@@ -230,7 +239,7 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	if err != nil {
 		return fmt.Errorf("could not get tables for publication: %w", err)
 	}
-	publicationParameters, err := getPublicationParameters(d, db.featureSupported(featurePublishViaRoot))
+	publicationParameters, err := getPublicationParameters(d, db.featureSupported(featurePublishViaRoot), db.featureSupported(featurePubGeneratedColumns))
 	if err != nil {
 		return fmt.Errorf("could not get publication parameters: %w", err)
 	}
@@ -323,7 +332,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	var tables []string
 	var publishParams []string
 	var puballtables, pubinsert, pubupdate, pubdelete, pubtruncate, pubviaroot bool
-	var pubowner string
+	var pubowner, pubgencols string
 	columns := []string{"puballtables", "pubinsert", "pubupdate", "pubdelete", "r.rolname as pubownername"}
 	values := []any{
 		&puballtables,
@@ -340,6 +349,10 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	if db.featureSupported(featurePubTruncate) {
 		columns = append(columns, "pubtruncate")
 		values = append(values, &pubtruncate)
+	}
+	if db.featureSupported(featurePubGeneratedColumns) {
+		columns = append(columns, "pubgencols")
+		values = append(values, &pubgencols)
 	}
 
 	query := fmt.Sprintf("SELECT %s FROM pg_catalog.pg_publication as p join pg_catalog.pg_roles as r on p.pubowner = r.oid WHERE pubname = $1", strings.Join(columns, ", "))
@@ -402,6 +415,13 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
 		d.Set(pubPublishViaPartitionRootAttr, pubviaroot)
+	}
+	if sliceContainsStr(columns, "pubgencols") {
+		genCols := "none"
+		if pubgencols == "s" {
+			genCols = "stored"
+		}
+		d.Set(pubPublishGeneratedColumnsAttr, genCols)
 	}
 	return nil
 }
@@ -490,10 +510,10 @@ func validatedPublicationPublishParams(paramList []any) ([]string, error) {
 	return attrs, nil
 }
 
-func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (string, error) {
+func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool, pubGenColsEnabled bool) (string, error) {
 	parameterSQLTemplate := ""
 	returnValue := ""
-	pubParams := make(map[string]string, 2)
+	pubParams := make(map[string]string, 3)
 	if d.IsNewResource() {
 		if v, ok := d.GetOk(pubPublishViaPartitionRootAttr); ok {
 			if !pubViaRootEnabled {
@@ -502,6 +522,15 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 				)
 			}
 			pubParams["publish_via_partition_root"] = fmt.Sprintf("%v", v.(bool))
+		}
+
+		if v, ok := d.GetOk(pubPublishGeneratedColumnsAttr); ok {
+			if !pubGenColsEnabled {
+				return "", fmt.Errorf(
+					"publish_generated_columns attribute is supported only for postgres version 18 and above",
+				)
+			}
+			pubParams["publish_generated_columns"] = fmt.Sprintf("'%s'", v.(string))
 		}
 
 		if v, ok := d.GetOk(pubPublishAttr); ok {
@@ -524,6 +553,16 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 			}
 			_, nraw := d.GetChange(pubPublishViaPartitionRootAttr)
 			pubParams["publish_via_partition_root"] = fmt.Sprintf("%v", nraw.(bool))
+		}
+
+		if d.HasChange(pubPublishGeneratedColumnsAttr) {
+			if !pubGenColsEnabled {
+				return "", fmt.Errorf(
+					"publish_generated_columns attribute is supported only for postgres version 18 and above",
+				)
+			}
+			_, nraw := d.GetChange(pubPublishGeneratedColumnsAttr)
+			pubParams["publish_generated_columns"] = fmt.Sprintf("'%s'", nraw.(string))
 		}
 
 		if d.HasChange(pubPublishAttr) {
