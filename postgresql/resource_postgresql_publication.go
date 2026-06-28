@@ -28,7 +28,6 @@ func resourcePostgreSQLPublication() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLPublicationRead),
 		Delete: PGResourceFunc(resourcePostgreSQLPublicationDelete),
 		Update: PGResourceFunc(resourcePostgreSQLPublicationUpdate),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLPublicationExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -256,45 +255,6 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	d.SetId(generatePublicationID(d, databaseName))
 
 	return resourcePostgreSQLPublicationReadImpl(db, d)
-}
-
-func resourcePostgreSQLPublicationExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featurePublication) {
-		return false, fmt.Errorf(
-			"postgresql_publication resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
-	}
-
-	var PublicationName string
-
-	database, PublicationName, err := getDBPublicationName(d, db.client)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT pubname FROM pg_catalog.pg_publication WHERE pubname = $1"
-	err = txn.QueryRow(query, pqQuoteLiteral(PublicationName)).Scan(&PublicationName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
 }
 
 func resourcePostgreSQLPublicationRead(db *DBConnection, d *schema.ResourceData) error {

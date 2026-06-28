@@ -41,7 +41,6 @@ func resourcePostgreSQLFunction() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLFunctionRead),
 		Update: PGResourceFunc(resourcePostgreSQLFunctionUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLFunctionDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLFunctionExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -193,42 +192,6 @@ func resourcePostgreSQLFunctionCreate(db *DBConnection, d *schema.ResourceData) 
 	}
 
 	return resourcePostgreSQLFunctionReadImpl(db, d)
-}
-
-func resourcePostgreSQLFunctionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featureFunction) {
-		return false, fmt.Errorf(
-			"postgresql_function resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
-	}
-
-	functionId := d.Id()
-
-	databaseName, functionSignature, expandErr := expandFunctionID(functionId, d, db)
-	if expandErr != nil {
-		return false, expandErr
-	}
-
-	var functionExists bool
-
-	txn, err := startTransaction(db.client, databaseName)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := fmt.Sprintf("SELECT to_regprocedure('%s') IS NOT NULL AS functionExists", functionSignature)
-
-	if err := txn.QueryRow(query).Scan(&functionExists); err != nil {
-		return false, err
-	}
-
-	if err := txn.Commit(); err != nil {
-		return false, err
-	}
-
-	return functionExists, nil
 }
 
 func resourcePostgreSQLFunctionRead(db *DBConnection, d *schema.ResourceData) error {
