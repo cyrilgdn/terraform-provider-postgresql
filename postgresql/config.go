@@ -10,15 +10,10 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/certs"
 	"github.com/blang/semver"
 	_ "github.com/lib/pq" // PostgreSQL db
-	"gocloud.dev/gcp"
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
-	"gocloud.dev/postgres/gcppostgres"
-	"golang.org/x/oauth2"
-	"google.golang.org/api/impersonate"
 )
 
 type featureName uint
@@ -299,8 +294,8 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var err error
 		if c.config.Scheme == "postgres" {
 			db, err = sql.Open(proxyDriverName, dsn)
-		} else if c.config.Scheme == "gcppostgres" && (c.config.GCPIAMImpersonateServiceAccount != "" || c.config.GCPIPType != "") {
-			db, err = openGCPDBConnection(context.Background(), dsn, &c.config)
+		} else if c.config.Scheme == "gcppostgres" {
+			db, err = openGCPConnection(context.Background(), &c.config, c.databaseName)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
@@ -365,42 +360,4 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 	}
 
 	return &version, nil
-}
-
-// openGCPDBConnection opens a Cloud SQL connection through a customized
-// certificate source. The default gcppostgres opener supports neither service
-// account impersonation nor selecting the instance IP address type (it always
-// prefers the public IP), so either option routes through here.
-func openGCPDBConnection(ctx context.Context, dsn string, config *Config) (*sql.DB, error) {
-	var ts oauth2.TokenSource
-	if config.GCPIAMImpersonateServiceAccount != "" {
-		var err error
-		ts, err = impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
-			TargetPrincipal: config.GCPIAMImpersonateServiceAccount,
-			Scopes:          []string{"https://www.googleapis.com/auth/sqlservice.admin"},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("error creating token source with service account impersonation of %s: %w", config.GCPIAMImpersonateServiceAccount, err)
-		}
-	} else {
-		creds, err := gcp.DefaultCredentials(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("error obtaining default GCP credentials: %w", err)
-		}
-		ts = creds.TokenSource
-	}
-	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), ts)
-	if err != nil {
-		return nil, fmt.Errorf("error creating GCP HTTP client: %w", err)
-	}
-	opts := certs.RemoteOpts{EnableIAMLogin: true, TokenSource: ts}
-	if config.GCPIPType != "" {
-		opts.IPAddrTypeOpts = []string{strings.ToUpper(config.GCPIPType)}
-	}
-	opener := gcppostgres.URLOpener{CertSource: certs.NewCertSourceOpts(&client.Client, opts)}
-	dbURL, err := url.Parse(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing connection string: %w", err)
-	}
-	return opener.OpenPostgresURL(ctx, dbURL)
 }

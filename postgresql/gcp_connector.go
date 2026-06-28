@@ -3,11 +3,14 @@ package postgresql
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/cloudsqlconn"
+	"cloud.google.com/go/cloudsqlconn/postgres/pgxv5"
 	"google.golang.org/api/impersonate"
 )
 
@@ -161,4 +164,36 @@ func gcpConnSpec(config *Config) (gcpSpec, error) {
 		IAMAuth:     config.GCPIAMAuth,
 		Impersonate: config.GCPIAMImpersonateServiceAccount,
 	}, nil
+}
+
+var (
+	gcpDriverMu        sync.Mutex
+	gcpRegisteredNames = map[string]bool{}
+)
+
+// openGCPConnection opens a Cloud SQL connection through the v2 connector,
+// registering a pgxv5 database/sql driver once per distinct dialer option-set.
+func openGCPConnection(ctx context.Context, config *Config, database string) (*sql.DB, error) {
+	spec, err := gcpConnSpec(config)
+	if err != nil {
+		return nil, err
+	}
+	name := gcpDriverName(spec)
+
+	gcpDriverMu.Lock()
+	if !gcpRegisteredNames[name] {
+		opts, err := gcpDialerOptions(ctx, spec)
+		if err != nil {
+			gcpDriverMu.Unlock()
+			return nil, err
+		}
+		if _, err := pgxv5.RegisterDriver(name, opts...); err != nil {
+			gcpDriverMu.Unlock()
+			return nil, fmt.Errorf("error registering Cloud SQL connector driver: %w", err)
+		}
+		gcpRegisteredNames[name] = true
+	}
+	gcpDriverMu.Unlock()
+
+	return sql.Open(name, gcpDSN(config, database))
 }
