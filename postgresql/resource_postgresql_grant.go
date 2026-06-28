@@ -430,6 +430,42 @@ ORDER BY col_privs.attname
 	return nil
 }
 
+// buildReadTableRolePrivilegesQuery builds the Read query and bind arguments
+// for the table/sequence object types. When the resource lists explicit
+// objects, the relname filter is pushed into the query (relname = ANY) instead
+// of fetching every relation of this relkind in the schema and discarding the
+// surplus afterwards; on schemas with many relations this avoids transferring
+// rows that are immediately dropped. An empty objects set means "all objects in
+// the schema", so the predicate is only added when objects are listed — the
+// empty case returns the original query and three-argument bind list.
+func buildReadTableRolePrivilegesQuery(roleOID uint32, schemaName, relkind string, objects *schema.Set) (string, []interface{}) {
+	query := `
+SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)
+FROM pg_class
+JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+LEFT JOIN (
+    SELECT acls.* FROM (
+        SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c
+    ) as acls
+    WHERE grantee=$1
+) privs
+USING (relname, relnamespace, relkind)
+WHERE nspname = $2 AND relkind = $3`
+	args := []interface{}{roleOID, schemaName, relkind}
+
+	if objects.Len() > 0 {
+		objectNames := make([]string, 0, objects.Len())
+		for _, o := range objects.List() {
+			objectNames = append(objectNames, o.(string))
+		}
+		query += " AND pg_class.relname = ANY($4)"
+		args = append(args, pq.Array(objectNames))
+	}
+	query += "\nGROUP BY pg_class.relname\n"
+
+	return query, args
+}
+
 func readRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
@@ -480,23 +516,11 @@ GROUP BY pg_proc.proname
 		return readColumnRolePrivileges(txn, d)
 
 	default:
-		query = `
-SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)
-FROM pg_class
-JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-LEFT JOIN (
-    SELECT acls.* FROM (
-        SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c
-    ) as acls
-    WHERE grantee=$1
-) privs
-USING (relname, relnamespace, relkind)
-WHERE nspname = $2 AND relkind = $3
-GROUP BY pg_class.relname
-`
-		rows, err = txn.Query(
-			query, roleOID, d.Get("schema"), objectTypes[objectType],
+		var args []interface{}
+		query, args = buildReadTableRolePrivilegesQuery(
+			roleOID, d.Get("schema").(string), objectTypes[objectType], objects,
 		)
+		rows, err = txn.Query(query, args...)
 	}
 
 	// This returns, for the specified role (rolname),
@@ -516,6 +540,10 @@ GROUP BY pg_class.relname
 			return err
 		}
 
+		// For the table/sequence path this set is already filtered in SQL
+		// above; the check is kept because the function/procedure/routine path
+		// still fetches every object in the schema (its object names may carry
+		// argument signatures, so it is filtered here rather than in SQL).
 		if objects.Len() > 0 && !objects.Contains(objName) {
 			continue
 		}
