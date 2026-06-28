@@ -187,7 +187,9 @@ The following arguments are supported:
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
 * `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
 * `gcp_iam_impersonate_service_account` - (Optional) Service account to impersonate when using GCP IAM authentication, see [GCP](#gcp).
-* `gcp_ip_type` - (Optional) (`gcppostgres` only) The IP address type of the Cloud SQL instance to connect to: `public` or `private`. If unset, the public IP is preferred and the private IP is used as a fallback. Set to `private` for instances without a public IP, see [GCP](#gcp).
+* `gcp_ip_type` - (Optional) (`gcppostgres` only) IP address type of the Cloud SQL instance: `public`, `private`, or `psc`. If unset, the public IP is preferred and the private IP is used as a fallback. Set to `private` for instances without a public IP, see [GCP](#gcp).
+* `gcp_iam_auth` - (Optional) (`gcppostgres` only) If `true`, authenticate to the database using GCP IAM. The IAM access token is used as the password; set `username` to the IAM principal and leave `password` empty. The instance must have the `cloudsql.iam_authentication` flag enabled, see [GCP](#gcp).
+* `gcp_dns` - (Optional) (`gcppostgres` only) If `true`, `host` is treated as a DNS domain name backed by a TXT record that resolves to the instance connection name. Auto-enabled when `host` is not in `project:region:instance` form, see [GCP](#gcp).
 
 ## GoCloud
 
@@ -235,27 +237,47 @@ provider "postgresql" {
 }
 ```
 
-For instances that have no public IP (or to force the private connection path), set `gcp_ip_type` to `private`. The connection then targets the instance's private IP, so the machine running Terraform must have network access to it (e.g. it runs inside the VPC, or reaches it via VPC peering / Cloud VPN / a Cloud Build private worker pool):
+For instances that have no public IP, set `gcp_ip_type` to `private` (or `psc` for Private Service Connect). The connection then targets the instance's private IP, so the machine running Terraform must have network access to it (inside the VPC, or via VPC peering / Cloud VPN / a private worker pool). Combine with `gcp_iam_auth` to authenticate as an IAM principal:
 
 ```hcl
 provider "postgresql" {
-  scheme   = "gcppostgres"
-  host     = "test-project/europe-west3/test-instance"
-  port     = 5432
+  scheme       = "gcppostgres"
+  host         = "test-project/europe-west3/test-instance"
+  port         = 5432
 
-  username    = "postgres"
-  password    = "test1234"
-  gcp_ip_type = "private"
+  username     = "sa-name@test-project.iam"
+  gcp_ip_type  = "private"
+  gcp_iam_auth = true
 
   superuser = false
 }
 ```
+
+To connect by DNS domain name (a TXT record resolving to the instance connection name, or a PSC auto-DNS name), set `gcp_dns = true` and use the domain as `host`:
+
+```hcl
+provider "postgresql" {
+  scheme       = "gcppostgres"
+  host         = "db.prod.example.com"
+  port         = 5432
+
+  username     = "sa-name@test-project.iam"
+  gcp_ip_type  = "private"
+  gcp_iam_auth = true
+  gcp_dns      = true
+
+  superuser = false
+}
+```
+
+Connections are made through the official [Cloud SQL Go connector](https://github.com/GoogleCloudPlatform/cloud-sql-go-connector); the `host` accepts both `project/region/instance` and `project:region:instance` connection-name forms.
 
 See also:
 
 - https://cloud.google.com/docs/authentication/production
 - https://cloud.google.com/sql/docs/postgres/iam-logins
 - https://cloud.google.com/sql/docs/postgres/private-ip
+- https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#dns
 
 ---
 **Note**
