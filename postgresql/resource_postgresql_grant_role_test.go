@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -50,6 +51,35 @@ func TestCreateGrantRoleQuery(t *testing.T) {
 		if out != c.expected {
 			t.Fatalf("error matching output and expected: %#v vs %#v", out, c.expected)
 		}
+	}
+}
+
+// TestGetGrantRoleQuery locks in the OID-join form of the Read query. The
+// membership must be filtered by joining pg_auth_members to pg_roles on the
+// member/roleid OIDs, NOT by calling pg_get_userbyid() in the WHERE clause
+// (which forces a sequential function scan on large installations). This guards
+// against an accidental regression to the function-scan form.
+func TestGetGrantRoleQuery(t *testing.T) {
+	expected := `
+SELECT
+  ur.rolname as role,
+  gr.rolname as grant_role,
+  m.admin_option
+FROM
+  pg_auth_members m
+  JOIN pg_roles ur ON ur.oid = m.member
+  JOIN pg_roles gr ON gr.oid = m.roleid
+WHERE
+  ur.rolname = $1 AND
+  gr.rolname = $2;
+`
+
+	if getGrantRoleQuery != expected {
+		t.Fatalf("getGrantRoleQuery changed unexpectedly:\n got: %q\nwant: %q", getGrantRoleQuery, expected)
+	}
+
+	if strings.Contains(getGrantRoleQuery, "pg_get_userbyid") {
+		t.Fatalf("getGrantRoleQuery must not call pg_get_userbyid (regression to function scan): %q", getGrantRoleQuery)
 	}
 }
 
