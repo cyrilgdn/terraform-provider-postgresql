@@ -14,7 +14,6 @@ func resourcePostgreSQLReplicationSlot() *schema.Resource {
 		Create: PGResourceFunc(resourcePostgreSQLReplicationSlotCreate),
 		Read:   PGResourceFunc(resourcePostgreSQLReplicationSlotRead),
 		Delete: PGResourceFunc(resourcePostgreSQLReplicationSlotDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLReplicationSlotExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -66,39 +65,6 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 	d.SetId(generateReplicationSlotID(d, databaseName))
 
 	return resourcePostgreSQLReplicationSlotReadImpl(db, d)
-}
-
-func resourcePostgreSQLReplicationSlotExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-
-	var ReplicationSlotName string
-
-	database, replicationSlotName, err := getDBReplicationSlotName(d, db.client)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT slot_name FROM pg_catalog.pg_replication_slots WHERE slot_name = $1 and database = $2"
-	err = txn.QueryRow(query, replicationSlotName, database).Scan(&ReplicationSlotName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
 }
 
 func resourcePostgreSQLReplicationSlotRead(db *DBConnection, d *schema.ResourceData) error {

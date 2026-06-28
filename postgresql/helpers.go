@@ -24,19 +24,6 @@ func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*sc
 	}
 }
 
-func PGResourceExistsFunc(fn func(*DBConnection, *schema.ResourceData) (bool, error)) func(*schema.ResourceData, any) (bool, error) {
-	return func(d *schema.ResourceData, meta any) (bool, error) {
-		client := meta.(*Client)
-
-		db, err := client.Connect()
-		if err != nil {
-			return false, err
-		}
-
-		return fn(db, d)
-	}
-}
-
 // QueryAble is a DB connection (sql.DB/Tx)
 type QueryAble interface {
 	Exec(query string, args ...any) (sql.Result, error)
