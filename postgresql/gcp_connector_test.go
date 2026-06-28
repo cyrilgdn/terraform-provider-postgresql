@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,25 @@ func TestGCPDriverName(t *testing.T) {
 	}
 	if !strings.HasPrefix(a, "cloudsql-postgres-") {
 		t.Errorf("unexpected driver name %q", a)
+	}
+}
+
+func TestGCPDialerOptionsNoImpersonation(t *testing.T) {
+	// Non-impersonation specs build options without touching the network.
+	specs := []gcpSpec{
+		{IPType: "auto"},
+		{IPType: "private", IAMAuth: true},
+		{IPType: "psc", UseDNS: true},
+		{IPType: "public"},
+	}
+	for _, s := range specs {
+		opts, err := gcpDialerOptions(context.Background(), s)
+		if err != nil {
+			t.Errorf("gcpDialerOptions(%+v) error: %v", s, err)
+		}
+		if len(opts) == 0 {
+			t.Errorf("gcpDialerOptions(%+v) returned no options", s)
+		}
 	}
 }
 

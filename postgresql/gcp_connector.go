@@ -1,10 +1,14 @@
 package postgresql
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"cloud.google.com/go/cloudsqlconn"
+	"google.golang.org/api/impersonate"
 )
 
 // gcpKVQuote quotes a value for a pgx keyword/value DSN.
@@ -83,6 +87,62 @@ func gcpDriverName(spec gcpSpec) string {
 	}, "|")
 	sum := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("cloudsql-postgres-%x", sum[:8])
+}
+
+// gcpDialerOptions maps a spec to cloudsqlconn dialer options. Impersonation
+// branches build token sources, which require GCP credentials at call time.
+func gcpDialerOptions(ctx context.Context, spec gcpSpec) ([]cloudsqlconn.Option, error) {
+	var dialOpt cloudsqlconn.DialOption
+	switch spec.IPType {
+	case "private":
+		dialOpt = cloudsqlconn.WithPrivateIP()
+	case "public":
+		dialOpt = cloudsqlconn.WithPublicIP()
+	case "psc":
+		dialOpt = cloudsqlconn.WithPSC()
+	default: // "auto"
+		dialOpt = cloudsqlconn.WithAutoIP()
+	}
+	opts := []cloudsqlconn.Option{cloudsqlconn.WithDefaultDialOptions(dialOpt)}
+
+	if spec.UseDNS {
+		opts = append(opts, cloudsqlconn.WithDNSResolver())
+	}
+
+	switch {
+	case spec.Impersonate != "" && spec.IAMAuth:
+		apiTS, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: spec.Impersonate,
+			Scopes: []string{
+				"https://www.googleapis.com/auth/sqlservice.admin",
+				"https://www.googleapis.com/auth/cloud-platform",
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error creating API token source impersonating %s: %w", spec.Impersonate, err)
+		}
+		loginTS, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: spec.Impersonate,
+			Scopes:          []string{"https://www.googleapis.com/auth/sqlservice.login"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error creating login token source impersonating %s: %w", spec.Impersonate, err)
+		}
+		opts = append(opts, cloudsqlconn.WithIAMAuthNTokenSources(apiTS, loginTS))
+	case spec.Impersonate != "":
+		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: spec.Impersonate,
+			Scopes:          []string{"https://www.googleapis.com/auth/sqlservice.admin"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error creating token source impersonating %s: %w", spec.Impersonate, err)
+		}
+		opts = append(opts, cloudsqlconn.WithTokenSource(ts))
+	case spec.IAMAuth:
+		opts = append(opts, cloudsqlconn.WithIAMAuthN())
+	}
+
+	return opts, nil
 }
 
 func gcpConnSpec(config *Config) (gcpSpec, error) {
