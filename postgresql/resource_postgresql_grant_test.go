@@ -13,6 +13,44 @@ import (
 	"github.com/lib/pq"
 )
 
+// TestBuildReadTableRolePrivilegesQuery locks in the table/sequence Read query
+// shape. With an empty objects set the query must stay unfiltered and bind
+// exactly three arguments ("empty means all objects in the schema"). With an
+// explicit objects list the relname filter must be pushed into SQL as
+// "relname = ANY($4)" with a fourth bind argument, so the whole schema is not
+// transferred only to be discarded by the Go filter afterwards.
+func TestBuildReadTableRolePrivilegesQuery(t *testing.T) {
+	roleOID := uint32(1234)
+
+	emptyQuery, emptyArgs := buildReadTableRolePrivilegesQuery(
+		roleOID, "test_schema", "r", schema.NewSet(schema.HashString, nil),
+	)
+	if strings.Contains(emptyQuery, "ANY(") {
+		t.Fatalf("empty objects must not push a relname filter, got: %q", emptyQuery)
+	}
+	if len(emptyArgs) != 3 {
+		t.Fatalf("empty objects must bind 3 args, got %d: %#v", len(emptyArgs), emptyArgs)
+	}
+
+	objects := schema.NewSet(schema.HashString, []interface{}{"test_table", "test_table2"})
+	query, args := buildReadTableRolePrivilegesQuery(roleOID, "test_schema", "r", objects)
+	if !strings.Contains(query, "AND pg_class.relname = ANY($4)") {
+		t.Fatalf("explicit objects must push relname = ANY($4), got: %q", query)
+	}
+	if len(args) != 4 {
+		t.Fatalf("explicit objects must bind 4 args, got %d: %#v", len(args), args)
+	}
+
+	for _, q := range []string{emptyQuery, query} {
+		if !strings.Contains(q, "GROUP BY pg_class.relname") {
+			t.Fatalf("query missing GROUP BY pg_class.relname: %q", q)
+		}
+		if !strings.Contains(q, "SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)") {
+			t.Fatalf("query changed its selected columns: %q", q)
+		}
+	}
+}
+
 func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
 	var roleName = "bar"
