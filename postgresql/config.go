@@ -189,6 +189,8 @@ type Config struct {
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
 	GCPIPType                       string
+	GCPIAMAuth                      bool
+	GCPDNS                          bool
 }
 
 // Client struct holding connection string

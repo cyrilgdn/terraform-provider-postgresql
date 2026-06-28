@@ -124,11 +124,26 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Default:     "",
-				Description: "IP address type of the Cloud SQL instance to connect to: `public` or `private`. By default the public IP is preferred, falling back to the private IP.",
+				Description: "(`gcppostgres` only) IP address type of the Cloud SQL instance: `public`, `private`, or `psc`. If unset, the public IP is preferred with private as a fallback.",
 				ValidateFunc: validation.StringInSlice([]string{
 					"public",
 					"private",
+					"psc",
 				}, false),
+			},
+
+			"gcp_iam_auth": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "(`gcppostgres` only) If true, authenticate to the database using GCP IAM (the IAM token is used as the password; set `username` to the IAM principal and leave `password` empty).",
+			},
+
+			"gcp_dns": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "(`gcppostgres` only) If true, treat `host` as a DNS domain name backed by a TXT record resolving to the instance connection name. Auto-enabled when `host` is not in `project:region:instance` form.",
 			},
 
 			// Connection username can be different than database username with user name maps (e.g.: in Azure)
@@ -398,6 +413,8 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
 		GCPIPType:                       d.Get("gcp_ip_type").(string),
+		GCPIAMAuth:                      d.Get("gcp_iam_auth").(bool),
+		GCPDNS:                          d.Get("gcp_dns").(bool),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

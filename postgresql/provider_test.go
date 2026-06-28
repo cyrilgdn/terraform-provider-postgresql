@@ -29,6 +29,29 @@ func TestProvider_impl(t *testing.T) {
 	var _ = Provider()
 }
 
+func TestProviderGCPOptions(t *testing.T) {
+	p := Provider()
+	for _, key := range []string{
+		"gcp_ip_type",
+		"gcp_iam_auth",
+		"gcp_dns",
+		"gcp_iam_impersonate_service_account",
+	} {
+		if _, ok := p.Schema[key]; !ok {
+			t.Errorf("provider schema missing %q", key)
+		}
+	}
+
+	// gcp_ip_type must accept "psc"
+	v := p.Schema["gcp_ip_type"].ValidateFunc
+	if v == nil {
+		t.Fatal("gcp_ip_type has no ValidateFunc")
+	}
+	if _, errs := v("psc", "gcp_ip_type"); len(errs) != 0 {
+		t.Errorf("gcp_ip_type rejected \"psc\": %v", errs)
+	}
+}
+
 func testAccPreCheck(t *testing.T) {
 	var host string
 	if host = os.Getenv("PGHOST"); host == "" {
