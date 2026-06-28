@@ -69,6 +69,22 @@ func TestGCPHost(t *testing.T) {
 	}
 }
 
+func TestGCPDriverName(t *testing.T) {
+	a := gcpDriverName(gcpSpec{IPType: "private", IAMAuth: true})
+	b := gcpDriverName(gcpSpec{IPType: "private", IAMAuth: true})
+	c := gcpDriverName(gcpSpec{IPType: "public", IAMAuth: true})
+
+	if a != b {
+		t.Errorf("same spec gave different names: %q vs %q", a, b)
+	}
+	if a == c {
+		t.Errorf("different specs gave same name: %q", a)
+	}
+	if !strings.HasPrefix(a, "cloudsql-postgres-") {
+		t.Errorf("unexpected driver name %q", a)
+	}
+}
+
 func TestGCPConnSpec(t *testing.T) {
 	cases := []struct {
 		name    string

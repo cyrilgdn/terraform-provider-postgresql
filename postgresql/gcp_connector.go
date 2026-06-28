@@ -1,7 +1,9 @@
 package postgresql
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -67,6 +69,20 @@ type gcpSpec struct {
 	UseDNS      bool
 	IAMAuth     bool
 	Impersonate string
+}
+
+// gcpDriverName is a deterministic database/sql driver name for a given spec.
+// Drivers are registered once per distinct option-set; the per-connection host,
+// user, db and password are supplied through the DSN at sql.Open time.
+func gcpDriverName(spec gcpSpec) string {
+	key := strings.Join([]string{
+		spec.IPType,
+		strconv.FormatBool(spec.UseDNS),
+		strconv.FormatBool(spec.IAMAuth),
+		spec.Impersonate,
+	}, "|")
+	sum := sha256.Sum256([]byte(key))
+	return fmt.Sprintf("cloudsql-postgres-%x", sum[:8])
 }
 
 func gcpConnSpec(config *Config) (gcpSpec, error) {
