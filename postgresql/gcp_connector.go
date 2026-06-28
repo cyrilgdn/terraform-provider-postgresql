@@ -176,7 +176,7 @@ var (
 func openGCPConnection(ctx context.Context, config *Config, database string) (*sql.DB, error) {
 	spec, err := gcpConnSpec(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error building GCP connection spec: %w", err)
 	}
 	name := gcpDriverName(spec)
 
@@ -193,6 +193,7 @@ func openGCPConnection(ctx context.Context, config *Config, database string) (*s
 		}
 		gcpRegisteredNames[name] = true
 	}
+	// Unlock before sql.Open so the connection setup does not hold the mutex.
 	gcpDriverMu.Unlock()
 
 	return sql.Open(name, gcpDSN(config, database))
