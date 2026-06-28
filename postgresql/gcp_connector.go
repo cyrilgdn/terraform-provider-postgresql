@@ -59,3 +59,30 @@ func gcpHost(host string) string {
 	}
 	return host
 }
+
+// gcpSpec is the connector-relevant subset of Config, derived once and used to
+// build both the driver name and the dialer options.
+type gcpSpec struct {
+	IPType      string // "auto" | "public" | "private" | "psc"
+	UseDNS      bool
+	IAMAuth     bool
+	Impersonate string
+}
+
+func gcpConnSpec(config *Config) (gcpSpec, error) {
+	ipType := config.GCPIPType
+	if ipType == "" {
+		ipType = "auto"
+	}
+	switch ipType {
+	case "auto", "public", "private", "psc":
+	default:
+		return gcpSpec{}, fmt.Errorf("invalid gcp_ip_type %q (want public, private, or psc)", config.GCPIPType)
+	}
+	return gcpSpec{
+		IPType:      ipType,
+		UseDNS:      config.GCPDNS || !isGCPConnectionName(config.Host),
+		IAMAuth:     config.GCPIAMAuth,
+		Impersonate: config.GCPIAMImpersonateServiceAccount,
+	}, nil
+}

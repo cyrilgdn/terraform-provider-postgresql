@@ -68,3 +68,37 @@ func TestGCPHost(t *testing.T) {
 		}
 	}
 }
+
+func TestGCPConnSpec(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      *Config
+		want    gcpSpec
+		wantErr bool
+	}{
+		{"default", &Config{Host: "p:r:i"}, gcpSpec{IPType: "auto", UseDNS: false, IAMAuth: false}, false},
+		{"private", &Config{Host: "p:r:i", GCPIPType: "private"}, gcpSpec{IPType: "private"}, false},
+		{"psc", &Config{Host: "p:r:i", GCPIPType: "psc"}, gcpSpec{IPType: "psc"}, false},
+		{"iam", &Config{Host: "p:r:i", GCPIAMAuth: true}, gcpSpec{IPType: "auto", IAMAuth: true}, false},
+		{"dns flag", &Config{Host: "p:r:i", GCPDNS: true}, gcpSpec{IPType: "auto", UseDNS: true}, false},
+		{"domain host", &Config{Host: "db.example.com"}, gcpSpec{IPType: "auto", UseDNS: true}, false},
+		{"impersonate", &Config{Host: "p:r:i", GCPIAMImpersonateServiceAccount: "sa@p.iam"}, gcpSpec{IPType: "auto", Impersonate: "sa@p.iam"}, false},
+		{"invalid", &Config{Host: "p:r:i", GCPIPType: "bogus"}, gcpSpec{}, true},
+	}
+	for _, c := range cases {
+		got, err := gcpConnSpec(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("%s: expected error, got nil", c.name)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: unexpected error %v", c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s: gcpConnSpec = %+v, want %+v", c.name, got, c.want)
+		}
+	}
+}
