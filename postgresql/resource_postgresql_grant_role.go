@@ -12,17 +12,23 @@ import (
 )
 
 const (
-	// This returns the role membership for role, grant_role
+	// This returns the role membership for role, grant_role.
+	// The membership is looked up by joining pg_auth_members to pg_roles on
+	// the member/roleid OIDs so the filter can use the rolname index, instead
+	// of calling pg_get_userbyid() on every row of pg_auth_members in WHERE
+	// (which forces a sequential function scan on large installations).
 	getGrantRoleQuery = `
 SELECT
-  pg_get_userbyid(member) as role,
-  pg_get_userbyid(roleid) as grant_role,
-  admin_option
+  ur.rolname as role,
+  gr.rolname as grant_role,
+  m.admin_option
 FROM
-  pg_auth_members
+  pg_auth_members m
+  JOIN pg_roles ur ON ur.oid = m.member
+  JOIN pg_roles gr ON gr.oid = m.roleid
 WHERE
-  pg_get_userbyid(member) = $1 AND
-  pg_get_userbyid(roleid) = $2;
+  ur.rolname = $1 AND
+  gr.rolname = $2;
 `
 )
 
