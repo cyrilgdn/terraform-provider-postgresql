@@ -1,6 +1,44 @@
 package postgresql
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestGCPKVQuote(t *testing.T) {
+	cases := map[string]string{
+		"simple":  "'simple'",
+		"a b":     "'a b'",
+		"o'brien": `'o\'brien'`,
+		`back\sl`: `'back\\sl'`,
+	}
+	for in, want := range cases {
+		if got := gcpKVQuote(in); got != want {
+			t.Errorf("gcpKVQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestGCPDSN(t *testing.T) {
+	// password auth includes the password
+	pw := &Config{Host: "proj/region/inst", Port: 5432, Username: "u", Password: "p", ApplicationName: "Terraform provider"}
+	got := gcpDSN(pw, "mydb")
+	for _, want := range []string{"host='proj:region:inst'", "port=5432", "user='u'", "dbname='mydb'", "password='p'", "application_name='Terraform provider'"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("gcpDSN password auth = %q, missing %q", got, want)
+		}
+	}
+
+	// IAM auth omits the password even when set
+	iam := &Config{Host: "proj:region:inst", Port: 5432, Username: "sa@proj.iam", Password: "ignored", GCPIAMAuth: true}
+	got = gcpDSN(iam, "mydb")
+	if strings.Contains(got, "password=") {
+		t.Errorf("gcpDSN IAM auth should omit password, got %q", got)
+	}
+	if !strings.Contains(got, "user='sa@proj.iam'") {
+		t.Errorf("gcpDSN IAM auth = %q, missing IAM user", got)
+	}
+}
 
 func TestIsGCPConnectionName(t *testing.T) {
 	cases := map[string]bool{
