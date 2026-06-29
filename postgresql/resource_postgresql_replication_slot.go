@@ -48,19 +48,15 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 	plugin := d.Get("plugin").(string)
 	databaseName := getDatabaseForReplicationSlot(d, db.client.databaseName)
 
-	txn, err := startTransaction(db.client, databaseName)
+	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
+	dbc, err := initConnection(db.client, databaseName)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
 	sql := "SELECT FROM pg_create_logical_replication_slot($1, $2)"
-	if _, err := txn.Exec(sql, name, plugin); err != nil {
+	if _, err := dbc.Exec(sql, name, plugin); err != nil {
 		return err
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("error creating ReplicationSlot: %w", err)
 	}
 
 	d.SetId(generateReplicationSlotID(d, databaseName))
@@ -83,14 +79,14 @@ func resourcePostgreSQLReplicationSlotExists(db *DBConnection, d *schema.Resourc
 		return false, err
 	}
 
-	txn, err := startTransaction(db.client, database)
+	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
+	dbc, err := initConnection(db.client, database)
 	if err != nil {
 		return false, err
 	}
-	defer deferredRollback(txn)
 
 	query := "SELECT slot_name FROM pg_catalog.pg_replication_slots WHERE slot_name = $1 and database = $2"
-	err = txn.QueryRow(query, replicationSlotName, database).Scan(&ReplicationSlotName)
+	err = dbc.QueryRow(query, replicationSlotName, database).Scan(&ReplicationSlotName)
 	switch {
 	case err == sql.ErrNoRows:
 		return false, nil
@@ -111,17 +107,17 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 		return err
 	}
 
-	txn, err := startTransaction(db.client, database)
+	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
+	dbc, err := initConnection(db.client, database)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
 	var replicationSlotPlugin string
 	query := `SELECT plugin ` +
 		`FROM pg_catalog.pg_replication_slots ` +
 		`WHERE slot_name = $1 AND database = $2`
-	err = txn.QueryRow(query, replicationSlotName, database).Scan(&replicationSlotPlugin)
+	err = dbc.QueryRow(query, replicationSlotName, database).Scan(&replicationSlotPlugin)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL ReplicationSlot (%s) not found for database %s", replicationSlotName, database)
@@ -144,19 +140,15 @@ func resourcePostgreSQLReplicationSlotDelete(db *DBConnection, d *schema.Resourc
 	replicationSlotName := d.Get("name").(string)
 	database := getDatabaseForReplicationSlot(d, db.client.databaseName)
 
-	txn, err := startTransaction(db.client, database)
+	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
+	dbc, err := initConnection(db.client, database)
 	if err != nil {
 		return err
 	}
-	defer deferredRollback(txn)
 
 	sql := "SELECT pg_drop_replication_slot($1)"
-	if _, err := txn.Exec(sql, replicationSlotName); err != nil {
+	if _, err := dbc.Exec(sql, replicationSlotName); err != nil {
 		return err
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("error deleting ReplicationSlot: %w", err)
 	}
 
 	d.SetId("")

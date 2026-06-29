@@ -384,14 +384,28 @@ func setToPgIdentSimpleList(idents *schema.Set) string {
 	return strings.Join(quotedIdents, ",")
 }
 
-// startTransaction starts a new DB transaction on the specified database.
+// initConnection starts a new DB connection on the specified database, if necessary
 // If the database is specified and different from the one configured in the provider,
-// it will create a new connection pool if needed.
-func startTransaction(client *Client, database string) (*sql.Tx, error) {
+// we need to create a new connection pool, which is done here
+// Most call sites should call startTransaction directly instead, however, initConnection is required
+// whenever we need to run queries without a transaction
+func initConnection(client *Client, database string) (*DBConnection, error) {
 	if database != "" && database != client.databaseName {
 		client = client.config.NewClient(database)
 	}
 	db, err := client.Connect()
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
+// startTransaction starts a new DB transaction on the specified database.
+// If the database is specified and different from the one configured in the provider,
+// it will create a new connection pool if needed.
+func startTransaction(client *Client, database string) (*sql.Tx, error) {
+	db, err := initConnection(client, database)
 	if err != nil {
 		return nil, err
 	}
