@@ -556,3 +556,69 @@ resource "postgresql_database" "mydb_default_owner" {
 }
 
 `
+
+// Test the ICU locale provider (PostgreSQL >= 15).
+func TestAccPostgresqlDatabase_ICULocaleProvider(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureDBLocaleProvider)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "icu_db" {
+  name            = "icu_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "icu"
+  icu_locale      = "en-US"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.icu_db"),
+					resource.TestCheckResourceAttr("postgresql_database.icu_db", "name", "icu_db"),
+					resource.TestCheckResourceAttr("postgresql_database.icu_db", "locale_provider", "icu"),
+					resource.TestCheckResourceAttr("postgresql_database.icu_db", "icu_locale", "en-US"),
+				),
+			},
+		},
+	})
+}
+
+// Test the builtin locale provider (PostgreSQL >= 17).
+func TestAccPostgresqlDatabase_BuiltinLocaleProvider(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureDBBuiltinLocale)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "builtin_db" {
+  name            = "builtin_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "builtin"
+  builtin_locale  = "C.UTF-8"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.builtin_db"),
+					resource.TestCheckResourceAttr("postgresql_database.builtin_db", "name", "builtin_db"),
+					resource.TestCheckResourceAttr("postgresql_database.builtin_db", "locale_provider", "builtin"),
+					resource.TestCheckResourceAttr("postgresql_database.builtin_db", "builtin_locale", "C.UTF-8"),
+				),
+			},
+		},
+	})
+}

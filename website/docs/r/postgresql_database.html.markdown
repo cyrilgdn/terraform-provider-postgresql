@@ -27,6 +27,31 @@ resource "postgresql_database" "my_db" {
 }
 ```
 
+To create a database using the builtin `PG_UNICODE_FAST` collation
+(PostgreSQL >= 18):
+
+```hcl
+resource "postgresql_database" "fast_db" {
+  name            = "fast_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "builtin"
+  builtin_locale  = "PG_UNICODE_FAST"
+}
+```
+
+Or using an ICU collation (PostgreSQL >= 15):
+
+```hcl
+resource "postgresql_database" "icu_db" {
+  name            = "icu_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "icu"
+  icu_locale      = "en-US"
+}
+```
+
 ## Argument Reference
 
 * `name` - (Required) The name of the database. Must be unique on the PostgreSQL
@@ -82,6 +107,32 @@ resource "postgresql_database" "my_db" {
   classification of the specified `template` database.  Changing this value will
   force the creation of a new resource as this value can only be changed when a
   database is created.
+
+* `locale` - (Optional) Sets the default collation order and character
+  classification of the new database in a single option (equivalent to setting
+  both `lc_collate` and `lc_ctype`, and, for the `icu`/`builtin` providers, the
+  provider locale). Requires PostgreSQL >= 15. Changing this value will force the
+  creation of a new resource.
+
+* `locale_provider` - (Optional) The provider to use for the default collation
+  of the new database. One of `libc`, `icu` or `builtin`. Requires PostgreSQL
+  >= 15 (`builtin` requires >= 17). Changing this value will force the creation
+  of a new resource.
+
+* `builtin_locale` - (Optional) The locale name to use with the `builtin`
+  locale provider, e.g. `C`, `C.UTF-8` or `PG_UNICODE_FAST` (the latter requires
+  PostgreSQL >= 18). Only valid when `locale_provider` is `builtin`. Requires
+  PostgreSQL >= 17. Changing this value will force the creation of a new
+  resource.
+
+* `icu_locale` - (Optional) The ICU locale name to use with the `icu` locale
+  provider, e.g. `en-US`. Only valid when `locale_provider` is `icu`. Requires
+  PostgreSQL >= 15. Changing this value will force the creation of a new
+  resource.
+
+* `icu_rules` - (Optional) Additional ICU collation rules to customize the
+  behavior of the default collation of the database. Requires PostgreSQL >= 16.
+  Changing this value will force the creation of a new resource.
 
 * `alter_object_ownership` - (Optional) If `true`, the change of the database
   `owner` will also include a reassignment of the ownership of preexisting

@@ -47,6 +47,9 @@ const (
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
 	featureMaintainPrivilege
+	featureDBLocaleProvider
+	featureDBICURules
+	featureDBBuiltinLocale
 )
 
 var (
@@ -126,6 +129,16 @@ var (
 
 		// MAINTAIN privilege on tables (PG 17+)
 		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
+
+		// CREATE DATABASE has LOCALE, LOCALE_PROVIDER and ICU_LOCALE support (PG 15+)
+		featureDBLocaleProvider: semver.MustParseRange(">=15.0.0"),
+
+		// CREATE DATABASE has ICU_RULES support (PG 16+)
+		featureDBICURules: semver.MustParseRange(">=16.0.0"),
+
+		// CREATE DATABASE has BUILTIN_LOCALE support, and the pg_database
+		// daticulocale column was renamed to datlocale (PG 17+)
+		featureDBBuiltinLocale: semver.MustParseRange(">=17.0.0"),
 	}
 )
 
