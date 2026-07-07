@@ -181,7 +181,7 @@ func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceD
 		return err
 	}
 
-	if objectType == "database" {
+	if db.IsLockGrants() || objectType == "database" {
 		if err := pgLockDatabase(txn, database); err != nil {
 			return err
 		}
@@ -239,7 +239,8 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	}
 
 	objectType := d.Get("object_type").(string)
-	if objectType == "database" {
+
+	if db.IsLockGrants() || objectType == "database" {
 		if err := pgLockDatabase(txn, database); err != nil {
 			return err
 		}
