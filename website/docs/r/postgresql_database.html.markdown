@@ -52,6 +52,12 @@ resource "postgresql_database" "icu_db" {
 }
 ```
 
+~> **Note** A database that uses a `locale_provider`, `builtin_locale`,
+`icu_locale` or `icu_rules` different from the server's default must be created
+from the `template0` template (set `template = "template0"`). The default
+`template1` inherits the locale settings of the source database and PostgreSQL
+will reject overriding them.
+
 ## Argument Reference
 
 * `name` - (Required) The name of the database. Must be unique on the PostgreSQL
@@ -108,12 +114,6 @@ resource "postgresql_database" "icu_db" {
   force the creation of a new resource as this value can only be changed when a
   database is created.
 
-* `locale` - (Optional) Sets the default collation order and character
-  classification of the new database in a single option (equivalent to setting
-  both `lc_collate` and `lc_ctype`, and, for the `icu`/`builtin` providers, the
-  provider locale). Requires PostgreSQL >= 15. Changing this value will force the
-  creation of a new resource.
-
 * `locale_provider` - (Optional) The provider to use for the default collation
   of the new database. One of `libc`, `icu` or `builtin`. Requires PostgreSQL
   >= 15 (`builtin` requires >= 17). Changing this value will force the creation
@@ -122,8 +122,9 @@ resource "postgresql_database" "icu_db" {
 * `builtin_locale` - (Optional) The locale name to use with the `builtin`
   locale provider, e.g. `C`, `C.UTF-8` or `PG_UNICODE_FAST` (the latter requires
   PostgreSQL >= 18). Only valid when `locale_provider` is `builtin`. Requires
-  PostgreSQL >= 17. Changing this value will force the creation of a new
-  resource.
+  PostgreSQL >= 17. The value is compared case-insensitively, since PostgreSQL
+  stores the canonical casing (e.g. `PG_UNICODE_FAST`). Changing this value will
+  force the creation of a new resource.
 
 * `icu_locale` - (Optional) The ICU locale name to use with the `icu` locale
   provider, e.g. `en-US`. Only valid when `locale_provider` is `icu`. Requires

@@ -25,7 +25,6 @@ const (
 	dbTablespaceAttr       = "tablespace_name"
 	dbTemplateAttr         = "template"
 	dbAlterObjectOwnership = "alter_object_ownership"
-	dbLocaleAttr           = "locale"
 	dbLocaleProviderAttr   = "locale_provider"
 	dbBuiltinLocaleAttr    = "builtin_locale"
 	dbICULocaleAttr        = "icu_locale"
@@ -114,12 +113,6 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Default:     false,
 				Description: "If true, the owner of already existing objects will change if the owner changes",
 			},
-			dbLocaleAttr: {
-				Type:        schema.TypeString,
-				Optional:    true,
-				ForceNew:    true,
-				Description: "Sets the default collation order and character classification in the new database (shorthand that sets lc_collate/lc_ctype and, for the icu/builtin providers, the provider locale). Requires PostgreSQL >= 15",
-			},
 			dbLocaleProviderAttr: {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -129,11 +122,16 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				ValidateFunc: validation.StringInSlice([]string{"libc", "icu", "builtin"}, false),
 			},
 			dbBuiltinLocaleAttr: {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Computed:    true,
-				ForceNew:    true,
-				Description: "Builtin locale to use when locale_provider is builtin, e.g. C, C.UTF-8 or PG_UNICODE_FAST. Requires PostgreSQL >= 17",
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				ForceNew: true,
+				// PostgreSQL stores builtin locale names in canonical casing
+				// (e.g. PG_UNICODE_FAST), so suppress diffs that only differ by
+				// case to avoid a perpetual plan when the config uses a different
+				// casing (e.g. pg_unicode_fast).
+				DiffSuppressFunc: caseInsensitiveDiffSuppressFunc,
+				Description:      "Builtin locale to use when locale_provider is builtin, e.g. C, C.UTF-8 or PG_UNICODE_FAST. Requires PostgreSQL >= 17",
 			},
 			dbICULocaleAttr: {
 				Type:        schema.TypeString,
@@ -244,15 +242,10 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " LC_CTYPE '%s' ", pqQuoteLiteral(v.(string)))
 	}
 
-	// Non-libc locale options (LOCALE, LOCALE_PROVIDER, ICU_LOCALE) require
+	// Non-libc locale options (LOCALE_PROVIDER, ICU_LOCALE) require
 	// PostgreSQL >= 15, ICU_RULES requires >= 16 and BUILTIN_LOCALE requires >= 17.
-	if v, ok := d.GetOk(dbLocaleAttr); ok {
-		if !db.featureSupported(featureDBLocaleProvider) {
-			return fmt.Errorf("the server (%q) does not support the LOCALE option of CREATE DATABASE, it requires PostgreSQL >= 15", db.version.String())
-		}
-		fmt.Fprintf(b, " LOCALE '%s' ", pqQuoteLiteral(v.(string)))
-	}
-
+	// Each option is gated per-attribute; specific locale values (e.g.
+	// PG_UNICODE_FAST) are left to the server to accept or reject.
 	if v, ok := d.GetOk(dbBuiltinLocaleAttr); ok {
 		if !db.featureSupported(featureDBBuiltinLocale) {
 			return fmt.Errorf("the server (%q) does not support the BUILTIN_LOCALE option of CREATE DATABASE, it requires PostgreSQL >= 17", db.version.String())
