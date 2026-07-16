@@ -29,6 +29,31 @@ func TestProvider_impl(t *testing.T) {
 	var _ = Provider()
 }
 
+func TestProviderConfigureMaxIdleConnections(t *testing.T) {
+	raw := map[string]interface{}{
+		"host":                 "localhost",
+		"port":                 5432,
+		"username":             "postgres",
+		"max_idle_connections": 7,
+	}
+
+	d := schema.TestResourceDataRaw(t, Provider().Schema, raw)
+
+	meta, err := providerConfigure(d)
+	if err != nil {
+		t.Fatalf("providerConfigure returned an error: %s", err)
+	}
+
+	client, ok := meta.(*Client)
+	if !ok {
+		t.Fatalf("expected *Client, got %T", meta)
+	}
+
+	if client.config.MaxIdleConns != 7 {
+		t.Errorf("expected MaxIdleConns to be 7, got %d", client.config.MaxIdleConns)
+	}
+}
+
 func testAccPreCheck(t *testing.T) {
 	var host string
 	if host = os.Getenv("PGHOST"); host == "" {
