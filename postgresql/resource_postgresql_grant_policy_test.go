@@ -30,9 +30,11 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      privileges  = ["SELECT"]
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = []
+      privileges        = ["SELECT"]
+      with_grant_option = false
     }
   ]
 }
@@ -85,9 +87,11 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      privileges  = ["SELECT"]
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = []
+      privileges        = ["SELECT"]
+      with_grant_option = false
     }
   ]
 }
@@ -101,14 +105,18 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      privileges  = ["SELECT", "UPDATE"]
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = []
+      privileges        = ["SELECT", "UPDATE"]
+      with_grant_option = false
     },
     {
-      schema      = "dev_schema"
-      object_type = "schema"
-      privileges  = ["USAGE"]
+      schema            = "dev_schema"
+      object_type       = "schema"
+      objects           = []
+      privileges        = ["USAGE"]
+      with_grant_option = false
     }
   ]
 }
@@ -124,9 +132,11 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "dev_schema"
-      object_type = "schema"
-      privileges  = ["USAGE"]
+      schema            = "dev_schema"
+      object_type       = "schema"
+      objects           = []
+      privileges        = ["USAGE"]
+      with_grant_option = false
     }
   ]
 }
@@ -199,10 +209,11 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      objects     = ["test_table"]
-      privileges  = ["SELECT"]
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = ["test_table"]
+      privileges        = ["SELECT"]
+      with_grant_option = false
     }
   ]
 }
@@ -220,15 +231,21 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      objects     = ["test_table"]
-      privileges  = ["SELECT", "UPDATE"]
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = ["test_table"]
+      privileges        = ["SELECT", "UPDATE"]
+      with_grant_option = false
     }
   ]
 }
 `, dbName, roleName)
 
+	// authoritative = true must also declare the schema-level USAGE grant
+	// setupTestDatabase pre-created (otherwise authoritative mode revokes it
+	// as undeclared, and the role loses the ability to even reach the
+	// table — a real consequence of full ownership, not a bug to work
+	// around here).
 	authoritativeConfig := fmt.Sprintf(`
 resource "postgresql_grant_policy" "test" {
   database      = "%[1]s"
@@ -237,10 +254,18 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      objects     = ["test_table"]
-      privileges  = ["SELECT", "UPDATE"]
+      schema            = "test_schema"
+      object_type       = "schema"
+      objects           = []
+      privileges        = ["USAGE"]
+      with_grant_option = false
+    },
+    {
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = ["test_table"]
+      privileges        = ["SELECT", "UPDATE"]
+      with_grant_option = false
     }
   ]
 }
@@ -315,6 +340,17 @@ func TestAccPostgresqlGrantPolicy_Import(t *testing.T) {
 	dropTables := createTestTables(t, dbSuffix, tables, "")
 	defer dropTables()
 
+	// setupTestDatabase itself grants USAGE on test_schema and dev_schema to
+	// roleName (so the role can reach anything at all) — these must be
+	// declared too, or import (which discovers every grant, not just this
+	// resource's own) legitimately produces more entries than a plain
+	// apply/read of this config would, and ImportStateVerify fails on a
+	// mismatch that has nothing to do with the resource itself. Declared in
+	// the same order groupCurrentGrantPolicyGrantsForImport produces them
+	// (sorted by schema, then object_type): `grants` is a TypeList, so
+	// ImportStateVerify compares positionally — reordering existing entries
+	// in config is itself a diff, same as on
+	// postgresql_default_privileges_policy.
 	tfConfig := fmt.Sprintf(`
 resource "postgresql_grant_policy" "test" {
   database      = "%[1]s"
@@ -323,9 +359,25 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      schema      = "test_schema"
-      object_type = "table"
-      privileges  = ["SELECT"]
+      schema            = "dev_schema"
+      object_type       = "schema"
+      objects           = []
+      privileges        = ["USAGE"]
+      with_grant_option = false
+    },
+    {
+      schema            = "test_schema"
+      object_type       = "schema"
+      objects           = []
+      privileges        = ["USAGE"]
+      with_grant_option = false
+    },
+    {
+      schema            = "test_schema"
+      object_type       = "table"
+      objects           = []
+      privileges        = ["SELECT"]
+      with_grant_option = false
     }
   ]
 }
@@ -348,6 +400,10 @@ resource "postgresql_grant_policy" "test" {
 					return fmt.Sprintf("%s/%s", dbName, roleName), nil
 				},
 				ImportStateVerify: true,
+				// Import never writes managed_grants by design (see the
+				// resource's Importer doc comment) — it legitimately differs
+				// (empty) from the ledger a real apply populates.
+				ImportStateVerifyIgnore: []string{"managed_grants"},
 			},
 		},
 	})
@@ -363,7 +419,14 @@ func TestAccPostgresqlGrantPolicy_DatabaseAndGrantOption(t *testing.T) {
 	dbSuffix, teardown := setupTestDatabase(t, true, true)
 	defer teardown()
 
+	config := getTestConfig(t)
 	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Postgres grants CONNECT to PUBLIC on every database by default, which
+	// would make the role-specific CONNECT check below pass regardless of
+	// what this resource does. Revoke it so the check actually exercises the
+	// role's own grant.
+	dbExecute(t, config.connStr("postgres"), fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", dbName))
 
 	tfConfig := fmt.Sprintf(`
 resource "postgresql_grant_policy" "test" {
@@ -372,12 +435,16 @@ resource "postgresql_grant_policy" "test" {
 
   grants = [
     {
-      object_type = "database"
-      privileges  = ["CONNECT"]
+      schema            = ""
+      object_type       = "database"
+      objects           = []
+      privileges        = ["CONNECT"]
+      with_grant_option = false
     },
     {
       schema            = "test_schema"
       object_type       = "schema"
+      objects           = []
       privileges        = ["USAGE"]
       with_grant_option = true
     }
