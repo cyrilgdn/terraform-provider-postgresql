@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -31,6 +32,9 @@ func resourcePostgreSQLGrantRole() *schema.Resource {
 		Create: PGResourceFunc(resourcePostgreSQLGrantRoleCreate),
 		Read:   PGResourceFunc(resourcePostgreSQLGrantRoleRead),
 		Delete: PGResourceFunc(resourcePostgreSQLGrantRoleDelete),
+		Importer: &schema.ResourceImporter{
+			StateContext: resourcePostgreSQLGrantRoleImport,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -54,6 +58,23 @@ func resourcePostgreSQLGrantRole() *schema.Resource {
 			},
 		},
 	}
+}
+
+func resourcePostgreSQLGrantRoleImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	importId := d.Id()
+	parts := strings.Split(importId, "@")
+
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid import id. Expected format: <role>@<grant_role>. Got %s", importId)
+	}
+	role := parts[0]
+	d.Set("role", role)
+	grantRole := parts[1]
+	d.Set("grant_role", grantRole)
+
+	d.SetId(generateGrantRoleID(d)) // Import ID is the same as the generated ID for backwards compatibility
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourcePostgreSQLGrantRoleRead(db *DBConnection, d *schema.ResourceData) error {
