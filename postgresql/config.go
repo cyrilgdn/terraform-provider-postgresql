@@ -48,6 +48,7 @@ const (
 	featureFunction
 	featureServer
 	featureCreateRoleSelfGrant
+	featureGrantRoleMembershipOptions
 	featureSecurityLabel
 	featureMaintainPrivilege
 )
@@ -125,7 +126,12 @@ var (
 		// New privileges rules in version 16
 		// https://www.postgresql.org/docs/16/release-16.html#RELEASE-16-PRIVILEGES
 		featureCreateRoleSelfGrant: semver.MustParseRange(">=16.0.0"),
-		featureSecurityLabel:       semver.MustParseRange(">=11.0.0"),
+
+		// GRANT role TO role WITH INHERIT / SET options (pg_auth_members)
+		// https://www.postgresql.org/docs/16/sql-grant.html
+		featureGrantRoleMembershipOptions: semver.MustParseRange(">=16.0.0"),
+
+		featureSecurityLabel: semver.MustParseRange(">=11.0.0"),
 
 		// MAINTAIN privilege on tables (PG 17+)
 		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
