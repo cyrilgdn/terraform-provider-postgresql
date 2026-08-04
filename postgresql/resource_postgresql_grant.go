@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -35,6 +36,22 @@ var objectTypes = map[string]string{
 	"schema":   "n",
 }
 
+// Object types that support changes to the objects field
+// without recreating the grant.
+//
+// By default, when the 'objects' field changes, the grant resource is recreated.
+// This is simpler to implement, but has some downsides:
+// - If the create fails, the existing grant is lost
+// - There is a brief moment during the update where the role has no privileges.
+//
+// To support a transactional update in-place, the read function needs to be
+// able to correctly read the state of existing objects and detect partial
+// update failures.
+var objectsFieldUpdateSupportedTypes = map[string]bool{
+	"table":    true,
+	"sequence": true,
+}
+
 type ResourceSchemeGetter func(string) any
 
 func resourcePostgreSQLGrant() *schema.Resource {
@@ -43,7 +60,15 @@ func resourcePostgreSQLGrant() *schema.Resource {
 		Update: PGResourceFunc(resourcePostgreSQLGrantUpdate),
 		Read:   PGResourceFunc(resourcePostgreSQLGrantRead),
 		Delete: PGResourceFunc(resourcePostgreSQLGrantDelete),
-
+		CustomizeDiff: func(ctx context.Context, diff *schema.ResourceDiff, meta interface{}) error {
+			if diff.HasChange("objects") {
+				objectType := diff.Get("object_type").(string)
+				if !objectsFieldUpdateSupportedTypes[objectType] {
+					return diff.ForceNew("objects")
+				}
+			}
+			return nil
+		},
 		Schema: map[string]*schema.Schema{
 			"role": {
 				Type:        schema.TypeString,
@@ -73,7 +98,6 @@ func resourcePostgreSQLGrant() *schema.Resource {
 			"objects": {
 				Type:        schema.TypeSet,
 				Optional:    true,
-				ForceNew:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
 				Description: "The specific objects to grant privileges on for this role (empty means all objects of the requested type)",
@@ -508,6 +532,8 @@ GROUP BY pg_class.relname
 		return err
 	}
 
+	existingObjects := make(map[string]bool)
+
 	for rows.Next() {
 		var objName string
 		var privileges pq.ByteaArray
@@ -515,6 +541,8 @@ GROUP BY pg_class.relname
 		if err := rows.Scan(&objName, &privileges); err != nil {
 			return err
 		}
+
+		existingObjects[objName] = true
 
 		if objects.Len() > 0 && !objects.Contains(objName) {
 			continue
@@ -533,6 +561,22 @@ GROUP BY pg_class.relname
 		}
 	}
 
+	if objects.Len() > 0 && objectsFieldUpdateSupportedTypes[objectType] {
+		// If an update to the list of objects failed, there may be a mismatch
+		// between the objects in the state and the actual existing objects.
+		// We need to filter out the non-existing objects from the state.
+		filteredObjects := schema.NewSet(schema.HashString, []any{})
+		for _, obj := range objects.List() {
+			objName := obj.(string)
+			if existingObjects[objName] {
+				filteredObjects.Add(objName)
+			}
+		}
+
+		if !filteredObjects.Equal(objects) {
+			d.Set("objects", filteredObjects)
+		}
+	}
 	return nil
 }
 
