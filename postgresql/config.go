@@ -176,6 +176,7 @@ type ClientCertificateConfig struct {
 type Config struct {
 	Scheme                          string
 	Host                            string
+	AWSIAMDBAuthTokenHost           string
 	Port                            int
 	Username                        string
 	Password                        string
