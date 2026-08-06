@@ -366,7 +366,7 @@ func TestAccPostgresqlPublication_UpdateOwner(t *testing.T) {
 
 	testAccPostgresqlPublicationUpdateOwnerConfig := fmt.Sprintf(`
 	resource "postgresql_role" "test_owner_2" {
-		name = "%s_2"
+		name = "%s-2"
 		login = true
 	}
 	resource "postgresql_publication" "test" {
@@ -403,11 +403,11 @@ func TestAccPostgresqlPublication_UpdateOwner(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
 					resource.TestCheckResourceAttr(
-						"postgresql_role.test_owner_2", "name", fmt.Sprintf("%s_2", testOwner)),
+						"postgresql_role.test_owner_2", "name", fmt.Sprintf("%s-2", testOwner)),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "name", "publication"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", "owner", fmt.Sprintf("%s_2", testOwner)),
+						"postgresql_publication.test", "owner", fmt.Sprintf("%s-2", testOwner)),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "database", dbName),
 				),
@@ -426,14 +426,14 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 
 	testAccPostgresqlPublicationBaseConfig := fmt.Sprintf(`
 	resource "postgresql_publication" "test" {
-		name     = "%s_publication_1"
+		name     = "%s-publication-1"
 		database = "%s"
 	}
 	`, dbName, dbName)
 
 	testAccPostgresqlPublicationUpdateNameConfig := fmt.Sprintf(`
 	resource "postgresql_publication" "test" {
-		name     = "%s_publication_2"
+		name     = "%s-publication-2"
 		database = "%s"
 	}
 	`, dbName, dbName)
@@ -453,7 +453,7 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", "name", fmt.Sprintf("%s_publication_1", dbName)),
+						"postgresql_publication.test", "name", fmt.Sprintf("%s-publication-1", dbName)),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "database", dbName),
 				),
@@ -463,7 +463,7 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", "name", fmt.Sprintf("%s_publication_2", dbName)),
+						"postgresql_publication.test", "name", fmt.Sprintf("%s-publication-2", dbName)),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "database", dbName),
 				),
@@ -473,7 +473,7 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
 					resource.TestCheckResourceAttr(
-						"postgresql_publication.test", "name", fmt.Sprintf("%s_publication_1", dbName)),
+						"postgresql_publication.test", "name", fmt.Sprintf("%s-publication-1", dbName)),
 					resource.TestCheckResourceAttr(
 						"postgresql_publication.test", "database", dbName),
 				),
