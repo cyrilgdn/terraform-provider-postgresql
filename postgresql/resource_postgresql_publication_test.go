@@ -817,3 +817,64 @@ resource "postgresql_publication" "test" {
 		},
 	})
 }
+
+func TestAccPostgresqlPublication_GeneratedColumns(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	testAccPostgresqlPublicationStoredConfig := fmt.Sprintf(`
+	resource "postgresql_publication" "test" {
+		name                            = "publication"
+		database                        = "%s"
+		publish_generated_columns_param = "stored"
+	}
+	`, dbName)
+
+	testAccPostgresqlPublicationNoneConfig := fmt.Sprintf(`
+	resource "postgresql_publication" "test" {
+		name                            = "publication"
+		database                        = "%s"
+		publish_generated_columns_param = "none"
+	}
+	`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
+			testCheckCompatibleVersion(t, featurePubGeneratedColumns)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:  testAccPostgresqlPublicationStoredConfig,
+				Destroy: false,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "name", "publication"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubDatabaseAttr, dbName),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubPublishGeneratedColumnsAttr, "stored"),
+				),
+			},
+			{
+				Config: testAccPostgresqlPublicationNoneConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", pubPublishGeneratedColumnsAttr, "none"),
+				),
+			},
+		},
+	})
+}

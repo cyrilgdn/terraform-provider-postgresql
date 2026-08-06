@@ -50,6 +50,7 @@ const (
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
 	featureMaintainPrivilege
+	featurePubGeneratedColumns
 )
 
 var (
@@ -129,6 +130,9 @@ var (
 
 		// MAINTAIN privilege on tables (PG 17+)
 		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
+
+		// publish_generated_columns for publications (PG 18+)
+		featurePubGeneratedColumns: semver.MustParseRange(">=18.0.0"),
 	}
 )
 
