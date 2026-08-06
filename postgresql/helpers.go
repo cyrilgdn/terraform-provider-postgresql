@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -139,6 +140,27 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 // withRolesGranted temporarily grants, if needed, the roles specified to connected user
 // (i.e.: the admin configure in the provider) and revoke them as soon as the
 // callback func has finished.
+//
+// Several resources (postgresql_grant_policy chief among them) can call this
+// concurrently, in separate transactions, for DIFFERENT recipient roles that
+// happen to share the SAME owner role in `roles` — e.g. several grant_policy
+// applies against tables/schemas owned by the same liquibase_user. Nothing
+// upstream of this function locks the owner role itself (pgLockRole only
+// covers the resource's own recipient/grantee role), so those transactions'
+// GRANT/REVOKE <owner> ... <currentUser> statements race on the same
+// pg_auth_members catalog rows and can hit a genuine PostgreSQL deadlock
+// (40P01) or "tuple concurrently updated/deleted" (XX000). Taking a
+// transaction-scoped advisory lock on each role's own OID before touching its
+// membership serializes concurrent elevations of the *same* role while
+// leaving unrelated roles free to run in parallel — same mechanism pgLockRole
+// already uses, scoped to just the role (not its member tree), since here we
+// only need mutual exclusion on "who is temporarily elevated into this role."
+// Sorting the role list first fixes one global lock-acquisition order across
+// every caller, so two calls that need overlapping-but-differently-ordered
+// role sets can't form an ABBA lock-order-inversion deadlock between
+// themselves. pg_advisory_xact_lock is re-entrant for the same backend, so a
+// nested or repeated withRolesGranted call for a role already locked in this
+// transaction never blocks on itself.
 func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 	// No roles asked, execute the function directly
 	if len(roles) == 0 {
@@ -159,10 +181,13 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		return fn()
 	}
 
+	sortedRoles := append([]string(nil), roles...)
+	sort.Strings(sortedRoles)
+
 	var grantedRoles []string
 	var revokedRoles []string
 
-	for _, role := range roles {
+	for _, role := range sortedRoles {
 		// We need to check if the role we want to grant is a superuser
 		// in this case Postgres disallows to grant it to a current user which is not superuser.
 		superuser, err := isSuperuser(txn, role)
@@ -172,6 +197,13 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		if superuser {
 			log.Printf("withRolesGranted: WARN role %s could not be granted to current user (%s) as it's a superuser", role, currentUser)
 			continue
+		}
+
+		// Serialize concurrent elevations of this same role across
+		// transactions before touching its membership at all (see the
+		// function doc comment above for why).
+		if err := pgLockRoleForElevation(txn, role); err != nil {
+			return err
 		}
 
 		// We also need to check if the reverse relationship does not exist.
@@ -611,6 +643,25 @@ func pgLockRole(txn *sql.Tx, role string) error {
 		role,
 	); err != nil {
 		return fmt.Errorf("could not get advisory lock for members of role %s: %w", role, err)
+	}
+
+	return nil
+}
+
+// pgLockRoleForElevation takes a transaction-scoped advisory lock on just a
+// role's own OID, to serialize concurrent temporary elevations of that same
+// role (see withRolesGranted). Unlike pgLockRole it deliberately does not
+// also lock the role's members: elevation only ever mutates the membership
+// row between this one role and the connected user, and locking the whole
+// member tree would risk serializing unrelated concurrent operations that
+// merely happen to share a member with this role.
+func pgLockRoleForElevation(txn *sql.Tx, role string) error {
+	// Disable statement timeout for this connection otherwise the lock could fail
+	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("could not disable statement_timeout: %w", err)
+	}
+	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
+		return fmt.Errorf("could not get advisory lock for role %s: %w", role, err)
 	}
 
 	return nil
