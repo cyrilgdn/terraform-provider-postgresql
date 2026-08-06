@@ -17,6 +17,7 @@ const (
 	pubDatabaseAttr                = "database"
 	pubAllTablesAttr               = "all_tables"
 	pubTablesAttr                  = "tables"
+	pubSchemasAttr                 = "schemas"
 	pubDropCascadeAttr             = "drop_cascade"
 	pubPublishAttr                 = "publish_param"
 	pubPublishViaPartitionRootAttr = "publish_via_partition_root_param"
@@ -62,6 +63,15 @@ func resourcePostgreSQLPublication() *schema.Resource {
 				ForceNew:      false,
 				Elem:          &schema.Schema{Type: schema.TypeString},
 				Description:   "Sets the tables list to publish",
+				ConflictsWith: []string{pubAllTablesAttr},
+			},
+			pubSchemasAttr: {
+				Type:          schema.TypeSet,
+				Optional:      true,
+				Computed:      true,
+				ForceNew:      false,
+				Elem:          &schema.Schema{Type: schema.TypeString},
+				Description:   "Sets the schemas list to publish (FOR TABLES IN SCHEMA)",
 				ConflictsWith: []string{pubAllTablesAttr},
 			},
 			pubAllTablesAttr: {
@@ -117,6 +127,10 @@ func resourcePostgreSQLPublicationUpdate(db *DBConnection, d *schema.ResourceDat
 
 	if err := setPubTables(txn, d); err != nil {
 		return fmt.Errorf("could not update publication tables: %w", err)
+	}
+
+	if err := setPubSchemas(txn, d, db.featureSupported(featurePubTablesInSchema)); err != nil {
+		return fmt.Errorf("could not update publication schemas: %w", err)
 	}
 
 	if err := setPubParams(txn, d, db.featureSupported(featurePublishViaRoot)); err != nil {
@@ -200,6 +214,44 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	return nil
 }
 
+func setPubSchemas(txn *sql.Tx, d *schema.ResourceData, tablesInSchemaEnabled bool) error {
+	if !d.HasChange(pubSchemasAttr) {
+		return nil
+	}
+
+	if !tablesInSchemaEnabled {
+		return fmt.Errorf(
+			"schemas attribute (FOR TABLES IN SCHEMA) is supported only for postgres version 15 and above",
+		)
+	}
+
+	var queries []string
+	pubName := d.Get(pubNameAttr).(string)
+
+	oraw, nraw := d.GetChange(pubSchemasAttr)
+	oldList := oraw.(*schema.Set).List()
+	newList := nraw.(*schema.Set).List()
+	dropped := arrayDifference(oldList, newList)
+	added := arrayDifference(newList, oldList)
+
+	for _, p := range added {
+		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLES IN SCHEMA %s", pubName, pq.QuoteIdentifier(p.(string)))
+		queries = append(queries, query)
+	}
+
+	for _, p := range dropped {
+		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLES IN SCHEMA %s", pubName, pq.QuoteIdentifier(p.(string)))
+		queries = append(queries, query)
+	}
+
+	for _, query := range queries {
+		if _, err := txn.Exec(query); err != nil {
+			return fmt.Errorf("could not alter publication schema: %w", err)
+		}
+	}
+	return nil
+}
+
 func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) error {
 	pubName := d.Get(pubNameAttr).(string)
 	paramAlterTemplate := "ALTER PUBLICATION %s %s"
@@ -226,7 +278,7 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 
 	name := d.Get(pubNameAttr).(string)
 	databaseName := getDatabaseForPublication(d, db.client.databaseName)
-	tables, err := getTablesForPublication(d)
+	tables, err := getTablesForPublication(d, db.featureSupported(featurePubTablesInSchema))
 	if err != nil {
 		return fmt.Errorf("could not get tables for publication: %w", err)
 	}
@@ -354,9 +406,52 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		return fmt.Errorf("error reading publication info: %w", err)
 	}
 
+	var schemas []string
+	if db.featureSupported(featurePubTablesInSchema) {
+		query = `SELECT ns.nspname ` +
+			`FROM pg_catalog.pg_publication_namespace pn ` +
+			`JOIN pg_catalog.pg_namespace ns on pn.pnnspid = ns.oid ` +
+			`JOIN pg_catalog.pg_publication p on pn.pnpubid = p.oid ` +
+			`WHERE p.pubname = $1`
+
+		rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
+		if err != nil {
+			return fmt.Errorf("could not get publication schemas: %w", err)
+		}
+		defer func() {
+			if err := rows.Close(); err != nil {
+				log.Printf("error closing rows: %v", err)
+			}
+		}()
+
+		for rows.Next() {
+			var schemaName string
+			err := rows.Scan(&schemaName)
+			if err != nil {
+				return fmt.Errorf("could not get schemas: %w", err)
+			}
+			schemas = append(schemas, schemaName)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("got rows.Err: %w", err)
+		}
+	}
+
 	query = `SELECT CONCAT(schemaname,'.',tablename) as fulltablename ` +
 		`FROM pg_catalog.pg_publication_tables ` +
 		`WHERE pubname = $1`
+	if db.featureSupported(featurePubTablesInSchema) {
+		// Tables published because their schema is in the publication
+		// (FOR TABLES IN SCHEMA) are tracked by the schemas attribute:
+		// exclude them so the tables attribute only contains the
+		// explicitly published tables.
+		query += ` AND schemaname NOT IN (` +
+			`SELECT ns.nspname ` +
+			`FROM pg_catalog.pg_publication_namespace pn ` +
+			`JOIN pg_catalog.pg_namespace ns on pn.pnnspid = ns.oid ` +
+			`JOIN pg_catalog.pg_publication p on pn.pnpubid = p.oid ` +
+			`WHERE p.pubname = $1)`
+	}
 
 	rows, err := txn.Query(query, pqQuoteLiteral(PublicationName))
 	if err != nil {
@@ -393,11 +488,16 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		publishParams = append(publishParams, "truncate")
 	}
 
-	d.SetId(generatePublicationID(d, database))
+	// Set the name before generating the ID: when importing, the name is
+	// not in the state yet and generatePublicationID reads it from there.
 	d.Set(pubNameAttr, PublicationName)
+	d.SetId(generatePublicationID(d, database))
 	d.Set(pubDatabaseAttr, database)
 	d.Set(pubOwnerAttr, pubowner)
 	d.Set(pubTablesAttr, tables)
+	if db.featureSupported(featurePubTablesInSchema) {
+		d.Set(pubSchemasAttr, schemas)
+	}
 	d.Set(pubAllTablesAttr, puballtables)
 	d.Set(pubPublishAttr, publishParams)
 	if sliceContainsStr(columns, "pubviaroot") {
@@ -448,9 +548,10 @@ func getDatabaseForPublication(d *schema.ResourceData, databaseName string) stri
 	return databaseName
 }
 
-func getTablesForPublication(d *schema.ResourceData) (string, error) {
+func getTablesForPublication(d *schema.ResourceData, tablesInSchemaEnabled bool) (string, error) {
 	var tablesString string
 	setTables, ok := d.GetOk(pubTablesAttr)
+	setSchemas, schemasOk := d.GetOk(pubSchemasAttr)
 	isAllTables, isAllOk := d.GetOk(pubAllTablesAttr)
 
 	if isAllOk {
@@ -458,6 +559,8 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 			tablesString = "FOR ALL TABLES"
 		}
 	}
+
+	var objects []string
 	if ok {
 		tables := setTables.(*schema.Set).List()
 		var tlist []string
@@ -467,7 +570,23 @@ func getTablesForPublication(d *schema.ResourceData) (string, error) {
 		for _, t := range tables {
 			tlist = append(tlist, quoteTableName(t.(string)))
 		}
-		tablesString = fmt.Sprintf("FOR TABLE %s", strings.Join(tlist, ", "))
+		objects = append(objects, fmt.Sprintf("TABLE %s", strings.Join(tlist, ", ")))
+	}
+	if schemasOk {
+		if !tablesInSchemaEnabled {
+			return "", fmt.Errorf(
+				"schemas attribute (FOR TABLES IN SCHEMA) is supported only for postgres version 15 and above",
+			)
+		}
+		schemas := setSchemas.(*schema.Set).List()
+		var slist []string
+		for _, s := range schemas {
+			slist = append(slist, pq.QuoteIdentifier(s.(string)))
+		}
+		objects = append(objects, fmt.Sprintf("TABLES IN SCHEMA %s", strings.Join(slist, ", ")))
+	}
+	if len(objects) > 0 {
+		tablesString = fmt.Sprintf("FOR %s", strings.Join(objects, ", "))
 	}
 
 	return tablesString, nil
