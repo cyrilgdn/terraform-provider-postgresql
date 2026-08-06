@@ -84,7 +84,14 @@ func resourcePostgreSQLExtensionCreate(db *DBConnection, d *schema.ResourceData)
 	extName := d.Get(extNameAttr).(string)
 	databaseName := getDatabaseForExtension(d, db.client.databaseName)
 
-	b := bytes.NewBufferString("CREATE EXTENSION IF NOT EXISTS ")
+	existingExtSchema, err := getExtensionSchema(d, db)
+	if err != nil {
+		return err
+	} else if existingExtSchema != nil {
+		return fmt.Errorf("extension '%s' already exists under schema '%s'. only one instance of an extension can exist per database", extName, *existingExtSchema)
+	}
+
+	b := bytes.NewBufferString("CREATE EXTENSION ")
 	fmt.Fprint(b, pq.QuoteIdentifier(extName))
 
 	if v, ok := d.GetOk(extSchemaAttr); ok {
@@ -354,4 +361,28 @@ func getDBExtName(d *schema.ResourceData, client *Client) (string, string, error
 		extName = parsed[1]
 	}
 	return database, extName, nil
+}
+
+func getExtensionSchema(d *schema.ResourceData, db *DBConnection) (*string, error) {
+	extName := d.Get(extNameAttr)
+
+	database := getDatabaseForExtension(d, db.client.databaseName)
+	txn, err := startTransaction(db.client, database)
+	if err != nil {
+		return nil, nil
+	}
+	defer deferredRollback(txn)
+
+	var extSchema string
+	query := `SELECT n.nspname FROM pg_catalog.pg_extension e INNER JOIN pg_catalog.pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = $1`
+
+	err = txn.QueryRow(query, extName).Scan(&extSchema)
+	switch {
+	case err == sql.ErrNoRows:
+		return nil, nil
+	case err != nil:
+		return nil, err
+	default:
+		return &extSchema, nil
+	}
 }

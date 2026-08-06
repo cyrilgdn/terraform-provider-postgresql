@@ -79,3 +79,22 @@ TF_LOG=INFO go test -v ./postgresql -run ^TestAccPostgresqlRole_Basic$
 # cleans the env and tears down the postgres container
 make testacc_cleanup 
 ```
+
+Testing the provider in a Terraform project
+---------------------------
+
+To have terraform source from your local version of the provider, ensure you have completed the [above steps](#developing-the-provider) including cloning the provider into your `$GOPATH/src/github.com/cyrilgdn/terraform-provider-postgresql` and running `make build`. Once complete, you can configure your `~/.terraformrc` file with the below config.
+
+```hcl2
+# .terraformrc
+provider_installation {
+  
+  dev_overrides {
+    "cyrilgdn/postgresql" = "{YOUR $GOPATH}/bin"
+  }
+
+  direct {}
+}
+```
+
+For more information on this configuration, [view the docs on Terraform website](https://developer.hashicorp.com/terraform/cli/config/config-file#cli-configuration-file-terraformrc-or-terraform-rc)
