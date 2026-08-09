@@ -16,7 +16,6 @@ func resourcePostgreSQLSubscription() *schema.Resource {
 		Create:   PGResourceFunc(resourcePostgreSQLSubscriptionCreate),
 		Read:     PGResourceFunc(resourcePostgreSQLSubscriptionRead),
 		Delete:   PGResourceFunc(resourcePostgreSQLSubscriptionDelete),
-		Exists:   PGResourceExistsFunc(resourcePostgreSQLSubscriptionExists),
 		Importer: &schema.ResourceImporter{StateContext: schema.ImportStatePassthroughContext},
 
 		Schema: map[string]*schema.Schema{
@@ -116,7 +115,13 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 
 	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
-		return fmt.Errorf("could not start transaction: %w", err)
+		if isDatabaseDoesNotExistError(err) {
+			log.Printf("[WARN] PostgreSQL database (%s) not found, removing subscription (%s) from state", databaseName, subName)
+			d.SetId("")
+			return nil
+		}
+		// startTransaction already provides context; avoid double-wrapping.
+		return err
 	}
 	defer deferredRollback(txn)
 
@@ -126,20 +131,21 @@ func resourcePostgreSQLSubscriptionReadImpl(db *DBConnection, d *schema.Resource
 
 	var subExists bool
 	queryExists := "SELECT TRUE FROM pg_catalog.pg_stat_subscription WHERE subname = $1"
-	err = txn.QueryRow(queryExists, pqQuoteLiteral(subName)).Scan(&subExists)
-	if err != nil {
-		return fmt.Errorf("failed to check subscription: %w", err)
-	}
-
-	if !subExists {
+	// A missing subscription yields no row, so QueryRow returns ErrNoRows.
+	// Treat that as "gone" and clear the ID (this used to be handled by the
+	// now-removed Exists callback); anything else is a real error.
+	switch err = txn.QueryRow(queryExists, subName).Scan(&subExists); {
+	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL Subscription (%s) not found for database %s", subName, databaseName)
 		d.SetId("")
 		return nil
+	case err != nil:
+		return fmt.Errorf("failed to check subscription: %w", err)
 	}
 
 	// pg_subscription requires superuser permissions, it is okay to fail here
 	query := "SELECT subconninfo, subpublications, subslotname FROM pg_catalog.pg_subscription WHERE subname = $1"
-	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&connInfo, pq.Array(&publications), &slotName)
+	err = txn.QueryRow(query, subName).Scan(&connInfo, pq.Array(&publications), &slotName)
 
 	if err != nil {
 		// we already checked that the subscription exists
@@ -209,39 +215,6 @@ func resourcePostgreSQLSubscriptionDelete(db *DBConnection, d *schema.ResourceDa
 	d.SetId("")
 
 	return nil
-}
-
-func resourcePostgreSQLSubscriptionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	var subName string
-
-	database, subName, err := getDBSubscriptionName(d, db.client)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT subname from pg_catalog.pg_stat_subscription WHERE subname = $1"
-	err = txn.QueryRow(query, pqQuoteLiteral(subName)).Scan(&subName)
-
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
 }
 
 func getPublicationsForSubscription(d *schema.ResourceData) (string, error) {

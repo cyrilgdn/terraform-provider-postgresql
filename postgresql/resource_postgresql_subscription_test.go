@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/lib/pq"
 )
 
 func testAccCheckPostgresqlSubscriptionDestroy(s *terraform.State) error {
@@ -229,6 +230,83 @@ func TestAccPostgresqlSubscription_Basic(t *testing.T) {
 		},
 	},
 	)
+	coolDown()
+}
+
+// testAccDropSubscription drops a subscription out-of-band, without touching
+// the remote replication slot (which is managed by a separate resource here):
+// disable it, detach the slot, then drop it.
+func testAccDropSubscription(t *testing.T, dbName, subName string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		config := getTestConfig(t)
+		dsn := config.connStr(dbName)
+		dbExecute(t, dsn, fmt.Sprintf("ALTER SUBSCRIPTION %s DISABLE", pq.QuoteIdentifier(subName)))
+		dbExecute(t, dsn, fmt.Sprintf("ALTER SUBSCRIPTION %s SET (slot_name = NONE)", pq.QuoteIdentifier(subName)))
+		dbExecute(t, dsn, fmt.Sprintf("DROP SUBSCRIPTION %s", pq.QuoteIdentifier(subName)))
+		return nil
+	}
+}
+
+// TestAccPostgresqlSubscription_Disappears verifies that when a subscription is
+// dropped out-of-band, a refresh detects it as gone (Read clears the ID) and
+// plans to recreate it, rather than erroring. This guards the Read not-found
+// path that used to be covered by the now-removed Exists callback.
+func TestAccPostgresqlSubscription_Disappears(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffixPub, teardownPub := setupTestDatabase(t, true, true)
+	dbSuffixSub, teardownSub := setupTestDatabase(t, true, true)
+
+	defer teardownPub()
+	defer teardownSub()
+	testTables := []string{"test_schema.test_table_1"}
+	createTestTables(t, dbSuffixPub, testTables, "")
+	createTestTables(t, dbSuffixSub, testTables, "")
+
+	dbNamePub, _ := getTestDBNames(dbSuffixPub)
+	dbNameSub, _ := getTestDBNames(dbSuffixSub)
+
+	conninfo := getConnInfo(t, dbNamePub)
+
+	subName := "subscription"
+	config := fmt.Sprintf(`
+	resource "postgresql_publication" "test_pub" {
+		name     	= "test_publication"
+		database	= "%s"
+		tables		= ["test_schema.test_table_1"]
+	}
+	resource "postgresql_replication_slot" "test_replication_slot" {
+		name		= "%s"
+		database	= "%s"
+		plugin		= "pgoutput"
+	}
+	resource "postgresql_subscription" "test_sub" {
+		name     		= postgresql_replication_slot.test_replication_slot.name
+		database 		= "%s"
+		conninfo 		= "%s"
+		publications	= [ postgresql_publication.test_pub.name ]
+		create_slot		= false
+	}
+	`, dbNamePub, subName, dbNamePub, dbNameSub, conninfo)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSubscriptionDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSubscriptionExists("postgresql_subscription.test_sub"),
+					testAccDropSubscription(t, dbNameSub, subName),
+				),
+				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
 	coolDown()
 }
 

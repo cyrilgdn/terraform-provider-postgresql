@@ -381,6 +381,12 @@ func (c *Client) connectWithRetry(ctx context.Context, postgresDriverName, dsn s
 		return retry.RetryableError(err)
 	})
 	if retryError != nil {
+		// Preserve *pq.Error so callers can detect conditions such as a dropped
+		// database (SQLSTATE 3D000); server-side pq errors never contain the
+		// password. Other errors may echo it, so keep redacting those.
+		if _, ok := errors.AsType[*pq.Error](retryError); ok {
+			return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %w", c.config.Host, c.config.Scheme, retryError)
+		}
 		errString := strings.Replace(retryError.Error(), c.config.Password, "XXXX", 2)
 		return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 	}

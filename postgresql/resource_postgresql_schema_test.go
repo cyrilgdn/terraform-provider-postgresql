@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/lib/pq"
 )
 
 func TestAccPostgresqlSchema_Basic(t *testing.T) {
@@ -597,3 +598,61 @@ resource "postgresql_schema" "test4" {
   }
 }
 `
+
+// TestAccPostgresqlSchema_DatabaseDropped ensures that when the database holding
+// a schema is dropped out-of-band, the read prunes the resource from state
+// instead of failing the whole refresh with `database "..." does not exist`
+// (SQLSTATE 3D000). Removing the Exists callback moved gone-detection entirely
+// into Read, which connects to the target database and therefore has to treat a
+// missing database as "resource gone" rather than an error.
+func TestAccPostgresqlSchema_DatabaseDropped(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	config := fmt.Sprintf(`
+resource "postgresql_schema" "test" {
+	name     = "test_dropped_db_schema"
+	database = "%s"
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.test", "test_dropped_db_schema"),
+					testAccDropDatabase(t, dbName),
+				),
+				// The database (and its schema) is gone out-of-band: the following
+				// refresh must succeed and plan to recreate the resource instead of
+				// erroring, which is what this change fixes.
+				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
+// testAccDropDatabase drops a database out-of-band. It terminates any lingering
+// backends first so the drop succeeds on all supported server versions, which
+// predate `DROP DATABASE ... WITH (FORCE)`.
+func testAccDropDatabase(t *testing.T, dbName string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		config := getTestConfig(t)
+		dbExecute(t, config.connStr("postgres"),
+			"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+			dbName)
+		dbExecute(t, config.connStr("postgres"), fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(dbName)))
+		return nil
+	}
+}

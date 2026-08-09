@@ -14,7 +14,6 @@ func resourcePostgreSQLReplicationSlot() *schema.Resource {
 		Create: PGResourceFunc(resourcePostgreSQLReplicationSlotCreate),
 		Read:   PGResourceFunc(resourcePostgreSQLReplicationSlotRead),
 		Delete: PGResourceFunc(resourcePostgreSQLReplicationSlotDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLReplicationSlotExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -64,39 +63,6 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 	return resourcePostgreSQLReplicationSlotReadImpl(db, d)
 }
 
-func resourcePostgreSQLReplicationSlotExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-
-	var ReplicationSlotName string
-
-	database, replicationSlotName, err := getDBReplicationSlotName(d, db.client)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
-	dbc, err := initConnection(db.client, database)
-	if err != nil {
-		return false, err
-	}
-
-	query := "SELECT slot_name FROM pg_catalog.pg_replication_slots WHERE slot_name = $1 and database = $2"
-	err = dbc.QueryRow(query, replicationSlotName, database).Scan(&ReplicationSlotName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
-}
-
 func resourcePostgreSQLReplicationSlotRead(db *DBConnection, d *schema.ResourceData) error {
 	return resourcePostgreSQLReplicationSlotReadImpl(db, d)
 }
@@ -110,6 +76,11 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
 	dbc, err := initConnection(db.client, database)
 	if err != nil {
+		if isDatabaseDoesNotExistError(err) {
+			log.Printf("[WARN] PostgreSQL database (%s) not found, removing replication slot (%s) from state", database, replicationSlotName)
+			d.SetId("")
+			return nil
+		}
 		return err
 	}
 
@@ -121,6 +92,10 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL ReplicationSlot (%s) not found for database %s", replicationSlotName, database)
+		d.SetId("")
+		return nil
+	case isDatabaseDoesNotExistError(err):
+		log.Printf("[WARN] PostgreSQL database %s not found, removing replication slot %s from state", database, replicationSlotName)
 		d.SetId("")
 		return nil
 	case err != nil:

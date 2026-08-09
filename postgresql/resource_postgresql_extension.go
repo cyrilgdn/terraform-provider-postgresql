@@ -27,7 +27,6 @@ func resourcePostgreSQLExtension() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLExtensionRead),
 		Update: PGResourceFunc(resourcePostgreSQLExtensionUpdate),
 		Delete: PGResourceFunc(resourcePostgreSQLExtensionDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLExtensionExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -119,45 +118,6 @@ func resourcePostgreSQLExtensionCreate(db *DBConnection, d *schema.ResourceData)
 	return resourcePostgreSQLExtensionReadImpl(db, d)
 }
 
-func resourcePostgreSQLExtensionExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featureExtension) {
-		return false, fmt.Errorf(
-			"postgresql_extension resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
-	}
-
-	var extensionName string
-
-	database, extName, err := getDBExtName(d, db.client)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT extname FROM pg_catalog.pg_extension WHERE extname = $1"
-	err = txn.QueryRow(query, extName).Scan(&extensionName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
-}
-
 func resourcePostgreSQLExtensionRead(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureExtension) {
 		return fmt.Errorf(
@@ -177,6 +137,11 @@ func resourcePostgreSQLExtensionReadImpl(db *DBConnection, d *schema.ResourceDat
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
+		if isDatabaseDoesNotExistError(err) {
+			log.Printf("[WARN] PostgreSQL database (%s) not found, removing extension (%s) from state", database, extName)
+			d.SetId("")
+			return nil
+		}
 		return err
 	}
 	defer deferredRollback(txn)

@@ -28,7 +28,6 @@ func resourcePostgreSQLPublication() *schema.Resource {
 		Read:   PGResourceFunc(resourcePostgreSQLPublicationRead),
 		Delete: PGResourceFunc(resourcePostgreSQLPublicationDelete),
 		Update: PGResourceFunc(resourcePostgreSQLPublicationUpdate),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLPublicationExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -258,45 +257,6 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	return resourcePostgreSQLPublicationReadImpl(db, d)
 }
 
-func resourcePostgreSQLPublicationExists(db *DBConnection, d *schema.ResourceData) (bool, error) {
-	if !db.featureSupported(featurePublication) {
-		return false, fmt.Errorf(
-			"postgresql_publication resource is not supported for this Postgres version (%s)",
-			db.version,
-		)
-	}
-
-	var PublicationName string
-
-	database, PublicationName, err := getDBPublicationName(d, db.client)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the database exists
-	exists, err := dbExists(db, database)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	txn, err := startTransaction(db.client, database)
-	if err != nil {
-		return false, err
-	}
-	defer deferredRollback(txn)
-
-	query := "SELECT pubname FROM pg_catalog.pg_publication WHERE pubname = $1"
-	err = txn.QueryRow(query, pqQuoteLiteral(PublicationName)).Scan(&PublicationName)
-	switch {
-	case err == sql.ErrNoRows:
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-
-	return true, nil
-}
-
 func resourcePostgreSQLPublicationRead(db *DBConnection, d *schema.ResourceData) error {
 	return resourcePostgreSQLPublicationReadImpl(db, d)
 }
@@ -316,7 +276,13 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 
 	txn, err := startTransaction(db.client, database)
 	if err != nil {
-		return fmt.Errorf("could not start transaction: %w", err)
+		if isDatabaseDoesNotExistError(err) {
+			log.Printf("[WARN] PostgreSQL database (%s) not found, removing publication (%s) from state", database, PublicationName)
+			d.SetId("")
+			return nil
+		}
+		// startTransaction already provides context; avoid double-wrapping.
+		return err
 	}
 	defer deferredRollback(txn)
 
