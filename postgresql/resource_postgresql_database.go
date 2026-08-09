@@ -314,40 +314,41 @@ func resourcePostgreSQLDatabaseRead(db *DBConnection, d *schema.ResourceData) er
 
 func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData) error {
 	dbId := d.Id()
-	var dbName, ownerName string
-	err := db.QueryRow("SELECT d.datname, pg_catalog.pg_get_userbyid(d.datdba) from pg_database d WHERE datname=$1", dbId).Scan(&dbName, &ownerName)
-	switch {
-	case err == sql.ErrNoRows:
-		log.Printf("[WARN] PostgreSQL database (%q) not found", dbId)
-		d.SetId("")
-		return nil
-	case err != nil:
-		return fmt.Errorf("error reading database: %w", err)
-	}
 
-	var dbEncoding, dbCollation, dbCType, dbTablespaceName string
+	var dbName, ownerName, dbEncoding, dbCollation, dbCType string
 	var dbConnLimit int
+	var dbAllowConns, dbIsTemplate bool
+	// ts.spcname is scanned via sql.NullString because the LEFT JOIN to
+	// pg_tablespace yields NULL if the database's tablespace cannot be
+	// resolved (in practice it always can). Using a LEFT JOIN keeps the row
+	// instead of dropping it, which an INNER JOIN would do.
+	var dbTablespaceName sql.NullString
 
-	columns := []string{
-		"pg_catalog.pg_encoding_to_char(d.encoding)",
-		"d.datcollate",
-		"d.datctype",
-		"ts.spcname",
-		"d.datconnlimit",
-	}
-
-	dbSQLFmt := `SELECT %s ` +
-		`FROM pg_catalog.pg_database AS d, pg_catalog.pg_tablespace AS ts ` +
-		`WHERE d.datname = $1 AND d.dattablespace = ts.oid`
-	dbSQL := fmt.Sprintf(dbSQLFmt, strings.Join(columns, ", "))
-	err = db.QueryRow(dbSQL, dbId).
-		Scan(
-			&dbEncoding,
-			&dbCollation,
-			&dbCType,
-			&dbTablespaceName,
-			&dbConnLimit,
-		)
+	// All database attributes are read in a single query to avoid the extra
+	// round-trips of the previous implementation (which issued four separate
+	// queries against pg_database for the same row). datallowconn and
+	// datistemplate exist on every supported server version, so they are always
+	// selected; the per-version feature gates are applied only when writing them
+	// into state (below) to preserve the previous behavior.
+	query := `SELECT d.datname, ` +
+		`pg_catalog.pg_get_userbyid(d.datdba), ` +
+		`pg_catalog.pg_encoding_to_char(d.encoding), ` +
+		`d.datcollate, d.datctype, ts.spcname, d.datconnlimit, ` +
+		`d.datallowconn, d.datistemplate ` +
+		`FROM pg_catalog.pg_database d ` +
+		`LEFT JOIN pg_catalog.pg_tablespace ts ON d.dattablespace = ts.oid ` +
+		`WHERE d.datname = $1`
+	err := db.QueryRow(query, dbId).Scan(
+		&dbName,
+		&ownerName,
+		&dbEncoding,
+		&dbCollation,
+		&dbCType,
+		&dbTablespaceName,
+		&dbConnLimit,
+		&dbAllowConns,
+		&dbIsTemplate,
+	)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL database (%q) not found", dbId)
@@ -362,7 +363,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 	d.Set(dbEncodingAttr, dbEncoding)
 	d.Set(dbCollationAttr, dbCollation)
 	d.Set(dbCTypeAttr, dbCType)
-	d.Set(dbTablespaceAttr, dbTablespaceName)
+	d.Set(dbTablespaceAttr, dbTablespaceName.String)
 	d.Set(dbConnLimitAttr, dbConnLimit)
 	dbTemplate := d.Get(dbTemplateAttr).(string)
 	if dbTemplate == "" {
@@ -371,24 +372,10 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 	d.Set(dbTemplateAttr, dbTemplate)
 
 	if db.featureSupported(featureDBAllowConnections) {
-		var dbAllowConns bool
-		dbSQL := fmt.Sprintf(dbSQLFmt, "d.datallowconn")
-		err = db.QueryRow(dbSQL, dbId).Scan(&dbAllowConns)
-		if err != nil {
-			return fmt.Errorf("error reading ALLOW_CONNECTIONS property for DATABASE: %w", err)
-		}
-
 		d.Set(dbAllowConnsAttr, dbAllowConns)
 	}
 
 	if db.featureSupported(featureDBIsTemplate) {
-		var dbIsTemplate bool
-		dbSQL := fmt.Sprintf(dbSQLFmt, "d.datistemplate")
-		err = db.QueryRow(dbSQL, dbId).Scan(&dbIsTemplate)
-		if err != nil {
-			return fmt.Errorf("error reading IS_TEMPLATE property for DATABASE: %w", err)
-		}
-
 		d.Set(dbIsTemplateAttr, dbIsTemplate)
 	}
 
