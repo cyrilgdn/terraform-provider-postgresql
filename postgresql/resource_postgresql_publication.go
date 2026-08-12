@@ -158,7 +158,7 @@ func setPubOwner(txn *sql.Tx, d *schema.ResourceData) error {
 	n := nraw.(string)
 	pubName := d.Get(pubNameAttr).(string)
 
-	sql := fmt.Sprintf("ALTER PUBLICATION %s OWNER TO %s", pubName, n)
+	sql := fmt.Sprintf("ALTER PUBLICATION %s OWNER TO %s", pq.QuoteIdentifier(pubName), n)
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error updating publication owner: %w", err)
 	}
@@ -183,12 +183,12 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 	added := arrayDifference(newList, oldList)
 
 	for _, p := range added {
-		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pubName, quoteTableName(p.(string)))
+		query := fmt.Sprintf("ALTER PUBLICATION %s ADD TABLE %s", pq.QuoteIdentifier(pubName), quoteTableName(p.(string)))
 		queries = append(queries, query)
 	}
 
 	for _, p := range dropped {
-		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pubName, quoteTableName(p.(string)))
+		query := fmt.Sprintf("ALTER PUBLICATION %s DROP TABLE %s", pq.QuoteIdentifier(pubName), quoteTableName(p.(string)))
 		queries = append(queries, query)
 	}
 
@@ -202,13 +202,12 @@ func setPubTables(txn *sql.Tx, d *schema.ResourceData) error {
 
 func setPubParams(txn *sql.Tx, d *schema.ResourceData, pubViaRootEnabled bool) error {
 	pubName := d.Get(pubNameAttr).(string)
-	paramAlterTemplate := "ALTER PUBLICATION %s %s"
 	publicationParametersString, err := getPublicationParameters(d, pubViaRootEnabled)
 	if err != nil {
 		return fmt.Errorf("error getting publication parameters: %w", err)
 	}
 	if publicationParametersString != "" {
-		sql := fmt.Sprintf(paramAlterTemplate, pubName, publicationParametersString)
+		sql := fmt.Sprintf("ALTER PUBLICATION %s %s", pq.QuoteIdentifier(pubName), publicationParametersString)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("error updating publication parameters: %w", err)
 		}
@@ -240,7 +239,7 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 	}
 	defer deferredRollback(txn)
 
-	sql := fmt.Sprintf("CREATE PUBLICATION %s %s %s", name, tables, publicationParameters)
+	sql := fmt.Sprintf("CREATE PUBLICATION %s %s %s", pq.QuoteIdentifier(name), tables, publicationParameters)
 
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error creating Publication: %w", err)
