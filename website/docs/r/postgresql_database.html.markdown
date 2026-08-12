@@ -24,6 +24,18 @@ resource "postgresql_database" "my_db" {
   connection_limit       = -1
   allow_connections      = true
   alter_object_ownership = true
+
+  parameter {
+    name  = "work_mem"
+    value = "16MB"
+    quote = false
+  }
+
+  parameter {
+    name  = "max_parallel_workers"
+    value = "4"
+    quote = false
+  }
 }
 ```
 
@@ -90,6 +102,14 @@ resource "postgresql_database" "my_db" {
   hold the ownership of the objects in that database. To alter existing objects in
   the database, you must be a direct or indirect member of the specified role, or
   the username in the provider must be superuser.
+
+* `parameter` - (Optional) A configuration block for setting database-level
+  configuration parameters. Can be specified multiple times. Each block supports
+  the following:
+  * `name` - (Required) The name of the configuration parameter to set.
+  * `value` - (Required) The value of the configuration parameter.
+  * `quote` - (Optional) Whether to quote the parameter value. Defaults to `true`.
+    Set to `false` for numeric or unquoted values.
 
 ## Import Example
 
