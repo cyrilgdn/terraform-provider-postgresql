@@ -81,6 +81,10 @@ func checkSubscriptionStreams(txn *sql.Tx, subName string) (bool, error) {
 }
 
 func testAccCheckPostgresqlSubscriptionExists(n string) resource.TestCheckFunc {
+	return testAccCheckPostgresqlSubscriptionExistsWithStreaming(n, true)
+}
+
+func testAccCheckPostgresqlSubscriptionExistsWithStreaming(n string, checkStreaming bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -119,12 +123,14 @@ func testAccCheckPostgresqlSubscriptionExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("Subscription not found")
 		}
 
-		streams, err := checkSubscriptionStreams(txn, subName)
-		if err != nil {
-			return fmt.Errorf("error checking subscription %s", err)
-		}
-		if !streams {
-			return fmt.Errorf("Subscription not streaming")
+		if checkStreaming {
+			streams, err := checkSubscriptionStreams(txn, subName)
+			if err != nil {
+				return fmt.Errorf("error checking subscription %s", err)
+			}
+			if !streams {
+				return fmt.Errorf("Subscription not streaming")
+			}
 		}
 
 		return nil
@@ -314,5 +320,164 @@ func TestAccPostgresqlSubscription_CustomSlotName(t *testing.T) {
 		},
 	},
 	)
+	coolDown()
+}
+
+func TestAccPostgresqlSubscription_EnabledToDisabled(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffixPub, teardownPub := setupTestDatabase(t, true, true)
+	dbSuffixSub, teardownSub := setupTestDatabase(t, true, true)
+
+	defer teardownPub()
+	defer teardownSub()
+	testTables := []string{"test_schema.test_table_1"}
+	createTestTables(t, dbSuffixPub, testTables, "")
+	createTestTables(t, dbSuffixSub, testTables, "")
+
+	dbNamePub, _ := getTestDBNames(dbSuffixPub)
+	dbNameSub, _ := getTestDBNames(dbSuffixSub)
+
+	conninfo := getConnInfo(t, dbNamePub)
+
+	subName := "subscription_enabled_test"
+	testAccPostgresqlSubscriptionEnabledToDisabledConfig := fmt.Sprintf(`
+	resource "postgresql_publication" "test_pub" {
+		name     	= "test_publication_enabled"
+		database	= "%s"
+		tables		= ["test_schema.test_table_1"]
+	}
+	resource "postgresql_replication_slot" "test_replication_slot" {
+		name		= "%s"
+		database	= "%s"
+		plugin		= "pgoutput"
+	}
+	resource "postgresql_subscription" "test_sub" {
+		name     		= postgresql_replication_slot.test_replication_slot.name
+		database 		= "%s"
+		conninfo 		= "%s"
+		publications	= [ postgresql_publication.test_pub.name ]
+		create_slot		= false
+		enabled			= %%t
+	}
+	`, dbNamePub, subName, dbNamePub, dbNameSub, conninfo)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSubscriptionDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSubscriptionEnabledToDisabledConfig, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSubscriptionExists(
+						"postgresql_subscription.test_sub"),
+					resource.TestCheckResourceAttr(
+						"postgresql_subscription.test_sub",
+						"enabled",
+						"true"),
+				),
+			},
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSubscriptionEnabledToDisabledConfig, false),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSubscriptionExistsWithStreaming(
+						"postgresql_subscription.test_sub", false),
+					resource.TestCheckResourceAttr(
+						"postgresql_subscription.test_sub",
+						"enabled",
+						"false"),
+				),
+			},
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSubscriptionEnabledToDisabledConfig, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSubscriptionExists(
+						"postgresql_subscription.test_sub"),
+					resource.TestCheckResourceAttr(
+						"postgresql_subscription.test_sub",
+						"enabled",
+						"true"),
+				),
+			},
+		},
+	})
+	coolDown()
+}
+
+func TestAccPostgresqlSubscription_DisabledToEnabled(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffixPub, teardownPub := setupTestDatabase(t, true, true)
+	dbSuffixSub, teardownSub := setupTestDatabase(t, true, true)
+
+	defer teardownPub()
+	defer teardownSub()
+	testTables := []string{"test_schema.test_table_1"}
+	createTestTables(t, dbSuffixPub, testTables, "")
+	createTestTables(t, dbSuffixSub, testTables, "")
+
+	dbNamePub, _ := getTestDBNames(dbSuffixPub)
+	dbNameSub, _ := getTestDBNames(dbSuffixSub)
+
+	conninfo := getConnInfo(t, dbNamePub)
+
+	subName := "subscription_false_to_true"
+	testAccPostgresqlSubscriptionDisabledToEnabledConfig := fmt.Sprintf(`
+	resource "postgresql_publication" "test_pub" {
+		name     	= "test_publication_false_to_true"
+		database	= "%s"
+		tables		= ["test_schema.test_table_1"]
+	}
+	resource "postgresql_replication_slot" "test_replication_slot" {
+		name		= "%s"
+		database	= "%s"
+		plugin		= "pgoutput"
+	}
+	resource "postgresql_subscription" "test_sub" {
+		name     		= postgresql_replication_slot.test_replication_slot.name
+		database 		= "%s"
+		conninfo 		= "%s"
+		publications	= [ postgresql_publication.test_pub.name ]
+		create_slot		= false
+		enabled			= %%t
+	}
+	`, dbNamePub, subName, dbNamePub, dbNameSub, conninfo)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSubscriptionDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSubscriptionDisabledToEnabledConfig, false),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSubscriptionExistsWithStreaming(
+						"postgresql_subscription.test_sub", false),
+					resource.TestCheckResourceAttr(
+						"postgresql_subscription.test_sub",
+						"enabled",
+						"false"),
+				),
+			},
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSubscriptionDisabledToEnabledConfig, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSubscriptionExists(
+						"postgresql_subscription.test_sub"),
+					resource.TestCheckResourceAttr(
+						"postgresql_subscription.test_sub",
+						"enabled",
+						"true"),
+				),
+			},
+		},
+	})
 	coolDown()
 }
