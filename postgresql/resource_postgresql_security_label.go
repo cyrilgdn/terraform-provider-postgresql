@@ -82,8 +82,18 @@ func resourcePostgreSQLSecurityLabelUpdateImpl(db *DBConnection, d *schema.Resou
 	objectType := d.Get(securityLabelObjectTypeAttr).(string)
 	objectName := d.Get(securityLabelObjectNameAttr).(string)
 	provider := d.Get(securityLabelProviderAttr).(string)
+
 	fmt.Fprint(b, " FOR ", pq.QuoteIdentifier(provider))
-	fmt.Fprint(b, " ON ", objectType, pq.QuoteIdentifier(objectName))
+	fmt.Fprint(b, " ON ", objectType, " ")
+
+	parts := strings.Split(objectName, ".")
+	for i, part := range parts {
+		if i > 0 {
+			b.WriteString(".")
+		}
+		b.WriteString(pq.QuoteIdentifier(part))
+	}
+
 	fmt.Fprint(b, " IS ", label)
 
 	if _, err := db.Exec(b.String()); err != nil {
