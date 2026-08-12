@@ -238,6 +238,35 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 	return nil
 }
 
+// listDatabases returns the list of all databases accessible for REASSIGN OWNED operations.
+// It excludes template databases and databases that don't allow connections.
+func listDatabases(db QueryAble) ([]string, error) {
+	rows, err := db.Query("SELECT datname FROM pg_database WHERE datallowconn = true AND NOT datistemplate AND has_database_privilege(current_user, datname, 'CONNECT')")
+	if err != nil {
+		return nil, fmt.Errorf("could not list databases: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			log.Printf("[WARN] could not close rows: %v", closeErr)
+		}
+	}()
+
+	var databases []string
+	for rows.Next() {
+		var dbName string
+		if err := rows.Scan(&dbName); err != nil {
+			return nil, fmt.Errorf("could not scan database name: %w", err)
+		}
+		databases = append(databases, dbName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating database rows: %w", err)
+	}
+
+	return databases, nil
+}
+
 func sliceContainsStr(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {
