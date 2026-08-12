@@ -1,9 +1,11 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -19,6 +21,9 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 		Update: PGResourceFunc(resourcePostgreSQLDefaultPrivilegesCreate),
 		Read:   PGResourceFunc(resourcePostgreSQLDefaultPrivilegesRead),
 		Delete: PGResourceFunc(resourcePostgreSQLDefaultPrivilegesDelete),
+		Importer: &schema.ResourceImporter{
+			StateContext: resourcePostgreSQLDefaultPrivilegesImport,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -75,6 +80,35 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 			},
 		},
 	}
+}
+
+func resourcePostgreSQLDefaultPrivilegesImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	importId := d.Id()
+	parts := strings.Split(importId, "@")
+
+	if len(parts) != 6 {
+		return nil, fmt.Errorf("invalid import id. Expected format: <role>@<database>@<owner>@<object_type>@<schema>@<with_grant_option>. Got %s", importId)
+	}
+
+	role := parts[0]
+	d.Set("role", role)
+	database := parts[1]
+	d.Set("database", database)
+	owner := parts[2]
+	d.Set("owner", owner)
+	objectType := parts[3]
+	d.Set("object_type", objectType)
+	schema_ := parts[4]
+	d.Set("schema", schema_)
+	withGrantOption, err := strconv.ParseBool(parts[5])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing with_grant_option: %w. Got %s", err, parts[5])
+	}
+	d.Set("with_grant_option", withGrantOption)
+
+	d.SetId(generateDefaultPrivilegesID(d)) // Import ID is the same as the generated ID for backwards compatibility
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.ResourceData) error {

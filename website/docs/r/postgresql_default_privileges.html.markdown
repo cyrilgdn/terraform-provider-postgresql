@@ -34,6 +34,7 @@ resource "postgresql_default_privileges" "read_only_tables" {
 * `schema` - (Optional) The database schema to set default privileges for this role.
 * `object_type` - (Required) The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, routine, type, schema).
 * `privileges` - (Required) List of privileges (e.g., SELECT, INSERT, UPDATE, DELETE) to grant on new objects created by the owner. An empty list could be provided to revoke all default privileges for this role.
+* `with_grant_option` - (Optional) Permit the grant recipient to grant it to others.
 
 
 ## Examples
@@ -62,4 +63,18 @@ resource "postgresql_default_privileges" "revoke_public" {
   object_type = "function"
   privileges  = []
 }
+```
+
+## Import
+
+`postgresql_default_privileges` supports importing resources following the format:
+
+```
+<role>@<database>@<owner>@<object_type>@<schema>@<with_grant_option>
+```
+
+For example:
+
+```bash
+terraform import postgresql_default_privileges.demo demo@test_db@owner@table@public@false
 ```
