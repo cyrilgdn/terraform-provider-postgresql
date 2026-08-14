@@ -114,6 +114,44 @@ func newFlakyClient(driverName string, drv *flakyPingDriver, maxConnRetries, tim
 	}
 }
 
+func TestParsePostgreSQLVersion(t *testing.T) {
+	var tests = []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"PostgreSQL 9.2.21 on x86_64-apple-darwin16.5.0, compiled by Apple LLVM version 8.1.0 (clang-802.0.42), 64-bit", "9.2.21", false},
+		{"PostgreSQL 9.6.7, compiled by Visual C++ build 1800, 64-bit", "9.6.7", false},
+		{"PostgreSQL 13.23-rds.20260224 on x86_64-pc-linux-gnu, compiled by gcc, 64-bit", "13.23.0", false},
+		{"PostgreSQL 16.2-rds.20240509 on aarch64-unknown-linux-gnu, compiled by aarch64-unknown-linux-gnu-gcc, 64-bit", "16.2.0", false},
+		{"PostgreSQL 13.14_TDE_X on x86_64-pc-linux-gnu, compiled by gcc, 64-bit", "13.14.0", false},
+		{"PostgreSQL 10 on x86_64-pc-linux-gnu, compiled by gcc, 64-bit", "10.0.0", false},
+		{"garbage with only one field", "", true},
+		{"PostgreSQL -not-a-version on x86_64", "", true},
+		{"not PostgreSQL 9.2.21", "", true},
+	}
+
+	for _, test := range tests {
+		got, err := parsePostgreSQLVersion(test.input)
+
+		if test.wantErr {
+			if err == nil {
+				t.Errorf("parsePostgreSQLVersion(%q) expected an error, got version %v", test.input, got)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("parsePostgreSQLVersion(%q) returned unexpected error: %v", test.input, err)
+			continue
+		}
+
+		if got.String() != test.want {
+			t.Errorf("parsePostgreSQLVersion(%q) = %v, want %v", test.input, got, test.want)
+		}
+	}
+}
+
 func TestConnectWithRetrySucceedsAfterTransientFailures(t *testing.T) {
 	drv := &flakyPingDriver{failuresBeforeSuccess: 2}
 	c := newFlakyClient("flaky-retry-success", drv, 5, 5)

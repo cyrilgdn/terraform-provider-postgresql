@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
@@ -412,16 +412,21 @@ func fingerprintCapabilities(db *sql.DB) (*semver.Version, error) {
 		return nil, fmt.Errorf("error PostgreSQL version: %w", err)
 	}
 
-	// PostgreSQL 9.2.21 on x86_64-apple-darwin16.5.0, compiled by Apple LLVM version 8.1.0 (clang-802.0.42), 64-bit
-	// PostgreSQL 9.6.7, compiled by Visual C++ build 1800, 64-bit
-	fields := strings.FieldsFunc(pgVersion, func(c rune) bool {
-		return unicode.IsSpace(c) || c == ','
-	})
-	if len(fields) < 2 {
+	return parsePostgreSQLVersion(pgVersion)
+}
+
+// versionRe extracts the numeric version right after "PostgreSQL ", dropping vendor
+// suffixes (AWS RDS, TDE builds, ...) that aren't valid semver.
+var versionRe = regexp.MustCompile(`^PostgreSQL\s+(\d+(?:\.\d+){0,2})`)
+
+// parsePostgreSQLVersion extracts a semver.Version from a `SELECT VERSION()` result.
+func parsePostgreSQLVersion(pgVersion string) (*semver.Version, error) {
+	matches := versionRe.FindStringSubmatch(pgVersion)
+	if matches == nil {
 		return nil, fmt.Errorf("error determining the server version: %q", pgVersion)
 	}
 
-	version, err := semver.ParseTolerant(fields[1])
+	version, err := semver.ParseTolerant(matches[1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing version: %w", err)
 	}
