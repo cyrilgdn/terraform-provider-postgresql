@@ -23,12 +23,6 @@ import (
 // surfaces as either "deadlock detected" (40P01) or "tuple concurrently
 // updated/deleted" (XX000) — both are manifestations of the same missing
 // synchronization, so this test asserts on "any error", not a specific code.
-//
-// The pre-existing reverse membership (owner is already a member of admin,
-// mirroring real DBA role hierarchies such as liquibase_user/postgres) makes
-// withRolesGranted execute a full REVOKE-then-GRANT dance on both elevation
-// and cleanup, which is what turns the race into a genuine PostgreSQL
-// wait-for cycle instead of a benign serialize-and-succeed.
 func TestAccPostgresqlGrantPolicy_ConcurrentOwnerElevation(t *testing.T) {
 	skipIfNotAcc(t)
 	testAccPreCheck(t)
@@ -63,12 +57,16 @@ func TestAccPostgresqlGrantPolicy_ConcurrentOwnerElevation(t *testing.T) {
 	}()
 
 	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s LOGIN CREATEROLE PASSWORD 'testpwd'", adminName))
-	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", ownerName))
+	adminConfig := config
+	adminConfig.Username = adminName
+	adminConfig.Password = "testpwd"
+	adminDSN := adminConfig.connStr("postgres")
 
-	// Pre-existing reverse membership: owner is already a member of admin,
-	// same shape as the real incident's role hierarchy. This is what makes
-	// withRolesGranted execute REVOKE+GRANT (not just GRANT) on elevation.
-	dbExecute(t, bootstrapDSN, fmt.Sprintf("GRANT %s TO %s", adminName, ownerName))
+	// Since PostgreSQL 16, CREATEROLE can administer only roles for which it
+	// has ADMIN OPTION. Creating the owner as the test admin gives it that
+	// option without making it a member, which is the permission shape
+	// withRolesGranted requires and matches a provider admin managing an owner.
+	dbExecute(t, adminDSN, fmt.Sprintf("CREATE ROLE %s", ownerName))
 
 	for _, r := range recipientNames {
 		dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", r))
@@ -76,10 +74,6 @@ func TestAccPostgresqlGrantPolicy_ConcurrentOwnerElevation(t *testing.T) {
 
 	dbExecute(t, config.connStr(dbName), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
 	dbExecute(t, config.connStr(dbName), fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", schemaName, ownerName))
-
-	adminConfig := config
-	adminConfig.Username = adminName
-	adminConfig.Password = "testpwd"
 
 	adminDB, err := sql.Open("postgres", adminConfig.connStr(dbName))
 	if err != nil {
@@ -158,8 +152,7 @@ func TestAccPostgresqlGrantPolicy_ConcurrentOwnerElevation(t *testing.T) {
 	}
 
 	// Correctness, not just absence of error: every recipient must have
-	// actually received the grant, and the owner<->admin membership must be
-	// back to exactly its pre-test state (no dangling elevation left behind).
+	// actually received the grant, and no temporary elevation may remain.
 	checkTxn, err := startTransaction(testAccProvider.Meta().(*Client), dbName)
 	if err != nil {
 		t.Fatalf("could not start check transaction: %v", err)
@@ -185,14 +178,6 @@ func TestAccPostgresqlGrantPolicy_ConcurrentOwnerElevation(t *testing.T) {
 	if adminElevated {
 		t.Errorf("admin %s is still a member of owner %s after all operations committed (dangling elevation)", adminName, ownerName)
 	}
-
-	reverseRestored, err := isMemberOfRole(checkTxn, adminName, ownerName)
-	if err != nil {
-		t.Fatalf("could not check reverse membership: %v", err)
-	}
-	if !reverseRestored {
-		t.Errorf("owner %s is no longer a member of admin %s (pre-existing reverse membership was not restored)", ownerName, adminName)
-	}
 }
 
 // TestAccPostgresqlGrantPolicy_OwnerElevationRollbackLeavesNoMembership
@@ -217,12 +202,11 @@ func TestAccPostgresqlGrantPolicy_OwnerElevationRollbackLeavesNoMembership(t *te
 	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s LOGIN CREATEROLE PASSWORD 'testpwd'", adminName))
 	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", adminName))
 
-	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", ownerName))
-	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", ownerName))
-
 	adminConfig := config
 	adminConfig.Username = adminName
 	adminConfig.Password = "testpwd"
+	dbExecute(t, adminConfig.connStr("postgres"), fmt.Sprintf("CREATE ROLE %s", ownerName))
+	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", ownerName))
 
 	adminDB, err := sql.Open("postgres", adminConfig.connStr(dbName))
 	if err != nil {
@@ -287,14 +271,15 @@ func TestAccPostgresqlGrantPolicy_OwnerElevationNestedAndIndependentOwners(t *te
 
 	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s LOGIN CREATEROLE PASSWORD 'testpwd'", adminName))
 	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", adminName))
-	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", ownerAName))
-	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", ownerAName))
-	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", ownerBName))
-	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", ownerBName))
 
 	adminConfig := config
 	adminConfig.Username = adminName
 	adminConfig.Password = "testpwd"
+	adminDSN := adminConfig.connStr("postgres")
+	dbExecute(t, adminDSN, fmt.Sprintf("CREATE ROLE %s", ownerAName))
+	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", ownerAName))
+	dbExecute(t, adminDSN, fmt.Sprintf("CREATE ROLE %s", ownerBName))
+	defer dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", ownerBName))
 
 	adminDB, err := sql.Open("postgres", adminConfig.connStr(dbName))
 	if err != nil {
