@@ -91,6 +91,10 @@ resource "postgresql_database" "my_db" {
   the database, you must be a direct or indirect member of the specified role, or
   the username in the provider must be superuser.
 
+* `search_path` - (Optional) Alters the search path of this new database. Note 
+  that due to limitations in the implementation, values cannot contain the 
+  substring `", "`.
+
 ## Import Example
 
 `postgresql_database` supports importing resources.  Supposing the following

@@ -25,6 +25,7 @@ const (
 	dbTablespaceAttr       = "tablespace_name"
 	dbTemplateAttr         = "template"
 	dbAlterObjectOwnership = "alter_object_ownership"
+	dbSearchPathAttr       = "search_path"
 )
 
 func resourcePostgreSQLDatabase() *schema.Resource {
@@ -108,6 +109,13 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "If true, the owner of already existing objects will change if the owner changes",
+			},
+			dbSearchPathAttr: {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				MinItems:    0,
+				Description: "Sets the database's search path",
 			},
 		},
 	}
@@ -229,6 +237,10 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	sql := b.String()
 	if _, err := db.Exec(sql); err != nil {
 		return fmt.Errorf("error creating database %q: %w", dbName, err)
+	}
+
+	if err := alterDBSearchPath(db, d); err != nil {
+		return err
 	}
 
 	// Set err outside of the return so that the deferred revoke can override err
@@ -357,6 +369,12 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		return fmt.Errorf("error reading database: %w", err)
 	}
 
+	var dbRoleSettings pq.ByteaArray
+	dbRoleSettings, err = getDBRoleSettings(db, dbId)
+	if err != nil {
+		return err
+	}
+
 	d.Set(dbNameAttr, dbName)
 	d.Set(dbOwnerAttr, ownerName)
 	d.Set(dbEncodingAttr, dbEncoding)
@@ -364,6 +382,7 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 	d.Set(dbCTypeAttr, dbCType)
 	d.Set(dbTablespaceAttr, dbTablespaceName)
 	d.Set(dbConnLimitAttr, dbConnLimit)
+	d.Set(dbSearchPathAttr, readSearchPath(dbRoleSettings))
 	dbTemplate := d.Get(dbTemplateAttr).(string)
 	if dbTemplate == "" {
 		dbTemplate = "template0"
@@ -425,6 +444,10 @@ func resourcePostgreSQLDatabaseUpdate(db *DBConnection, d *schema.ResourceData) 
 	}
 
 	// Empty values: ALTER DATABASE name RESET configuration_parameter;
+
+	if err := alterDBSearchPath(db, d); err != nil {
+		return err
+	}
 
 	return resourcePostgreSQLDatabaseReadImpl(db, d)
 }
@@ -609,6 +632,39 @@ func setDBIsTemplate(db *DBConnection, d *schema.ResourceData) error {
 	return nil
 }
 
+func alterDBSearchPath(db *DBConnection, d *schema.ResourceData) error {
+	dbName := d.Get(dbNameAttr).(string)
+	searchPathInterface := d.Get(dbSearchPathAttr).([]interface{})
+
+	var searchPathString []string
+	if len(searchPathInterface) > 0 {
+		searchPathString = make([]string, len(searchPathInterface))
+		for i, searchPathPart := range searchPathInterface {
+			if strings.Contains(searchPathPart.(string), ", ") {
+				return fmt.Errorf("search_path cannot contain `, `: %v", searchPathPart)
+			}
+			searchPathString[i] = pq.QuoteIdentifier(searchPathPart.(string))
+		}
+	} else {
+		searchPathString = []string{"DEFAULT"}
+	}
+	searchPath := strings.Join(searchPathString[:], ", ")
+
+	log.Printf("[INFO] Altering PostgreSQL database (%q) search_path with: %s", dbName, searchPath)
+
+	query := fmt.Sprintf(
+		"ALTER DATABASE %s SET search_path TO %s", pq.QuoteIdentifier(dbName), searchPath,
+	)
+
+	log.Printf("[DEBUG] Altering PostgreSQL database (%q) search_path query: %s", dbName, query)
+
+	if _, err := db.Exec(query); err != nil {
+		return fmt.Errorf("could not set search_path %s for %s: %w", searchPath, dbName, err)
+	}
+
+	return nil
+}
+
 func doSetDBIsTemplate(db *DBConnection, dbName string, isTemplate bool) error {
 	if !db.featureSupported(featureDBIsTemplate) {
 		return fmt.Errorf("PostgreSQL client is talking with a server (%q) that does not support database IS_TEMPLATE", db.version.String())
@@ -642,4 +698,20 @@ func terminateBConnections(db *DBConnection, dbName string) error {
 	}
 
 	return nil
+}
+
+func getDBRoleSettings(db *DBConnection, dbId string) (pq.ByteaArray, error) {
+	var dbRoleConfigItems pq.ByteaArray
+	dbSQL := `SELECT setconfig FROM pg_catalog.pg_database AS d, pg_catalog.pg_db_role_setting AS drs  WHERE d.datname = $1 AND d.oid = drs.setdatabase AND setrole = 0`
+	err := db.QueryRow(dbSQL, dbId).Scan(&dbRoleConfigItems)
+
+	switch {
+	case err == sql.ErrNoRows:
+		log.Printf("[DEBUG] PostgreSQL database (%q) has no role settings", dbId)
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("error reading database role settings: %w", err)
+	}
+
+	return dbRoleConfigItems, nil
 }
