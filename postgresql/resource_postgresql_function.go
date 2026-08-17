@@ -259,12 +259,20 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 		return expandErr
 	}
 
-	var funcDefinition string
+	var funcDefinition, parallelSafety, volatility, language string
+	var securityDefiner, strict bool
 
-	query := `SELECT pg_get_functiondef(p.oid::regproc) funcDefinition ` +
-		`FROM pg_proc p ` +
-		`LEFT JOIN pg_namespace n ON p.pronamespace = n.oid ` +
-		`WHERE p.oid = to_regprocedure($1)`
+	query := `SELECT
+	pg_get_functiondef(p.oid::regproc),
+	p.prosecdef,
+	p.proisstrict,
+	p.proparallel,
+	p.provolatile,
+	l.lanname
+FROM pg_proc p
+LEFT JOIN pg_namespace n ON p.pronamespace = n.oid
+LEFT JOIN pg_language l ON p.prolang = l.oid
+WHERE p.oid = to_regprocedure($1)`
 
 	txn, err := startTransaction(db.client, databaseName)
 	if err != nil {
@@ -272,7 +280,9 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 	}
 	defer deferredRollback(txn)
 
-	err = txn.QueryRow(query, functionSignature).Scan(&funcDefinition)
+	err = txn.QueryRow(query, functionSignature).Scan(
+		&funcDefinition, &securityDefiner, &strict, &parallelSafety, &volatility, &language,
+	)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL function: %s", functionId)
@@ -288,7 +298,7 @@ func resourcePostgreSQLFunctionReadImpl(db *DBConnection, d *schema.ResourceData
 
 	var pgFunction PGFunction
 
-	err = pgFunction.Parse(funcDefinition)
+	err = pgFunction.Parse(funcDefinition, securityDefiner, strict, parallelSafety, volatility, language)
 	if err != nil {
 		return err
 	}
