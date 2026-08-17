@@ -607,3 +607,39 @@ resource "postgresql_role" "switch_role" {
 		},
 	})
 }
+
+func TestAccPostgresqlRole_TransactionTimeout(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureTransactionTimeout)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_role" "role_txn_timeout" {
+  name                = "role_txn_timeout"
+  transaction_timeout = 30000
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_txn_timeout", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.role_txn_timeout", "transaction_timeout", "30000"),
+				),
+			},
+			{
+				Config: `
+resource "postgresql_role" "role_txn_timeout" {
+  name = "role_txn_timeout"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("role_txn_timeout", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.role_txn_timeout", "transaction_timeout", "0"),
+				),
+			},
+		},
+	})
+}
