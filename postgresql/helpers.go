@@ -648,6 +648,57 @@ func pgLockRole(txn *sql.Tx, role string) error {
 	return nil
 }
 
+// pgLockGrantPolicyRoles locks the recipient, its direct members, and every
+// object owner in one OID-sorted set. A grant policy can otherwise lock its
+// recipient first and an owner later while another policy does the reverse,
+// forming an advisory-lock cycle.
+func pgLockGrantPolicyRoles(txn *sql.Tx, role string, owners []string) error {
+	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+		return fmt.Errorf("could not disable statement_timeout: %w", err)
+	}
+
+	rows, err := txn.Query(`
+		WITH recipient AS (
+			SELECT oid FROM pg_roles WHERE rolname = $1
+		), lock_oids AS (
+			SELECT oid FROM recipient
+			UNION
+			SELECT member FROM pg_auth_members WHERE roleid IN (SELECT oid FROM recipient)
+			UNION
+			SELECT oid FROM pg_roles WHERE rolname = ANY($2::text[])
+		)
+		SELECT DISTINCT oid FROM lock_oids ORDER BY oid`,
+		role, pq.Array(owners),
+	)
+	if err != nil {
+		return fmt.Errorf("could not resolve advisory locks for grant policy role %s: %w", role, err)
+	}
+
+	var lockOIDs []uint32
+	for rows.Next() {
+		var oid uint32
+		if err := rows.Scan(&oid); err != nil {
+			rows.Close()
+			return fmt.Errorf("could not scan advisory lock for grant policy role %s: %w", role, err)
+		}
+		lockOIDs = append(lockOIDs, oid)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("could not close advisory lock rows for grant policy role %s: %w", role, err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("could not resolve advisory locks for grant policy role %s: %w", role, err)
+	}
+
+	for _, oid := range lockOIDs {
+		if _, err := txn.Exec("SELECT pg_advisory_xact_lock($1)", int64(oid)); err != nil {
+			return fmt.Errorf("could not get advisory lock %d for grant policy role %s: %w", oid, role, err)
+		}
+	}
+
+	return nil
+}
+
 // pgLockRoleForElevation takes a transaction-scoped advisory lock on just a
 // role's own OID, to serialize concurrent temporary elevations of that same
 // role (see withRolesGranted). Unlike pgLockRole it deliberately does not

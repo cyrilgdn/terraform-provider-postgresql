@@ -2,11 +2,14 @@ package postgresql
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // TestAccPostgresqlGrantPolicy_ConcurrentOwnerElevation reproduces the
@@ -364,4 +367,125 @@ func TestAccPostgresqlGrantPolicy_OwnerElevationNestedAndIndependentOwners(t *te
 			t.Errorf("elevating two independent owner roles took %s, expected close to %s if truly concurrent", elapsed, perOwnerDelay)
 		}
 	})
+}
+
+// TestAccPostgresqlGrantPolicy_CrossRecipientOwnerLockOrder covers two policy
+// transactions whose recipient and owner roles are reversed. Acquiring the
+// recipient first and the owner later forms an ABBA advisory-lock deadlock;
+// locking the complete set by OID makes both transactions use one order.
+func TestAccPostgresqlGrantPolicy_CrossRecipientOwnerLockOrder(t *testing.T) {
+	skipIfNotAcc(t)
+	testAccPreCheck(t)
+
+	config := getTestConfig(t)
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	dbName, _ := getTestDBNames(dbSuffix)
+	bootstrapDSN := config.connStr("postgres")
+	roleA := fmt.Sprintf("tf_tests_cross_a_%s", dbSuffix)
+	roleB := fmt.Sprintf("tf_tests_cross_b_%s", dbSuffix)
+
+	defer func() {
+		teardown()
+		dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", roleA))
+		dbExecute(t, bootstrapDSN, fmt.Sprintf("DROP ROLE IF EXISTS %s", roleB))
+	}()
+
+	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", roleA))
+	dbExecute(t, bootstrapDSN, fmt.Sprintf("CREATE ROLE %s", roleB))
+
+	adminDB, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open admin connection pool: %v", err)
+	}
+	defer closeDB(t, adminDB)
+	adminDB.SetMaxOpenConns(2)
+
+	// First prove the production incident mechanism using the old order:
+	// each transaction locks its recipient before trying to lock the other
+	// transaction's recipient as an owner. Both initial locks are acquired
+	// before either owner lock starts, making the ABBA cycle deterministic.
+	legacyTxnA, err := adminDB.Begin()
+	if err != nil {
+		t.Fatalf("could not begin legacy transaction A: %v", err)
+	}
+	legacyTxnB, err := adminDB.Begin()
+	if err != nil {
+		legacyTxnA.Rollback()
+		t.Fatalf("could not begin legacy transaction B: %v", err)
+	}
+	if err := pgLockRole(legacyTxnA, roleA); err != nil {
+		legacyTxnA.Rollback()
+		legacyTxnB.Rollback()
+		t.Fatalf("could not lock legacy recipient A: %v", err)
+	}
+	if err := pgLockRole(legacyTxnB, roleB); err != nil {
+		legacyTxnA.Rollback()
+		legacyTxnB.Rollback()
+		t.Fatalf("could not lock legacy recipient B: %v", err)
+	}
+
+	legacyLock := func(txn *sql.Tx, owner string) <-chan error {
+		out := make(chan error, 1)
+		go func() {
+			err := pgLockRoleForElevation(txn, owner)
+			// A deadlock victim keeps its advisory locks until the aborted
+			// transaction is rolled back, so release it before reporting.
+			txn.Rollback()
+			out <- err
+		}()
+		return out
+	}
+	legacyErrA := legacyLock(legacyTxnA, roleB)
+	legacyErrB := legacyLock(legacyTxnB, roleA)
+	legacyErrors := []error{<-legacyErrA, <-legacyErrB}
+	deadlocks := 0
+	for _, err := range legacyErrors {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "40P01" {
+			deadlocks++
+		}
+	}
+	if deadlocks != 1 {
+		t.Fatalf("legacy recipient-first lock order produced %d deadlocks, expected exactly one; errors: %v", deadlocks, legacyErrors)
+	}
+
+	// Now run the same crossed recipient/owner sets through the fixed lock
+	// acquisition used by grant_policy create/update and delete.
+	start := make(chan struct{})
+	run := func(recipient, owner string) <-chan error {
+		out := make(chan error, 1)
+		go func() {
+			txn, err := adminDB.Begin()
+			if err != nil {
+				out <- err
+				return
+			}
+			defer deferredRollback(txn)
+			<-start
+			if err := pgLockGrantPolicyRoles(txn, recipient, []string{owner}); err != nil {
+				out <- err
+				return
+			}
+			// withRolesGranted takes this same per-owner lock for a
+			// non-superuser provider connection. It is re-entrant here because
+			// the complete set was already acquired in OID order.
+			if err := pgLockRoleForElevation(txn, owner); err != nil {
+				out <- err
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			out <- txn.Commit()
+		}()
+		return out
+	}
+
+	errA := run(roleA, roleB)
+	errB := run(roleB, roleA)
+	close(start)
+	if err := <-errA; err != nil {
+		t.Errorf("role A recipient / role B owner failed: %v", err)
+	}
+	if err := <-errB; err != nil {
+		t.Errorf("role B recipient / role A owner failed: %v", err)
+	}
 }

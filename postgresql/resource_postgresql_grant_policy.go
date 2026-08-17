@@ -243,7 +243,11 @@ func resourcePostgreSQLGrantPolicyCreateOrUpdate(db *DBConnection, d *schema.Res
 	}
 	defer deferredRollback(txn)
 
-	if err := pgLockRole(txn, role); err != nil {
+	owners, err := getRolesToGrantForPolicy(txn, grants)
+	if err != nil {
+		return err
+	}
+	if err := pgLockGrantPolicyRoles(txn, role, owners); err != nil {
 		return err
 	}
 
@@ -254,11 +258,6 @@ func resourcePostgreSQLGrantPolicyCreateOrUpdate(db *DBConnection, d *schema.Res
 	}
 
 	roleOID, err := getRoleOID(txn, role)
-	if err != nil {
-		return err
-	}
-
-	owners, err := getRolesToGrantForPolicy(txn, grants)
 	if err != nil {
 		return err
 	}
@@ -350,11 +349,14 @@ func resourcePostgreSQLGrantPolicyDelete(db *DBConnection, d *schema.ResourceDat
 	}
 	defer deferredRollback(txn)
 
-	if err := pgLockRole(txn, role); err != nil {
+	managed := expandManagedGrantPolicyGrants(d)
+	owners, err := getRolesToGrantForPolicy(txn, managed)
+	if err != nil {
 		return err
 	}
-
-	managed := expandManagedGrantPolicyGrants(d)
+	if err := pgLockGrantPolicyRoles(txn, role, owners); err != nil {
+		return err
+	}
 
 	if grantPolicyNeedsDatabaseLock(managed, authoritative) {
 		if err := pgLockDatabase(txn, database); err != nil {
@@ -363,11 +365,6 @@ func resourcePostgreSQLGrantPolicyDelete(db *DBConnection, d *schema.ResourceDat
 	}
 
 	roleOID, err := getRoleOID(txn, role)
-	if err != nil {
-		return err
-	}
-
-	owners, err := getRolesToGrantForPolicy(txn, managed)
 	if err != nil {
 		return err
 	}
