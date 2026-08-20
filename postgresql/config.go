@@ -364,9 +364,11 @@ func (c *Client) connectWithRetry(ctx context.Context, postgresDriverName, dsn s
 		if err == nil {
 			err = db.PingContext(ctx)
 		}
-
-		if err == nil {
-			return nil
+		if err != nil {
+			return nil, wrapRedacted(
+				fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %w", c.config.Host, c.config.Scheme, err),
+				c.config.Password,
+			)
 		}
 
 		if db != nil {
