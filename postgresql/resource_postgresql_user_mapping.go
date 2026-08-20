@@ -105,6 +105,16 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	username := d.Get(userMappingUserNameAttr).(string)
 	serverName := d.Get(userMappingServerNameAttr).(string)
 
+	// On import only the ID ("<user_name>.<server_name>") is set, so derive the attributes from it
+	if username == "" && serverName == "" && d.Id() != "" {
+		parts := strings.SplitN(d.Id(), ".", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return fmt.Errorf("invalid user mapping ID %q, expected <user_name>.<server_name>", d.Id())
+		}
+		username = parts[0]
+		serverName = parts[1]
+	}
+
 	txn, err := startTransaction(db.client, "")
 	if err != nil {
 		return err
@@ -112,10 +122,19 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	defer deferredRollback(txn)
 
 	var userMappingOptions []string
+	// Savepoint so that a permission error on information_schema._pg_user_mappings
+	// (not readable on some managed services, e.g. AWS RDS >= 17.9-R2, Google Cloud SQL)
+	// doesn't abort the transaction before the pg_user_mappings fallback runs
+	if _, err := txn.Exec("SAVEPOINT read_user_mapping"); err != nil {
+		return fmt.Errorf("could not create savepoint: %w", err)
+	}
 	query := "SELECT umoptions FROM information_schema._pg_user_mappings WHERE authorization_identifier = $1 and foreign_server_name = $2"
 	err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
 
 	if err != sql.ErrNoRows && err != nil {
+		if _, spErr := txn.Exec("ROLLBACK TO SAVEPOINT read_user_mapping"); spErr != nil {
+			return fmt.Errorf("error reading user mapping: %w", err)
+		}
 		// Fallback to pg_user_mappings table if information_schema._pg_user_mappings is not available
 		query := "SELECT umoptions FROM pg_user_mappings WHERE usename = $1 and srvname = $2"
 		err = txn.QueryRow(query, username, serverName).Scan(pq.Array(&userMappingOptions))
@@ -134,6 +153,16 @@ func resourcePostgreSQLUserMappingReadImpl(db *DBConnection, d *schema.ResourceD
 	for _, v := range userMappingOptions {
 		pair := strings.SplitN(v, "=", 2)
 		mappedOptions[pair[0]] = pair[1]
+	}
+
+	// pg_user_mappings masks umoptions for other roles' mappings; keep the options
+	// already in state rather than wiping them, which would cause a permanent diff
+	if len(mappedOptions) == 0 {
+		if prev, ok := d.GetOk(userMappingOptionsAttr); ok {
+			if prevOptions, isMap := prev.(map[string]any); isMap && len(prevOptions) > 0 {
+				mappedOptions = prevOptions
+			}
+		}
 	}
 
 	d.Set(userMappingUserNameAttr, username)

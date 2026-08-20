@@ -40,6 +40,28 @@ func TestAccPostgresqlUserMapping_Basic(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlUserMapping_Import(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureServer)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlUserMappingDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlUserMappingConfig,
+			},
+			{
+				ResourceName:      "postgresql_user_mapping.remote",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func TestAccPostgresqlUserMapping_Update(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
