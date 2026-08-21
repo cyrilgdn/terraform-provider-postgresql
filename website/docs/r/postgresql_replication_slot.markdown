@@ -26,3 +26,4 @@ resource "postgresql_replication_slot" "my_slot" {
 * `name` - (Required) The name of the replication slot.
 * `plugin` - (Required) Sets the output plugin.
 * `database` - (Optional) Which database to create the replication slot on. Defaults to provider database.
+* `failover` - (Optional) Enables the replication slot to be synced to physical standbys so it can be used after a failover. Logical slots only. Defaults to `false`. Requires PostgreSQL >= 17.

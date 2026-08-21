@@ -30,10 +30,53 @@ func TestAccPostgresqlReplicationSlot_Basic(t *testing.T) {
 						"postgresql_replication_slot.myslot", "name", "slot"),
 					resource.TestCheckResourceAttr(
 						"postgresql_replication_slot.myslot", "plugin", "test_decoding"),
+					resource.TestCheckResourceAttr(
+						"postgresql_replication_slot.myslot", "failover", "false"),
 				),
 			},
 		},
 	})
+}
+
+func TestAccPostgresqlReplicationSlot_Failover(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+			testCheckReplicationSlotFailoverSupported(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlReplicationSlotDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+				resource "postgresql_replication_slot" "myslot" {
+					name     = "slot_failover"
+					plugin   = "test_decoding"
+					failover = true
+				}`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlReplicationSlotExists("postgresql_replication_slot.myslot"),
+					resource.TestCheckResourceAttr(
+						"postgresql_replication_slot.myslot", "failover", "true"),
+				),
+			},
+		},
+	})
+}
+
+// testCheckReplicationSlotFailoverSupported skips the test when connected to a
+// PostgreSQL server older than 17, since failover on replication slots doesn't exist
+// there (pg_create_logical_replication_slot only grew the parameter in PG 17).
+func testCheckReplicationSlotFailoverSupported(t *testing.T) {
+	client := testAccProvider.Meta().(*Client)
+	db, err := client.Connect()
+	if err != nil {
+		t.Fatalf("could not connect to check PostgreSQL version: %v", err)
+	}
+	if !db.featureSupported(featureReplicationSlotFailover) {
+		t.Skipf("skipping, failover on replication slots requires PostgreSQL >= 17 (connected to %s)", db.version)
+	}
 }
 
 func testAccCheckPostgresqlReplicationSlotDestroy(s *terraform.State) error {

@@ -50,6 +50,7 @@ const (
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
 	featureMaintainPrivilege
+	featureReplicationSlotFailover
 )
 
 var (
@@ -129,6 +130,10 @@ var (
 
 		// MAINTAIN privilege on tables (PG 17+)
 		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
+
+		// failover option on logical replication slots, and the "failover" column
+		// on pg_replication_slots (PG 17+)
+		featureReplicationSlotFailover: semver.MustParseRange(">=17.0.0"),
 	}
 )
 

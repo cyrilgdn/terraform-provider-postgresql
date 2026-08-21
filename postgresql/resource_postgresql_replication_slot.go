@@ -38,6 +38,13 @@ func resourcePostgreSQLReplicationSlot() *schema.Resource {
 				ForceNew:    true,
 				Description: "Sets the output plugin to use",
 			},
+			"failover": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				ForceNew:    true,
+				Description: "Enables the replication slot to be synced to physical standbys so it can be used after a failover. Logical slots only, requires PostgreSQL >= 17",
+			},
 		},
 	}
 }
@@ -46,6 +53,7 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 
 	name := d.Get("name").(string)
 	plugin := d.Get("plugin").(string)
+	failover := d.Get("failover").(bool)
 	databaseName := getDatabaseForReplicationSlot(d, db.client.databaseName)
 
 	// NB: we use initConnection instead of startTransaction so that replication slots can be managed on replica servers too, for cascading replication
@@ -54,9 +62,25 @@ func resourcePostgreSQLReplicationSlotCreate(db *DBConnection, d *schema.Resourc
 		return err
 	}
 
-	sql := "SELECT FROM pg_create_logical_replication_slot($1, $2)"
-	if _, err := dbc.Exec(sql, name, plugin); err != nil {
-		return err
+	if failover {
+		if !db.featureSupported(featureReplicationSlotFailover) {
+			return fmt.Errorf(
+				"failover on replication slots is not supported for this Postgres version (%s), requires >= 17",
+				db.version,
+			)
+		}
+
+		sql := "SELECT FROM pg_create_logical_replication_slot($1, $2, false, false, $3)"
+		if _, err := dbc.Exec(sql, name, plugin, failover); err != nil {
+			return err
+		}
+	} else {
+		// Keep the historical 2-argument call when failover isn't requested, so
+		// behavior on older, still-supported PostgreSQL versions is unchanged.
+		sql := "SELECT FROM pg_create_logical_replication_slot($1, $2)"
+		if _, err := dbc.Exec(sql, name, plugin); err != nil {
+			return err
+		}
 	}
 
 	d.SetId(generateReplicationSlotID(d, databaseName))
@@ -114,10 +138,24 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 	}
 
 	var replicationSlotPlugin string
-	query := `SELECT plugin ` +
-		`FROM pg_catalog.pg_replication_slots ` +
-		`WHERE slot_name = $1 AND database = $2`
-	err = dbc.QueryRow(query, replicationSlotName, database).Scan(&replicationSlotPlugin)
+	var replicationSlotFailover bool
+
+	// The "failover" column on pg_replication_slots only exists on PG >= 17 -
+	// selecting it on an older server errors out the whole query, even for slots
+	// that don't use failover at all.
+	if db.featureSupported(featureReplicationSlotFailover) {
+		query := `SELECT plugin, failover ` +
+			`FROM pg_catalog.pg_replication_slots ` +
+			`WHERE slot_name = $1 AND database = $2`
+		err = dbc.QueryRow(query, replicationSlotName, database).Scan(&replicationSlotPlugin, &replicationSlotFailover)
+	} else {
+		query := `SELECT plugin ` +
+			`FROM pg_catalog.pg_replication_slots ` +
+			`WHERE slot_name = $1 AND database = $2`
+		err = dbc.QueryRow(query, replicationSlotName, database).Scan(&replicationSlotPlugin)
+		replicationSlotFailover = false
+	}
+
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL ReplicationSlot (%s) not found for database %s", replicationSlotName, database)
@@ -129,6 +167,7 @@ func resourcePostgreSQLReplicationSlotReadImpl(db *DBConnection, d *schema.Resou
 
 	d.Set("name", replicationSlotName)
 	d.Set("plugin", replicationSlotPlugin)
+	d.Set("failover", replicationSlotFailover)
 	d.Set("database", database)
 	d.SetId(generateReplicationSlotID(d, database))
 
