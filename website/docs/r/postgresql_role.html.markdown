@@ -172,7 +172,13 @@ resource "postgresql_role" "app_user" {
 
 * `client_connection_check_interval` - (Optional) Defines [`client_connection_check_interval`](https://www.postgresql.org/docs/current/runtime-config-connection.html#GUC-CLIENT-CONNECTION-CHECK-INTERVAL) setting for this role which sets the interval in milliseconds between checks that the client is still connected while running a query; `0` (default) disables the checks.
 
-* `parameters` - (Optional) A map of arbitrary per-role configuration parameters applied via [`ALTER ROLE ... SET`](https://www.postgresql.org/docs/current/sql-alterrole.html) (e.g. `lock_timeout`, `work_mem`, `default_transaction_isolation`). Removing a key resets it to the cluster default. Namespaced GUCs such as `pgaudit.log` are allowed. Keys managed by a dedicated attribute (`search_path`, `statement_timeout`, `idle_in_transaction_session_timeout`, `client_connection_check_interval`) are rejected here. The value must match the form PostgreSQL stores in `pg_roles.rolconfig`, otherwise the plan may show perpetual drift.
+* `parameters` - (Optional) A map of arbitrary per-role configuration parameters applied via [`ALTER ROLE ... SET`](https://www.postgresql.org/docs/current/sql-alterrole.html) (e.g. `lock_timeout`, `work_mem`, `default_transaction_isolation`). Removing a key resets it to the cluster default. Namespaced GUCs such as `pgaudit.log` are allowed.
+
+  Parameter names must be lowercase, since PostgreSQL folds unquoted names before storing them. Keys managed by a dedicated attribute (`search_path`, `statement_timeout`, `idle_in_transaction_session_timeout`, `client_connection_check_interval`) or by `assume_role` (`role`) are rejected here.
+
+  Only the parameters listed in the configuration are managed: settings applied to the role out-of-band are left alone and are never reset. For the same reason, `terraform import` does not populate `parameters` - add a parameter to the configuration and apply once to bring it under management.
+
+  The value must match the form PostgreSQL stores in `pg_roles.rolconfig`, otherwise the plan may show perpetual drift.
 
 * `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
 
