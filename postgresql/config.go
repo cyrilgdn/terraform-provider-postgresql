@@ -50,6 +50,7 @@ const (
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
 	featureMaintainPrivilege
+	featureTransactionTimeout
 )
 
 var (
@@ -129,6 +130,9 @@ var (
 
 		// MAINTAIN privilege on tables (PG 17+)
 		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
+
+		// transaction_timeout setting (PG 17+)
+		featureTransactionTimeout: semver.MustParseRange(">=17.0.0"),
 	}
 )
 

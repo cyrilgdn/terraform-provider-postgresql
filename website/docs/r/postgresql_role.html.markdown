@@ -168,6 +168,8 @@ resource "postgresql_role" "app_user" {
 
 * `statement_timeout` - (Optional) Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) setting for this role which allows to abort any statement that takes more than the specified amount of time.
 
+* `transaction_timeout` - (Optional) Defines [`transaction_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TRANSACTION-TIMEOUT) setting for this role which allows to abort any transaction that takes more than the specified amount of time. Requires PostgreSQL 17 or later.
+
 * `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
 
 ## Import Example

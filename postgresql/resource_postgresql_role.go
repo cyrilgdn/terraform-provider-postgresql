@@ -37,6 +37,7 @@ const (
 	roleRolesAttr                           = "roles"
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
+	roleTransactionTimeoutAttr              = "transaction_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
 
 	// Deprecated options
@@ -186,6 +187,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Description:  "Abort any statement that takes more than the specified number of milliseconds",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
+			roleTransactionTimeoutAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Abort any transaction that takes more than the specified number of milliseconds. Requires PostgreSQL 17 or later",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
 			roleAssumeRoleAttr: {
@@ -365,6 +372,9 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
 		return err
 	}
+	if err = setTransactionTimeout(db, txn, d); err != nil {
+		return err
+	}
 
 	if err = setAssumeRole(txn, d); err != nil {
 		return err
@@ -530,6 +540,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
+
+	transactionTimeout, err := readTransactionTimeout(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleTransactionTimeoutAttr, transactionTimeout)
 
 	d.SetId(roleName)
 
@@ -742,6 +759,9 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
+		return err
+	}
+	if err = setTransactionTimeout(db, txn, d); err != nil {
 		return err
 	}
 
@@ -1114,6 +1134,54 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+// readTransactionTimeout searches for a transaction_timeout entry in the rolconfig array.
+// In case no such value is present, it returns nil.
+func readTransactionTimeout(roleConfig pq.ByteaArray) (int, error) {
+	for _, v := range roleConfig {
+		config := string(v)
+		if strings.HasPrefix(config, roleTransactionTimeoutAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, roleTransactionTimeoutAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("error reading transaction_timeout: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
+func setTransactionTimeout(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleTransactionTimeoutAttr) {
+		return nil
+	}
+
+	if !db.featureSupported(featureTransactionTimeout) {
+		return fmt.Errorf(
+			"PostgreSQL client is talking with a server (%q) that does not support transaction_timeout (PostgreSQL 17 or later required)", db.version.String(),
+		)
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	transactionTimeout := d.Get(roleTransactionTimeoutAttr).(int)
+	if transactionTimeout != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET transaction_timeout TO %d", pq.QuoteIdentifier(roleName), transactionTimeout,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set transaction_timeout %d for %s: %w", transactionTimeout, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET transaction_timeout", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset transaction_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil
