@@ -12,6 +12,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccPostgresqlRole_Basic(t *testing.T) {
@@ -47,6 +49,8 @@ func TestAccPostgresqlRole_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "skip_reassign_owned", "false"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "idle_in_transaction_session_timeout", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "client_connection_check_interval", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "parameters.%", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.role_with_defaults", "assume_role", ""),
 
 					resource.TestCheckResourceAttr("postgresql_role.role_with_create_database", "name", "role_with_create_database"),
@@ -122,6 +126,10 @@ resource "postgresql_role" "update_role" {
   search_path = ["mysearchpath"]
   statement_timeout = 30000
   idle_in_transaction_session_timeout = 60000
+  client_connection_check_interval = 15000
+  parameters = {
+    lock_timeout = "5000"
+  }
   assume_role = "${postgresql_role.group_role.name}"
 }
 `
@@ -146,6 +154,8 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "client_connection_check_interval", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "parameters.%", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
@@ -167,6 +177,9 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.0", "mysearchpath"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "30000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "60000"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "client_connection_check_interval", "15000"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "parameters.%", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "parameters.lock_timeout", "5000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", "group_role"),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
@@ -185,6 +198,8 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "search_path.#", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "client_connection_check_interval", "0"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "parameters.%", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
@@ -606,4 +621,86 @@ resource "postgresql_role" "switch_role" {
 			},
 		},
 	})
+}
+
+func TestReadRoleParameters(t *testing.T) {
+	roleConfig := pq.StringArray{
+		"lock_timeout=5000",
+		"work_mem=32MB",
+		"pgaudit.log=ddl",
+		"statement_timeout=30000",
+		"role=other",
+		"malformed",
+	}
+
+	tests := []struct {
+		name     string
+		managed  map[string]any
+		expected map[string]string
+	}{
+		{
+			// A role whose configuration never mentioned `parameters` must not
+			// adopt live GUCs, otherwise the next apply RESETs them.
+			name:     "nothing managed adopts nothing",
+			managed:  map[string]any{},
+			expected: map[string]string{},
+		},
+		{
+			name:     "only managed keys are read back",
+			managed:  map[string]any{"lock_timeout": "1", "work_mem": "1"},
+			expected: map[string]string{"lock_timeout": "5000", "work_mem": "32MB"},
+		},
+		{
+			name:     "namespaced key",
+			managed:  map[string]any{"pgaudit.log": "1"},
+			expected: map[string]string{"pgaudit.log": "ddl"},
+		},
+		{
+			// Removed out-of-band: omitted from state so the next plan shows drift.
+			name:     "managed key missing from rolconfig",
+			managed:  map[string]any{"lock_timeout": "1", "gone": "1"},
+			expected: map[string]string{"lock_timeout": "5000"},
+		},
+		{
+			name:     "reserved keys never surface in the map",
+			managed:  map[string]any{"statement_timeout": "1", "role": "1"},
+			expected: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, readRoleParameters(roleConfig, tt.managed))
+		})
+	}
+}
+
+func TestValidateRoleParameterName(t *testing.T) {
+	valid := []string{"lock_timeout", "work_mem", "pgaudit.log", "a.b.c", "_x1"}
+	for _, key := range valid {
+		assert.NoError(t, validateRoleParameterName(key), key)
+	}
+
+	invalid := []string{
+		"search_path",                         // reserved by a typed attribute
+		"statement_timeout",                   // reserved
+		"idle_in_transaction_session_timeout", // reserved
+		"client_connection_check_interval",    // reserved
+		"role",                                // reserved by assume_role
+		"Work_Mem",                            // PostgreSQL folds to lowercase
+		"ROLE",                                // would bypass the reserved check
+		"1bad",
+		"has space",
+		"semi;colon",
+		"trailing.",
+		"",
+	}
+	for _, key := range invalid {
+		assert.Error(t, validateRoleParameterName(key), key)
+	}
+}
+
+func TestSortedKeys(t *testing.T) {
+	keys := sortedKeys(map[string]any{"c": 1, "a": 1, "b": 1})
+	assert.Equal(t, []string{"a", "b", "c"}, keys)
 }

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -23,6 +25,7 @@ const (
 	roleCreateRoleAttr                      = "create_role"
 	roleEncryptedPassAttr                   = "encrypted_password"
 	roleIdleInTransactionSessionTimeoutAttr = "idle_in_transaction_session_timeout"
+	roleClientConnectionCheckIntervalAttr   = "client_connection_check_interval"
 	roleInheritAttr                         = "inherit"
 	roleLoginAttr                           = "login"
 	roleNameAttr                            = "name"
@@ -38,10 +41,77 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleParametersAttr                      = "parameters"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
 )
+
+// roleAssumeRoleGUC is the rolconfig key written by the assume_role attribute.
+const roleAssumeRoleGUC = "role"
+
+// roleReservedParameters are GUCs already managed by dedicated typed attributes;
+// they must not be set through the generic `parameters` map to avoid two
+// attributes fighting over the same rolconfig entry.
+var roleReservedParameters = map[string]bool{
+	roleSearchPathAttr:                      true,
+	roleStatementTimeoutAttr:                true,
+	roleIdleInTransactionSessionTimeoutAttr: true,
+	roleClientConnectionCheckIntervalAttr:   true,
+	roleAssumeRoleGUC:                       true,
+}
+
+// validRoleParameterName guards against SQL injection via GUC names, which are
+// interpolated unquoted into ALTER ROLE ... SET. Lowercase only: PostgreSQL
+// folds unquoted identifiers, so an uppercase key would both bypass the
+// (case-sensitive) reserved-key check and never match its own value on read.
+// Namespaces follow PostgreSQL's recursive var_name grammar (e.g. `pgaudit.log`).
+var validRoleParameterName = regexp.MustCompile(`^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)*$`)
+
+// validateRoleParameters rejects parameter names that are reserved by a typed
+// attribute or that PostgreSQL would not accept verbatim, at plan time.
+func validateRoleParameters(i any, k string) ([]string, []error) {
+	params, ok := i.(map[string]any)
+	if !ok {
+		return nil, []error{fmt.Errorf("expected type of %q to be a map", k)}
+	}
+
+	var errs []error
+	for _, key := range sortedKeys(params) {
+		if err := validateRoleParameterName(key); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return nil, errs
+}
+
+// validateRoleParameterName checks a single GUC name from the parameters map.
+func validateRoleParameterName(key string) error {
+	if roleReservedParameters[key] {
+		return fmt.Errorf(
+			"parameter %q is managed by a dedicated attribute and cannot be set via %s",
+			key, roleParametersAttr,
+		)
+	}
+	if !validRoleParameterName.MatchString(key) {
+		return fmt.Errorf(
+			"invalid parameter name %q: must be lowercase and match [a-z_][a-z0-9_]*(.[a-z_][a-z0-9_]*)*",
+			key,
+		)
+	}
+	return nil
+}
+
+// sortedKeys returns the keys of m in lexical order, so that generated
+// statements are emitted deterministically.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func resourcePostgreSQLRole() *schema.Resource {
 	return &schema.Resource{
@@ -146,6 +216,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Description:  "Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
+			roleClientConnectionCheckIntervalAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Sets the time interval in milliseconds between checks that the client is still connected while running queries; 0 disables the checks",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
 			roleInheritAttr: {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -192,6 +268,13 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "Role to switch to at login",
+			},
+			roleParametersAttr: {
+				Type:         schema.TypeMap,
+				Optional:     true,
+				Elem:         &schema.Schema{Type: schema.TypeString},
+				ValidateFunc: validateRoleParameters,
+				Description:  "Arbitrary per-role configuration parameters (ALTER ROLE ... SET key TO value). Keys must be lowercase and are limited to the parameters this role explicitly manages; keys managed by dedicated attributes (search_path, statement_timeout, idle_in_transaction_session_timeout, client_connection_check_interval, assume_role) are not allowed here.",
 			},
 		},
 	}
@@ -366,7 +449,15 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = setClientConnectionCheckInterval(txn, d); err != nil {
+		return err
+	}
+
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setRoleParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -443,7 +534,8 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	var roleSuperuser, roleInherit, roleCreateRole, roleCreateDB, roleCanLogin, roleReplication, roleBypassRLS bool
 	var roleConnLimit int
 	var roleName, roleValidUntil string
-	var roleRoles, roleConfig pq.ByteaArray
+	var roleRoles pq.ByteaArray
+	var roleConfig pq.StringArray
 
 	roleID := d.Id()
 
@@ -531,6 +623,15 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.Set(roleIdleInTransactionSessionTimeoutAttr, idleInTransactionSessionTimeout)
 
+	clientConnectionCheckInterval, err := readClientConnectionCheckInterval(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleClientConnectionCheckIntervalAttr, clientConnectionCheckInterval)
+
+	d.Set(roleParametersAttr, readRoleParameters(roleConfig, d.Get(roleParametersAttr).(map[string]any)))
+
 	d.SetId(roleName)
 
 	if _, ok := d.GetOk(rolePasswordAttr); ok {
@@ -545,9 +646,8 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 // readSearchPath searches for a search_path entry in the rolconfig array.
 // In case no such value is present, it returns nil.
-func readSearchPath(roleConfig pq.ByteaArray) []string {
-	for _, v := range roleConfig {
-		config := string(v)
+func readSearchPath(roleConfig pq.StringArray) []string {
+	for _, config := range roleConfig {
 		if strings.HasPrefix(config, roleSearchPathAttr) {
 			var result = strings.Split(strings.TrimPrefix(config, roleSearchPathAttr+"="), ", ")
 			for i := range result {
@@ -561,9 +661,8 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 
 // readIdleInTransactionSessionTimeout searches for an idle_in_transaction_session_timeout entry in the rolconfig array.
 // In case no such value is present, it returns nil.
-func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
-	for _, v := range roleConfig {
-		config := string(v)
+func readIdleInTransactionSessionTimeout(roleConfig pq.StringArray) (int, error) {
+	for _, config := range roleConfig {
 		if strings.HasPrefix(config, roleIdleInTransactionSessionTimeoutAttr) {
 			var result = strings.Split(strings.TrimPrefix(config, roleIdleInTransactionSessionTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
@@ -576,11 +675,61 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 	return 0, nil
 }
 
+// readRoleParameters reports the live value of every GUC the resource already
+// manages in `parameters`.
+//
+// It is deliberately scoped to the keys in `managed` (the previous state)
+// rather than to everything in rolconfig: `parameters` is Optional, not
+// Computed, so adopting an unmanaged GUC into state would make the next apply
+// issue a real RESET for a setting the configuration never mentioned. A key
+// that disappeared from rolconfig out-of-band is omitted, which surfaces as
+// drift the next plan corrects.
+//
+// The flip side is that import does not populate `parameters`: a fresh
+// ResourceData has no prior state to scope against. Parameters have to be
+// added to the configuration and applied once to come under management.
+func readRoleParameters(roleConfig pq.StringArray, managed map[string]any) map[string]string {
+	live := make(map[string]string, len(roleConfig))
+	for _, config := range roleConfig {
+		parts := strings.SplitN(config, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		live[parts[0]] = parts[1]
+	}
+
+	params := make(map[string]string, len(managed))
+	for key := range managed {
+		if roleReservedParameters[key] {
+			continue
+		}
+		if value, ok := live[key]; ok {
+			params[key] = value
+		}
+	}
+	return params
+}
+
+// readClientConnectionCheckInterval searches for a client_connection_check_interval entry in the rolconfig array.
+// In case no such value is present, it returns 0.
+func readClientConnectionCheckInterval(roleConfig pq.StringArray) (int, error) {
+	for _, config := range roleConfig {
+		if strings.HasPrefix(config, roleClientConnectionCheckIntervalAttr) {
+			var result = strings.Split(strings.TrimPrefix(config, roleClientConnectionCheckIntervalAttr+"="), ", ")
+			res, err := strconv.Atoi(result[0])
+			if err != nil {
+				return -1, fmt.Errorf("error reading client_connection_check_interval: %w", err)
+			}
+			return res, nil
+		}
+	}
+	return 0, nil
+}
+
 // readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
 // In case no such value is present, it returns nil.
-func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
-	for _, v := range roleConfig {
-		config := string(v)
+func readStatementTimeout(roleConfig pq.StringArray) (int, error) {
+	for _, config := range roleConfig {
 		if strings.HasPrefix(config, roleStatementTimeoutAttr) {
 			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
 			res, err := strconv.Atoi(result[0])
@@ -595,13 +744,11 @@ func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 
 // readAssumeRole searches for a role entry in the rolconfig array.
 // In case no such value is present, it returns empty string.
-func readAssumeRole(roleConfig pq.ByteaArray) string {
+func readAssumeRole(roleConfig pq.StringArray) string {
 	var res string
-	var assumeRoleAttr = "role"
-	for _, v := range roleConfig {
-		config := string(v)
-		if strings.HasPrefix(config, assumeRoleAttr) {
-			res = strings.TrimPrefix(config, assumeRoleAttr+"=")
+	for _, config := range roleConfig {
+		if strings.HasPrefix(config, roleAssumeRoleGUC) {
+			res = strings.TrimPrefix(config, roleAssumeRoleGUC+"=")
 		}
 	}
 	return res
@@ -745,7 +892,15 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = setClientConnectionCheckInterval(txn, d); err != nil {
+		return err
+	}
+
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = setRoleParameters(txn, d); err != nil {
 		return err
 	}
 
@@ -1114,6 +1269,79 @@ func setIdleInTransactionSessionTimeout(txn *sql.Tx, d *schema.ResourceData) err
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset idle_in_transaction_session_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setClientConnectionCheckInterval(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleClientConnectionCheckIntervalAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	clientConnectionCheckInterval := d.Get(roleClientConnectionCheckIntervalAttr).(int)
+	if clientConnectionCheckInterval != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET client_connection_check_interval TO %d", pq.QuoteIdentifier(roleName), clientConnectionCheckInterval,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set client_connection_check_interval %d for %s: %w", clientConnectionCheckInterval, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET client_connection_check_interval", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset client_connection_check_interval for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setRoleParameters(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleParametersAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	oldRaw, newRaw := d.GetChange(roleParametersAttr)
+	oldParams := oldRaw.(map[string]any)
+	newParams := newRaw.(map[string]any)
+
+	// RESET parameters that were removed from the map. Keys are sorted so the
+	// emitted statements are deterministic.
+	for _, key := range sortedKeys(oldParams) {
+		if _, ok := newParams[key]; ok {
+			continue
+		}
+		if err := validateRoleParameterName(key); err != nil {
+			return err
+		}
+		sql := fmt.Sprintf("ALTER ROLE %s RESET %s", pq.QuoteIdentifier(roleName), key)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset parameter %s for %s: %w", key, roleName, err)
+		}
+	}
+
+	// SET only the parameters whose value actually changed.
+	for _, key := range sortedKeys(newParams) {
+		if err := validateRoleParameterName(key); err != nil {
+			return err
+		}
+		value := newParams[key].(string)
+		if old, ok := oldParams[key]; ok && old.(string) == value {
+			continue
+		}
+		// pq.QuoteLiteral follows libpq's PQEscapeStringInternal: it returns the
+		// value already wrapped in quotes, using an E'' escape string when the
+		// value contains backslashes. Quoting client-side by doubling
+		// backslashes would be wrong under standard_conforming_strings=on.
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET %s TO %s", pq.QuoteIdentifier(roleName), key, pq.QuoteLiteral(value),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set parameter %s for %s: %w", key, roleName, err)
 		}
 	}
 	return nil
