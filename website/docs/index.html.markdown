@@ -147,6 +147,7 @@ The following arguments are supported:
   * `awspostgres`: Use [GoCloud](#gocloud) for AWS
   * `gcppostgres`: Use [GoCloud](#gocloud) for GCP
 * `host` - (Required) The address for the postgresql server connection, see [GoCloud](#gocloud) for specific format.
+* `hostaddr` - (Optional) Numeric IP address of host to connect to (see [PostgresSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-HOSTADDR)
 * `port` - (Optional) The port for the postgresql server connection. The default is `5432`.
 * `database` - (Optional) Database to connect to. The default is `postgres`.
 * `username` - (Required) Username for the server connection.

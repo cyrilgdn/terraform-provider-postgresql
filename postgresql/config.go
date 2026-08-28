@@ -176,6 +176,7 @@ type ClientCertificateConfig struct {
 type Config struct {
 	Scheme                          string
 	Host                            string
+	HostAddr                        string
 	Port                            int
 	Username                        string
 	Password                        string
@@ -247,6 +248,10 @@ func (c *Config) connParams() []string {
 
 	if c.SSLRootCertPath != "" {
 		params["sslrootcert"] = c.SSLRootCertPath
+	}
+
+	if c.HostAddr != "" {
+		params["hostaddr"] = c.HostAddr
 	}
 
 	paramsArray := []string{}
