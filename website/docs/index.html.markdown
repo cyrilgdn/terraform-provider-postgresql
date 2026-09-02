@@ -185,6 +185,10 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+* `binary_parameters` - (Optional) Pass `binary_parameters=yes` to `lib/pq`.
+  This enables single-round-trip execution for non-prepared parameterized
+  queries and can improve compatibility with transaction-pooling proxies.
+  Supports all schemes. The default is `false`.
 * `aws_rds_iam_auth` - (Optional) If set to `true`, call the AWS RDS API to grab a temporary password, using AWS Credentials
   from the environment (or the given profile, see `aws_rds_iam_profile`)
 * `aws_rds_iam_profile` - (Optional) The AWS IAM Profile to use while using AWS RDS IAM Auth.

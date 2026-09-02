@@ -27,6 +27,11 @@ func TestConfigConnParams(t *testing.T) {
 		{&Config{ExpectedVersion: semver.MustParse("8.0.0"), ApplicationName: "Terraform provider"}, []string{}},
 		{&Config{SSLClientCert: &ClientCertificateConfig{CertificatePath: "/path/to/public-certificate.pem", KeyPath: "/path/to/private-key.pem"}}, []string{"sslcert=%2Fpath%2Fto%2Fpublic-certificate.pem", "sslkey=%2Fpath%2Fto%2Fprivate-key.pem"}},
 		{&Config{SSLRootCertPath: "/path/to/root.pem"}, []string{"sslrootcert=%2Fpath%2Fto%2Froot.pem"}},
+		{&Config{Scheme: "postgres", SSLMode: "disable", BinaryParameters: true}, []string{"binary_parameters=yes", "connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "postgres", SSLMode: "disable", BinaryParameters: false}, []string{"connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "awspostgres", BinaryParameters: true}, []string{"binary_parameters=yes"}},
+		{&Config{Scheme: "gcppostgres", BinaryParameters: true}, []string{"binary_parameters=yes"}},
+		{&Config{Scheme: "gcppostgres", BinaryParameters: false}, []string{}},
 	}
 
 	for _, test := range tests {
@@ -51,6 +56,7 @@ func TestConfigConnStr(t *testing.T) {
 	}{
 		{&Config{Scheme: "postgres", Host: "localhost", Port: 5432, Username: "postgres_user", Password: "postgres_password", SSLMode: "disable"}, "postgres://postgres_user:postgres_password@localhost:5432/postgres", []string{"connect_timeout=0", "sslmode=disable"}},
 		{&Config{Scheme: "postgres", Host: "localhost", Port: 5432, Username: "spaced user", Password: "spaced password", SSLMode: "disable"}, "postgres://spaced%20user:spaced%20password@localhost:5432/postgres", []string{"connect_timeout=0", "sslmode=disable"}},
+		{&Config{Scheme: "gcppostgres", Host: "test-project/europe-west3/test-instance", Port: 5432, Username: "postgres_user", Password: "postgres_password", BinaryParameters: true}, "gcppostgres://postgres_user:postgres_password@test-project/europe-west3/test-instance:5432/postgres", []string{"binary_parameters=yes"}},
 	}
 
 	for _, test := range tests {
