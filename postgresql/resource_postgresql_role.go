@@ -724,13 +724,16 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
-	// applying roles: let's revoke all / grant the right ones
-	if err = revokeRoles(txn, d); err != nil {
-		return err
-	}
+	if d.HasChange(roleRolesAttr) {
+		// Role updates such as password rotation must not require permission to
+		// revoke unrelated memberships.
+		if err = revokeRoles(txn, d); err != nil {
+			return err
+		}
 
-	if err = grantRoles(txn, d); err != nil {
-		return err
+		if err = grantRoles(txn, d); err != nil {
+			return err
+		}
 	}
 
 	if err = alterSearchPath(txn, d); err != nil {
