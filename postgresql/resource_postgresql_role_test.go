@@ -193,6 +193,77 @@ resource "postgresql_role" "update_role" {
 	})
 }
 
+func TestAccPostgresqlRole_UpdatePasswordWithoutMembershipAdmin(t *testing.T) {
+	const (
+		groupRole   = "role_membership_group"
+		targetRole  = "role_membership_target"
+		updaterRole = "role_membership_updater"
+	)
+
+	adminConfig := getTestConfig(t)
+	config := fmt.Sprintf(`
+provider "postgresql" {
+  host      = %q
+  port      = %d
+  username  = %q
+  password  = "updater-password"
+  sslmode   = %q
+  superuser = false
+}
+
+resource "postgresql_role" "target" {
+  name     = %q
+  login    = true
+  password = "old-password"
+  roles    = [%q]
+}
+`, adminConfig.Host, adminConfig.Port, updaterRole, adminConfig.SSLMode, targetRole, groupRole)
+	updatedConfig := strings.Replace(config, "old-password", "new-password", 1)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testSuperuserPreCheck(t)
+
+			setupSQL := fmt.Sprintf(`
+DROP ROLE IF EXISTS %[1]s;
+DROP ROLE IF EXISTS %[2]s;
+DROP ROLE IF EXISTS %[3]s;
+CREATE ROLE %[1]s NOLOGIN;
+CREATE ROLE %[2]s LOGIN PASSWORD 'old-password';
+GRANT %[1]s TO %[2]s;
+CREATE ROLE %[3]s LOGIN CREATEROLE PASSWORD 'updater-password';
+`, groupRole, targetRole, updaterRole)
+			dbExecute(t, adminConfig.connStr("postgres"), setupSQL)
+
+			t.Cleanup(func() {
+				dbExecute(t, adminConfig.connStr("postgres"), fmt.Sprintf(`
+DROP ROLE IF EXISTS %[1]s;
+DROP ROLE IF EXISTS %[2]s;
+DROP ROLE IF EXISTS %[3]s;
+`, targetRole, updaterRole, groupRole))
+			})
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:                  config,
+				ResourceName:            "postgresql_role.target",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"password"},
+			},
+			{
+				Config: updatedConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists(targetRole, []string{groupRole}, nil),
+					testAccCheckRoleCanLogin(t, targetRole, "new-password"),
+				),
+			},
+		},
+	})
+}
+
 // Test to create a role with admin user (usually postgres) granted to it
 // There were a bug on RDS like setup (with a non-superuser postgres role)
 // where it couldn't delete the role in this case.
