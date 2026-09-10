@@ -50,6 +50,7 @@ const (
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
 	featureMaintainPrivilege
+	featureRoleMembershipGrantor
 )
 
 var (
@@ -129,6 +130,11 @@ var (
 
 		// MAINTAIN privilege on tables (PG 17+)
 		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
+
+		// Role membership is tracked per grantor, so the same membership can be
+		// held several times over with different grantors and admin options
+		// (PG 16+).
+		featureRoleMembershipGrantor: semver.MustParseRange(">=16.0.0"),
 	}
 )
 

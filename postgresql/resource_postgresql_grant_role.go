@@ -24,6 +24,26 @@ WHERE
   pg_get_userbyid(member) = $1 AND
   pg_get_userbyid(roleid) = $2;
 `
+
+	// Since PostgreSQL 16 the grantor is part of a membership's identity, so the
+	// same membership can be held several times over, once per grantor, each with
+	// its own admin_option.
+	getGrantRoleWithGrantorQuery = `
+SELECT
+  pg_get_userbyid(member) as role,
+  pg_get_userbyid(roleid) as grant_role,
+  admin_option
+FROM
+  pg_auth_members
+WHERE
+  pg_get_userbyid(member) = $1 AND
+  pg_get_userbyid(roleid) = $2 AND
+  pg_has_role(current_user, grantor, 'MEMBER')
+ORDER BY
+  (pg_get_userbyid(grantor) = current_user) DESC,
+  pg_get_userbyid(grantor)
+LIMIT 1;
+`
 )
 
 func resourcePostgreSQLGrantRole() *schema.Resource {
@@ -124,7 +144,7 @@ func resourcePostgreSQLGrantRoleDelete(db *DBConnection, d *schema.ResourceData)
 	return nil
 }
 
-func readGrantRole(db QueryAble, d *schema.ResourceData) error {
+func readGrantRole(db *DBConnection, d *schema.ResourceData) error {
 	var roleName, grantRoleName string
 	var withAdminOption bool
 
@@ -136,7 +156,12 @@ func readGrantRole(db QueryAble, d *schema.ResourceData) error {
 		&withAdminOption,
 	}
 
-	err := db.QueryRow(getGrantRoleQuery, d.Get("role"), d.Get("grant_role")).Scan(values...)
+	query := getGrantRoleQuery
+	if db.featureSupported(featureRoleMembershipGrantor) {
+		query = getGrantRoleWithGrantorQuery
+	}
+
+	err := db.QueryRow(query, d.Get("role"), d.Get("grant_role")).Scan(values...)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("[WARN] PostgreSQL grant role (%q) not found", grantRoleID)

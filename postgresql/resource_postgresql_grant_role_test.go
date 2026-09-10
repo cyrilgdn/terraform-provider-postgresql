@@ -139,6 +139,87 @@ func TestAccPostgresqlGrantRole(t *testing.T) {
 	})
 }
 
+// Since PostgreSQL 16 the same membership can be held once per grantor, each with
+// its own admin_option. Only the grants this connection could have made are ours to
+// manage: REVOKE removes just those. A grant made by a role we are not a member of
+// must not be reported as this resource's state, or its admin_option is attributed to
+// us and, because the attribute forces a new resource, the membership is revoked and
+// re-granted on every apply without ever converging.
+func TestAccPostgresqlGrantRoleForeignGrantor(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dsn := config.connStr("postgres")
+
+	memberName := "test_foreign_grantor_member"
+	grantedName := "test_foreign_grantor_granted"
+	otherAdminName := "test_foreign_grantor_admin"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureRoleMembershipGrantor)
+
+			for _, role := range []string{memberName, grantedName, otherAdminName} {
+				dbExecute(t, dsn, fmt.Sprintf("DROP ROLE IF EXISTS %s", role))
+				dbExecute(t, dsn, fmt.Sprintf("CREATE ROLE %s", role))
+			}
+
+			// Give the competing grantor its own admin option, then have it grant the
+			// membership. Ordered first so an unfixed read, which takes an arbitrary
+			// row, sees this one.
+			dbExecute(t, dsn, fmt.Sprintf("GRANT %s TO %s WITH ADMIN OPTION", grantedName, otherAdminName))
+			// A CREATEROLE non-superuser is granted the roles it creates with ADMIN but
+			// not SET, so ask for SET explicitly before stepping into the grantor.
+			dbExecute(t, dsn, fmt.Sprintf("GRANT %s TO CURRENT_USER WITH SET TRUE", otherAdminName))
+			dbExecute(t, dsn, fmt.Sprintf(
+				"SET ROLE %s; GRANT %s TO %s WITH ADMIN OPTION; RESET ROLE",
+				otherAdminName, grantedName, memberName,
+			))
+
+			// A CREATEROLE non-superuser is granted the roles it creates, so step out
+			// of the competing grantor to make it genuinely foreign to this session.
+			dbExecute(t, dsn, fmt.Sprintf("REVOKE %s FROM CURRENT_USER", otherAdminName))
+		},
+		Providers: testAccProviders,
+		CheckDestroy: func(s *terraform.State) error {
+			for _, role := range []string{memberName, grantedName, otherAdminName} {
+				dbExecute(t, dsn, fmt.Sprintf("DROP ROLE IF EXISTS %s", role))
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+				resource postgresql_grant_role "grant_role" {
+					role       = "%s"
+					grant_role = "%s"
+				}
+				`, memberName, grantedName),
+				Check: resource.ComposeTestCheckFunc(
+					// The competing grant carries admin option; ours does not, and it is
+					// ours that this resource represents.
+					resource.TestCheckResourceAttr(
+						"postgresql_grant_role.grant_role", "with_admin_option", strconv.FormatBool(false)),
+					resource.TestCheckResourceAttr(
+						"postgresql_grant_role.grant_role", "id", fmt.Sprintf("%s_%s_false", memberName, grantedName)),
+				),
+			},
+			{
+				// The read must settle: reporting the foreign grant's admin_option here
+				// forces replacement on every plan, which is the bug this covers.
+				Config: fmt.Sprintf(`
+				resource postgresql_grant_role "grant_role" {
+					role       = "%s"
+					grant_role = "%s"
+				}
+				`, memberName, grantedName),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
 func checkGrantRole(t *testing.T, dsn, role string, grantRole string, withAdmin bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		db, err := sql.Open("postgres", dsn)
