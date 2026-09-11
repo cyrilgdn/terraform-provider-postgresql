@@ -170,8 +170,14 @@ The following arguments are supported:
 * `sslrootcert` - (Optional) - The SSL server root certificate file path. The file must contain PEM encoded data.
 * `connect_timeout` - (Optional) Maximum wait for connection, in seconds. The
   default is `180s`.  Zero or not specified means wait indefinitely.
+* `max_conn_retries` - (Optional) Maximum number of connection retries. Zero
+  means no retries. The default is `0`.
+* `connection_retry_timeout_seconds` - (Optional) Maximum total wait, in
+  seconds, across all connection retries. The default is `5`.
 * `max_connections` - (Optional) Set the maximum number of open connections to
   the database. The default is `20`.  Zero means unlimited open connections.
+* `conn_max_lifetime_seconds` - (Optional) Maximum lifetime of a connection,
+  in seconds. The default is `0`.  Zero means unlimited.
 * `expected_version` - (Optional) Specify a hint to Terraform regarding the
   expected version that the provider will be talking with.  This is a required
   hint in order for Terraform to talk with an ancient version of PostgreSQL.
