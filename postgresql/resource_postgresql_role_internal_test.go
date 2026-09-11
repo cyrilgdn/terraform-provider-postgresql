@@ -62,3 +62,14 @@ func TestReadIdleInTransactionSessionTimeoutErrorNamesSetting(t *testing.T) {
 		t.Errorf("error should name the setting being read, got: %s", got)
 	}
 }
+
+func TestReadLockTimeout(t *testing.T) {
+	roleConfig := pq.ByteaArray{[]byte("statement_timeout=2min"), []byte("lock_timeout=5s")}
+	res, err := readLockTimeout(roleConfig)
+	if err != nil {
+		t.Fatalf("readLockTimeout returned error: %v", err)
+	}
+	if res != 5000 {
+		t.Errorf("readLockTimeout = %d, expected 5000", res)
+	}
+}

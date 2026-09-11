@@ -38,6 +38,7 @@ const (
 	roleRolesAttr                           = "roles"
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
+	roleLockTimeoutAttr                     = "lock_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
 
 	// Deprecated options
@@ -187,6 +188,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Description:  "Abort any statement that takes more than the specified number of milliseconds",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
+			roleLockTimeoutAttr: {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Abort any statement that waits longer than the specified number of milliseconds while attempting to acquire a lock",
 				ValidateFunc: validation.IntAtLeast(0),
 			},
 			roleAssumeRoleAttr: {
@@ -362,6 +369,9 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	if err = setStatementTimeout(txn, d); err != nil {
 		return err
 	}
+	if err = setLockTimeout(txn, d); err != nil {
+		return err
+	}
 
 	if err = setIdleInTransactionSessionTimeout(txn, d); err != nil {
 		return err
@@ -525,6 +535,13 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 
 	d.Set(roleStatementTimeoutAttr, statementTimeout)
 
+	lockTimeout, err := readLockTimeout(roleConfig)
+	if err != nil {
+		return err
+	}
+
+	d.Set(roleLockTimeoutAttr, lockTimeout)
+
 	idleInTransactionSessionTimeout, err := readIdleInTransactionSessionTimeout(roleConfig)
 	if err != nil {
 		return err
@@ -627,6 +644,12 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 // In case no such value is present, it returns 0.
 func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
 	return readMillisecondsRoleSetting(roleConfig, roleStatementTimeoutAttr)
+}
+
+// readLockTimeout searches for a lock_timeout entry in the rolconfig array.
+// In case no such value is present, it returns 0.
+func readLockTimeout(roleConfig pq.ByteaArray) (int, error) {
+	return readMillisecondsRoleSetting(roleConfig, roleLockTimeoutAttr)
 }
 
 // readAssumeRole searches for a role entry in the rolconfig array.
@@ -774,6 +797,9 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setStatementTimeout(txn, d); err != nil {
+		return err
+	}
+	if err = setLockTimeout(txn, d); err != nil {
 		return err
 	}
 
@@ -1125,6 +1151,31 @@ func setStatementTimeout(txn *sql.Tx, d *schema.ResourceData) error {
 		)
 		if _, err := txn.Exec(sql); err != nil {
 			return fmt.Errorf("could not reset statement_timeout for %s: %w", roleName, err)
+		}
+	}
+	return nil
+}
+
+func setLockTimeout(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleLockTimeoutAttr) {
+		return nil
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	lockTimeout := d.Get(roleLockTimeoutAttr).(int)
+	if lockTimeout != 0 {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s SET lock_timeout TO %d", pq.QuoteIdentifier(roleName), lockTimeout,
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not set lock_timeout %d for %s: %w", lockTimeout, roleName, err)
+		}
+	} else {
+		sql := fmt.Sprintf(
+			"ALTER ROLE %s RESET lock_timeout", pq.QuoteIdentifier(roleName),
+		)
+		if _, err := txn.Exec(sql); err != nil {
+			return fmt.Errorf("could not reset lock_timeout for %s: %w", roleName, err)
 		}
 	}
 	return nil
