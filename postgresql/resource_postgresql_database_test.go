@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
@@ -556,3 +557,112 @@ resource "postgresql_database" "mydb_default_owner" {
 }
 
 `
+
+// Test the ICU locale provider (PostgreSQL >= 15).
+func TestAccPostgresqlDatabase_ICULocaleProvider(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureDBLocaleProvider)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "icu_db" {
+  name            = "icu_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "icu"
+  icu_locale      = "en-US"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.icu_db"),
+					resource.TestCheckResourceAttr("postgresql_database.icu_db", "name", "icu_db"),
+					resource.TestCheckResourceAttr("postgresql_database.icu_db", "locale_provider", "icu"),
+					resource.TestCheckResourceAttr("postgresql_database.icu_db", "icu_locale", "en-US"),
+				),
+			},
+		},
+	})
+}
+
+// Test the builtin locale provider (PostgreSQL >= 17).
+func TestAccPostgresqlDatabase_BuiltinLocaleProvider(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureDBBuiltinLocale)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "builtin_db" {
+  name            = "builtin_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "builtin"
+  builtin_locale  = "C.UTF-8"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.builtin_db"),
+					resource.TestCheckResourceAttr("postgresql_database.builtin_db", "name", "builtin_db"),
+					resource.TestCheckResourceAttr("postgresql_database.builtin_db", "locale_provider", "builtin"),
+					resource.TestCheckResourceAttr("postgresql_database.builtin_db", "builtin_locale", "C.UTF-8"),
+				),
+			},
+		},
+	})
+}
+
+// Test the PG_UNICODE_FAST builtin locale (PostgreSQL >= 18). The config uses
+// lowercase input to also verify that the case-insensitive DiffSuppressFunc
+// does not produce a perpetual diff against the canonical PG_UNICODE_FAST
+// casing stored by the server.
+func TestAccPostgresqlDatabase_UnicodeFastLocale(t *testing.T) {
+	skipIfNotAcc(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			client := testAccProvider.Meta().(*Client)
+			db, err := client.Connect()
+			if err != nil {
+				t.Fatalf("could not connect to database: %v", err)
+			}
+			// PG_UNICODE_FAST was introduced in PostgreSQL 18.
+			if !db.version.GE(semver.MustParse("18.0.0")) {
+				t.Skipf("Skip PG_UNICODE_FAST test for Postgres %s", db.version)
+			}
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlDatabaseDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "postgresql_database" "unicode_fast_db" {
+  name            = "unicode_fast_db"
+  template        = "template0"
+  encoding        = "UTF8"
+  locale_provider = "builtin"
+  builtin_locale  = "pg_unicode_fast"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlDatabaseExists("postgresql_database.unicode_fast_db"),
+					resource.TestCheckResourceAttr("postgresql_database.unicode_fast_db", "name", "unicode_fast_db"),
+					resource.TestCheckResourceAttr("postgresql_database.unicode_fast_db", "locale_provider", "builtin"),
+				),
+			},
+		},
+	})
+}

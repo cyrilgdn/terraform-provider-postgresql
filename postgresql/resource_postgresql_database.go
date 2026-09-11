@@ -25,6 +25,10 @@ const (
 	dbTablespaceAttr       = "tablespace_name"
 	dbTemplateAttr         = "template"
 	dbAlterObjectOwnership = "alter_object_ownership"
+	dbLocaleProviderAttr   = "locale_provider"
+	dbBuiltinLocaleAttr    = "builtin_locale"
+	dbICULocaleAttr        = "icu_locale"
+	dbICURulesAttr         = "icu_rules"
 )
 
 func resourcePostgreSQLDatabase() *schema.Resource {
@@ -108,6 +112,40 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "If true, the owner of already existing objects will change if the owner changes",
+			},
+			dbLocaleProviderAttr: {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				ForceNew:     true,
+				Description:  "The provider to use for the default collation in the new database: libc, icu or builtin. Requires PostgreSQL >= 15",
+				ValidateFunc: validation.StringInSlice([]string{"libc", "icu", "builtin"}, false),
+			},
+			dbBuiltinLocaleAttr: {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				ForceNew: true,
+				// PostgreSQL stores builtin locale names in canonical casing
+				// (e.g. PG_UNICODE_FAST), so suppress diffs that only differ by
+				// case to avoid a perpetual plan when the config uses a different
+				// casing (e.g. pg_unicode_fast).
+				DiffSuppressFunc: caseInsensitiveDiffSuppressFunc,
+				Description:      "Builtin locale to use when locale_provider is builtin, e.g. C, C.UTF-8 or PG_UNICODE_FAST. Requires PostgreSQL >= 17",
+			},
+			dbICULocaleAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				ForceNew:    true,
+				Description: "ICU locale to use when locale_provider is icu, e.g. en-US. Requires PostgreSQL >= 15",
+			},
+			dbICURulesAttr: {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				ForceNew:    true,
+				Description: "Additional ICU collation rules to customize the behavior of the default collation of the database. Requires PostgreSQL >= 16",
 			},
 		},
 	}
@@ -202,6 +240,39 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 		fmt.Fprintf(b, " LC_CTYPE DEFAULT")
 	case ok:
 		fmt.Fprintf(b, " LC_CTYPE '%s' ", pqQuoteLiteral(v.(string)))
+	}
+
+	// Non-libc locale options (LOCALE_PROVIDER, ICU_LOCALE) require
+	// PostgreSQL >= 15, ICU_RULES requires >= 16 and BUILTIN_LOCALE requires >= 17.
+	// Each option is gated per-attribute; specific locale values (e.g.
+	// PG_UNICODE_FAST) are left to the server to accept or reject.
+	if v, ok := d.GetOk(dbBuiltinLocaleAttr); ok {
+		if !db.featureSupported(featureDBBuiltinLocale) {
+			return fmt.Errorf("the server (%q) does not support the BUILTIN_LOCALE option of CREATE DATABASE, it requires PostgreSQL >= 17", db.version.String())
+		}
+		fmt.Fprintf(b, " BUILTIN_LOCALE '%s' ", pqQuoteLiteral(v.(string)))
+	}
+
+	if v, ok := d.GetOk(dbICULocaleAttr); ok {
+		if !db.featureSupported(featureDBLocaleProvider) {
+			return fmt.Errorf("the server (%q) does not support the ICU_LOCALE option of CREATE DATABASE, it requires PostgreSQL >= 15", db.version.String())
+		}
+		fmt.Fprintf(b, " ICU_LOCALE '%s' ", pqQuoteLiteral(v.(string)))
+	}
+
+	if v, ok := d.GetOk(dbICURulesAttr); ok {
+		if !db.featureSupported(featureDBICURules) {
+			return fmt.Errorf("the server (%q) does not support the ICU_RULES option of CREATE DATABASE, it requires PostgreSQL >= 16", db.version.String())
+		}
+		fmt.Fprintf(b, " ICU_RULES '%s' ", pqQuoteLiteral(v.(string)))
+	}
+
+	// LOCALE_PROVIDER is emitted last so it applies to the locale options above.
+	if v, ok := d.GetOk(dbLocaleProviderAttr); ok {
+		if !db.featureSupported(featureDBLocaleProvider) {
+			return fmt.Errorf("the server (%q) does not support the LOCALE_PROVIDER option of CREATE DATABASE, it requires PostgreSQL >= 15", db.version.String())
+		}
+		fmt.Fprintf(b, " LOCALE_PROVIDER '%s' ", pqQuoteLiteral(v.(string)))
 	}
 
 	switch v, ok := d.GetOk(dbTablespaceAttr); {
@@ -390,6 +461,71 @@ func resourcePostgreSQLDatabaseReadImpl(db *DBConnection, d *schema.ResourceData
 		}
 
 		d.Set(dbIsTemplateAttr, dbIsTemplate)
+	}
+
+	if err := readDBLocaleProvider(db, d, dbSQLFmt, dbId); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// readDBLocaleProvider reads the locale provider and its associated locale
+// (ICU or builtin) back from pg_database. These columns only exist on
+// PostgreSQL >= 15, and the daticulocale column was renamed to datlocale in
+// PostgreSQL 17.
+func readDBLocaleProvider(db *DBConnection, d *schema.ResourceData, dbSQLFmt, dbId string) error {
+	if !db.featureSupported(featureDBLocaleProvider) {
+		return nil
+	}
+
+	var dbLocProvider string
+	query := fmt.Sprintf(dbSQLFmt, "d.datlocprovider")
+	if err := db.QueryRow(query, dbId).Scan(&dbLocProvider); err != nil {
+		return fmt.Errorf("error reading LOCALE_PROVIDER property for DATABASE: %w", err)
+	}
+
+	var localeProvider string
+	switch dbLocProvider {
+	case "c":
+		localeProvider = "libc"
+	case "i":
+		localeProvider = "icu"
+	case "b":
+		localeProvider = "builtin"
+	}
+	d.Set(dbLocaleProviderAttr, localeProvider)
+
+	// The column holding the ICU/builtin locale was named daticulocale before
+	// PostgreSQL 17 and datlocale from 17 onwards.
+	localeColumn := "d.daticulocale"
+	if db.featureSupported(featureDBBuiltinLocale) {
+		localeColumn = "d.datlocale"
+	}
+
+	var dbLocale sql.NullString
+	query = fmt.Sprintf(dbSQLFmt, localeColumn)
+	if err := db.QueryRow(query, dbId).Scan(&dbLocale); err != nil {
+		return fmt.Errorf("error reading locale property for DATABASE: %w", err)
+	}
+	if dbLocale.Valid {
+		switch localeProvider {
+		case "icu":
+			d.Set(dbICULocaleAttr, dbLocale.String)
+		case "builtin":
+			d.Set(dbBuiltinLocaleAttr, dbLocale.String)
+		}
+	}
+
+	if db.featureSupported(featureDBICURules) {
+		var dbICURules sql.NullString
+		query = fmt.Sprintf(dbSQLFmt, "d.daticurules")
+		if err := db.QueryRow(query, dbId).Scan(&dbICURules); err != nil {
+			return fmt.Errorf("error reading ICU_RULES property for DATABASE: %w", err)
+		}
+		if dbICURules.Valid {
+			d.Set(dbICURulesAttr, dbICURules.String)
+		}
 	}
 
 	return nil

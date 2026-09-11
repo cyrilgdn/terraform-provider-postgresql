@@ -675,6 +675,15 @@ func defaultDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	return old == new
 }
 
+// caseInsensitiveDiffSuppressFunc suppresses diffs between two strings that
+// differ only in letter case. It is used for attributes whose value is stored
+// by PostgreSQL in a canonical casing (e.g. the builtin locale name
+// PG_UNICODE_FAST), so that a config using a different casing does not produce
+// a perpetual plan.
+func caseInsensitiveDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
+	return strings.EqualFold(old, new)
+}
+
 // quoteTable can quote a table name with or without a schema prefix
 // Example:
 //
