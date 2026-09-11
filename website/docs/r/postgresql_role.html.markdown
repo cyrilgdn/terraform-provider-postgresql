@@ -168,6 +168,8 @@ resource "postgresql_role" "app_user" {
 
 * `statement_timeout` - (Optional) Defines [`statement_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) setting for this role which allows to abort any statement that takes more than the specified amount of time.
 
+* `lock_timeout` - (Optional) Defines [`lock_timeout`](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-LOCK-TIMEOUT) setting for this role which aborts any statement that waits longer than the specified amount of time while attempting to acquire a lock.
+
 * `assume_role` - (Optional) Defines the role to switch to at login via [`SET ROLE`](https://www.postgresql.org/docs/current/sql-set-role.html).
 
 ## Import Example
