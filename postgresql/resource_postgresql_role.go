@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 
@@ -559,16 +560,56 @@ func readSearchPath(roleConfig pq.ByteaArray) []string {
 	return nil
 }
 
-// readIdleInTransactionSessionTimeout searches for an idle_in_transaction_session_timeout entry in the rolconfig array.
-// In case no such value is present, it returns nil.
-func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
+// millisecondUnits maps the time units PostgreSQL accepts for
+// millisecond-based settings to their value in milliseconds.
+// https://www.postgresql.org/docs/current/config-setting.html#CONFIG-SETTING-NAMES-VALUES
+var millisecondUnits = []struct {
+	suffix string
+	factor float64
+}{
+	// Longer suffixes first so e.g. "ms" is not matched as "s".
+	{"ms", 1},
+	{"us", 0.001},
+	{"min", 60 * 1000},
+	{"s", 1000},
+	{"h", 60 * 60 * 1000},
+	{"d", 24 * 60 * 60 * 1000},
+}
+
+// parseMillisecondsSetting converts a millisecond-based setting value to an
+// integer number of milliseconds. PostgreSQL stores the value exactly as it
+// was set, so alongside a bare integer ("120000") it can carry any of the
+// documented time units ("2min", "5s", "150ms"), optionally with whitespace
+// before the unit.
+func parseMillisecondsSetting(value string) (int, error) {
+	if res, err := strconv.Atoi(value); err == nil {
+		return res, nil
+	}
+	for _, unit := range millisecondUnits {
+		if !strings.HasSuffix(value, unit.suffix) {
+			continue
+		}
+		number := strings.TrimSpace(strings.TrimSuffix(value, unit.suffix))
+		res, err := strconv.ParseFloat(number, 64)
+		if err != nil {
+			break
+		}
+		return int(math.Round(res * unit.factor)), nil
+	}
+	return -1, fmt.Errorf("invalid millisecond setting value %q", value)
+}
+
+// readMillisecondsRoleSetting searches for the given millisecond-based setting
+// in the rolconfig array and returns its value in milliseconds.
+// In case no such value is present, it returns 0.
+func readMillisecondsRoleSetting(roleConfig pq.ByteaArray, attr string) (int, error) {
 	for _, v := range roleConfig {
 		config := string(v)
-		if strings.HasPrefix(config, roleIdleInTransactionSessionTimeoutAttr) {
-			var result = strings.Split(strings.TrimPrefix(config, roleIdleInTransactionSessionTimeoutAttr+"="), ", ")
-			res, err := strconv.Atoi(result[0])
+		if strings.HasPrefix(config, attr+"=") {
+			var result = strings.Split(strings.TrimPrefix(config, attr+"="), ", ")
+			res, err := parseMillisecondsSetting(result[0])
 			if err != nil {
-				return -1, fmt.Errorf("error reading statement_timeout: %w", err)
+				return -1, fmt.Errorf("error reading %s: %w", attr, err)
 			}
 			return res, nil
 		}
@@ -576,21 +617,16 @@ func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) 
 	return 0, nil
 }
 
+// readIdleInTransactionSessionTimeout searches for an idle_in_transaction_session_timeout entry in the rolconfig array.
+// In case no such value is present, it returns 0.
+func readIdleInTransactionSessionTimeout(roleConfig pq.ByteaArray) (int, error) {
+	return readMillisecondsRoleSetting(roleConfig, roleIdleInTransactionSessionTimeoutAttr)
+}
+
 // readStatementTimeout searches for a statement_timeout entry in the rolconfig array.
-// In case no such value is present, it returns nil.
+// In case no such value is present, it returns 0.
 func readStatementTimeout(roleConfig pq.ByteaArray) (int, error) {
-	for _, v := range roleConfig {
-		config := string(v)
-		if strings.HasPrefix(config, roleStatementTimeoutAttr) {
-			var result = strings.Split(strings.TrimPrefix(config, roleStatementTimeoutAttr+"="), ", ")
-			res, err := strconv.Atoi(result[0])
-			if err != nil {
-				return -1, fmt.Errorf("error reading statement_timeout: %w", err)
-			}
-			return res, nil
-		}
-	}
-	return 0, nil
+	return readMillisecondsRoleSetting(roleConfig, roleStatementTimeoutAttr)
 }
 
 // readAssumeRole searches for a role entry in the rolconfig array.
