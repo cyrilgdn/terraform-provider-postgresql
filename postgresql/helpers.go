@@ -508,7 +508,7 @@ SELECT rolname
 	err := db.QueryRow(query, dbQueryValues...).Scan(&owner)
 	switch {
 	case err == sql.ErrNoRows:
-		return "", fmt.Errorf("could not find database '%s' while looking for owner", database)
+		return "", fmt.Errorf("could not find database '%s' while looking for owner: %w", database, sql.ErrNoRows)
 	case err != nil:
 		return "", fmt.Errorf("error while looking for the owner of database '%s': %w", database, err)
 	}
@@ -527,7 +527,7 @@ SELECT rolname
 	err := db.QueryRow(query, schemaName).Scan(&owner)
 	switch {
 	case err == sql.ErrNoRows:
-		return "", fmt.Errorf("could not find schema '%s' while looking for owner", schemaName)
+		return "", fmt.Errorf("could not find schema '%s' while looking for owner: %w", schemaName, sql.ErrNoRows)
 	case err != nil:
 		return "", fmt.Errorf("error while looking for the owner of schema '%s': %w", schemaName, err)
 	}

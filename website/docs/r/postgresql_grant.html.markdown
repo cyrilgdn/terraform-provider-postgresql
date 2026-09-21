@@ -14,6 +14,7 @@ See [PostgreSQL documentation](https://www.postgresql.org/docs/current/sql-grant
 
 ~> **Note:** This resource needs Postgresql version 9 or above.
 ~> **Note:** Using column & table grants on the _same_ table with the _same_ privileges can lead to unexpected behaviours.
+~> **Note:** Destroying a grant tolerates objects that no longer exist: missing sequences are skipped, as are missing tables, views, materialized views, partitioned and foreign tables for `object_type = "table"`, and a schema or grantee role that is gone counts as already revoked. A grant listing several functions, procedures or routines still fails if one of them is gone, as skipping it would leave privileges on the surviving ones.
 
 ## Usage
 
