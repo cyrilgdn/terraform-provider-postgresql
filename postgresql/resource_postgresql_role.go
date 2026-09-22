@@ -1043,6 +1043,17 @@ func grantRoles(txn *sql.Tx, d *schema.ResourceData) error {
 }
 
 func alterSearchPath(txn *sql.Tx, d *schema.ResourceData) error {
+	// Nothing to do when search_path is not configured and has not changed. Emitting
+	// `ALTER ROLE ... SET search_path TO DEFAULT` unconditionally is a no-op on PostgreSQL, but
+	// Aurora PostgreSQL Limitless rejects every form of `ALTER ROLE ... SET` with
+	// `0A000: This statement is not supported`, which makes any role impossible to create there
+	// (see #549). Guarding on HasChange matches every other setter in this file
+	// (setRoleConnLimit, setStatementTimeout, ...) and still emits the reset to DEFAULT when the
+	// attribute is removed from the configuration.
+	if !d.HasChange(roleSearchPathAttr) {
+		return nil
+	}
+
 	role := d.Get(roleNameAttr).(string)
 	searchPathInterface := d.Get(roleSearchPathAttr).([]any)
 
