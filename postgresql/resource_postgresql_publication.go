@@ -145,7 +145,9 @@ func setPubName(txn *sql.Tx, d *schema.ResourceData) error {
 	if _, err := txn.Exec(sql); err != nil {
 		return fmt.Errorf("error updating publication name: %w", err)
 	}
-	d.SetId(generatePublicationID(d, database))
+
+	name := d.Get(pubNameAttr).(string)
+	d.SetId(generatePublicationID(database, name))
 	return nil
 }
 
@@ -253,7 +255,7 @@ func resourcePostgreSQLPublicationCreate(db *DBConnection, d *schema.ResourceDat
 		return fmt.Errorf("error creating Publication: %w", err)
 	}
 
-	d.SetId(generatePublicationID(d, databaseName))
+	d.SetId(generatePublicationID(databaseName, name))
 
 	return resourcePostgreSQLPublicationReadImpl(db, d)
 }
@@ -393,7 +395,7 @@ func resourcePostgreSQLPublicationReadImpl(db *DBConnection, d *schema.ResourceD
 		publishParams = append(publishParams, "truncate")
 	}
 
-	d.SetId(generatePublicationID(d, database))
+	d.SetId(generatePublicationID(database, PublicationName))
 	d.Set(pubNameAttr, PublicationName)
 	d.Set(pubDatabaseAttr, database)
 	d.Set(pubOwnerAttr, pubowner)
@@ -547,10 +549,10 @@ func getPublicationParameters(d *schema.ResourceData, pubViaRootEnabled bool) (s
 	return returnValue, nil
 }
 
-func generatePublicationID(d *schema.ResourceData, databaseName string) string {
+func generatePublicationID(databaseName string, publicationName string) string {
 	return strings.Join([]string{
 		databaseName,
-		d.Get(pubNameAttr).(string),
+		publicationName,
 	}, ".")
 }
 

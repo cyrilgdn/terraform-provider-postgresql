@@ -482,6 +482,65 @@ func TestAccPostgresqlPublication_UpdateName(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlPublication_Import(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+	testTables := []string{"test_schema.test_table_1", "test_schema.test_table_2"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, _ := getTestDBNames(dbSuffix)
+	testAccPostgresqlPublicationImportConfig := fmt.Sprintf(`
+resource "postgresql_publication" "test" {
+	name     = "publication"
+	database = "%s"
+	tables   = ["test_schema.test_table_1", "test_schema.test_table_2"]
+}
+`, dbName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePublication)
+			testSuperuserPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlPublicationDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPostgresqlPublicationImportConfig,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlPublicationExists("postgresql_publication.test"),
+					resource.TestCheckResourceAttr(
+						"postgresql_publication.test", "id", fmt.Sprintf("%s.publication", dbName),
+					),
+				),
+			},
+			{
+				// Import must reproduce the same "<database>.<name>" ID that create produced
+				ResourceName:            "postgresql_publication.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{pubDropCascadeAttr},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 {
+						return fmt.Errorf("expected 1 imported state, got %d", len(states))
+					}
+					wantID := fmt.Sprintf("%s.publication", dbName)
+					if states[0].ID != wantID {
+						return fmt.Errorf("imported ID = %q, want %q", states[0].ID, wantID)
+					}
+					if got := states[0].Attributes[pubNameAttr]; got != "publication" {
+						return fmt.Errorf("imported %s = %q, want %q", pubNameAttr, got, "publication")
+					}
+					return nil
+				},
+			},
+		},
+	})
+}
+
 func checkPublicationExists(txn *sql.Tx, pubName string) (bool, error) {
 	var _rez bool
 	err := txn.QueryRow("SELECT TRUE from pg_catalog.pg_publication WHERE pubname=$1", pubName).Scan(&_rez)
