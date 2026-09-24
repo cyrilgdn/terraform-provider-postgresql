@@ -393,7 +393,7 @@ func resourcePostgreSQLRoleDelete(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if !d.Get(roleSkipReassignOwnedAttr).(bool) {
-		if err := withRolesGranted(txn, []string{roleName}, func() error {
+		if err := withRolesGranted(db, txn, []string{roleName}, func() error {
 			currentUser := db.client.config.getDatabaseUsername()
 			if _, err := txn.Exec(fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(currentUser))); err != nil {
 				return fmt.Errorf("could not reassign owned by role %s to %s: %w", roleName, currentUser, err)

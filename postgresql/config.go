@@ -140,6 +140,12 @@ type DBConnection struct {
 	// version is the version number of the database as determined by parsing the
 	// output of `SELECT VERSION()`.x
 	version semver.Version
+
+	// setOption caches whether pg_auth_members.set_option exists. The column is a
+	// catalog feature of the server version and does not change for this connection.
+	setOptionMu    sync.Mutex
+	setOptionKnown bool
+	setOption      bool
 }
 
 // featureSupported returns true if a given feature is supported or not. This is
@@ -326,9 +332,9 @@ func (c *Client) Connect() (*DBConnection, error) {
 	}
 
 	conn = &DBConnection{
-		db,
-		c,
-		*version,
+		DB:      db,
+		client:  c,
+		version: *version,
 	}
 
 	dbRegistryLock.Lock()
