@@ -54,19 +54,41 @@ func pqQuoteLiteral(in string) string {
 	return in
 }
 
-func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
-	var _rez int
-	setOption := true
+// pgAuthMembersHasSetOption reports whether pg_auth_members.set_option exists.
+// The information_schema probe is cached per connection: it is a property of the
+// server version, and membership checks otherwise repeat it on every grant.
+func (c *DBConnection) pgAuthMembersHasSetOption(q QueryAble) (bool, error) {
+	c.setOptionMu.Lock()
+	defer c.setOptionMu.Unlock()
 
-	err := db.QueryRow(
+	if c.setOptionKnown {
+		return c.setOption, nil
+	}
+
+	var rez int
+	err := q.QueryRow(
 		"SELECT 1 FROM information_schema.columns WHERE table_name='pg_auth_members' AND column_name = 'set_option'",
-	).Scan(&_rez)
+	).Scan(&rez)
 
 	switch {
 	case err == sql.ErrNoRows:
-		setOption = false
+		c.setOption = false
 	case err != nil:
 		return false, fmt.Errorf("could not read setOption column: %w", err)
+	default:
+		c.setOption = true
+	}
+
+	c.setOptionKnown = true
+	return c.setOption, nil
+}
+
+func isMemberOfRole(conn *DBConnection, db QueryAble, role, member string) (bool, error) {
+	var _rez int
+
+	setOption, err := conn.pgAuthMembersHasSetOption(db)
+	if err != nil {
+		return false, err
 	}
 
 	query := "SELECT 1 FROM pg_auth_members WHERE pg_get_userbyid(roleid) = $1 AND pg_get_userbyid(member) = $2"
@@ -88,12 +110,12 @@ func isMemberOfRole(db QueryAble, role, member string) (bool, error) {
 // grantRoleMembership grants the role *role* to the user *member*.
 // It returns false if the grant is not needed because the user is already
 // a member of this role.
-func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
+func grantRoleMembership(conn *DBConnection, db QueryAble, role, member string) (bool, error) {
 	if member == role {
 		return false, nil
 	}
 
-	isMember, err := isMemberOfRole(db, role, member)
+	isMember, err := isMemberOfRole(conn, db, role, member)
 	if err != nil {
 		return false, err
 	}
@@ -114,12 +136,12 @@ func grantRoleMembership(db QueryAble, role, member string) (bool, error) {
 
 // revokeRoleMembership revokes the role *role* from the user *member*.
 // It returns false if the revoke is not needed because the user is not a member of this role.
-func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
+func revokeRoleMembership(conn *DBConnection, db QueryAble, role, member string) (bool, error) {
 	if member == role {
 		return false, nil
 	}
 
-	isMember, err := isMemberOfRole(db, role, member)
+	isMember, err := isMemberOfRole(conn, db, role, member)
 	if err != nil {
 		return false, err
 	}
@@ -139,7 +161,7 @@ func revokeRoleMembership(db QueryAble, role, member string) (bool, error) {
 // withRolesGranted temporarily grants, if needed, the roles specified to connected user
 // (i.e.: the admin configure in the provider) and revoke them as soon as the
 // callback func has finished.
-func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
+func withRolesGranted(conn *DBConnection, txn *sql.Tx, roles []string, fn func() error) error {
 	// No roles asked, execute the function directly
 	if len(roles) == 0 {
 		return fn()
@@ -190,7 +212,7 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		//  - GRANT postgres TO foo
 
 		// Check the opposite relation and revoke currentUser from role if needed
-		revoked, err := revokeRoleMembership(txn, currentUser, role)
+		revoked, err := revokeRoleMembership(conn, txn, currentUser, role)
 		if err != nil {
 			return err
 		}
@@ -199,7 +221,7 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		}
 
 		// Grant the role to currentUser if needed
-		roleGranted, err := grantRoleMembership(txn, role, currentUser)
+		roleGranted, err := grantRoleMembership(conn, txn, role, currentUser)
 		if err != nil {
 			return err
 		}
@@ -215,7 +237,7 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 
 	// Revoke the temporary granted roles.
 	for _, role := range grantedRoles {
-		if _, err := revokeRoleMembership(txn, role, currentUser); err != nil {
+		if _, err := revokeRoleMembership(conn, txn, role, currentUser); err != nil {
 			return err
 		}
 	}
@@ -230,7 +252,7 @@ func withRolesGranted(txn *sql.Tx, roles []string, fn func() error) error {
 		if !exists {
 			continue
 		}
-		if _, err := grantRoleMembership(txn, currentUser, role); err != nil {
+		if _, err := grantRoleMembership(conn, txn, currentUser, role); err != nil {
 			return err
 		}
 	}

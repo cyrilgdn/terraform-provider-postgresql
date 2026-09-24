@@ -156,7 +156,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 
 	// Needed in order to set the owner of the db if the connection user is not a superuser
-	if err := withRolesGranted(txn, []string{owner}, func() error {
+	if err := withRolesGranted(db, txn, []string{owner}, func() error {
 
 		// Revoke all privileges before granting otherwise reducing privileges will not work.
 		// We just have to revoke them in the same transaction so role will not lose its privileges
@@ -173,19 +173,19 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 		return err
 	}
 
+	// Read in the same transaction so the owner lock is taken once per resource.
+	if err := readRoleDefaultPrivileges(txn, db, d); err != nil {
+		return err
+	}
+
 	if err := txn.Commit(); err != nil {
+		// The read above set the id. A failed commit rolls the grant back,
+		// so leave the id empty and avoid saving a tainted resource.
+		d.SetId("")
 		return err
 	}
 
-	d.SetId(generateDefaultPrivilegesID(d))
-
-	txn, err = startTransaction(db.client, d.Get("database").(string))
-	if err != nil {
-		return err
-	}
-	defer deferredRollback(txn)
-
-	return readRoleDefaultPrivileges(txn, db, d)
+	return nil
 }
 
 func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -211,7 +211,7 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 	}
 
 	// Needed in order to set the owner of the db if the connection user is not a superuser
-	if err := withRolesGranted(txn, []string{owner}, func() error {
+	if err := withRolesGranted(db, txn, []string{owner}, func() error {
 		return revokeRoleDefaultPrivileges(txn, d)
 	}); err != nil {
 		return err
@@ -230,10 +230,6 @@ func readRoleDefaultPrivileges(txn *sql.Tx, db *DBConnection, d *schema.Resource
 	pgSchema := d.Get("schema").(string)
 	objectType := d.Get("object_type").(string)
 	privilegesInput := d.Get("privileges").(*schema.Set).List()
-
-	if err := pgLockRole(txn, owner); err != nil {
-		return err
-	}
 
 	roleOID, err := getRoleOID(txn, role)
 	if err != nil {

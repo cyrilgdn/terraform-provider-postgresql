@@ -142,13 +142,13 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
-		ownerGranted, err := grantRoleMembership(db, owner, currentUser)
+		ownerGranted, err := grantRoleMembership(db, db, owner, currentUser)
 		if err != nil {
 			return err
 		}
 		if ownerGranted {
 			defer func() {
-				_, err = revokeRoleMembership(db, owner, currentUser)
+				_, err = revokeRoleMembership(db, db, owner, currentUser)
 			}()
 		}
 	}
@@ -251,13 +251,13 @@ func resourcePostgreSQLDatabaseDelete(db *DBConnection, d *schema.ResourceData) 
 
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
-		ownerGranted, err := grantRoleMembership(db, owner, currentUser)
+		ownerGranted, err := grantRoleMembership(db, db, owner, currentUser)
 		if err != nil {
 			return err
 		}
 		if ownerGranted {
 			defer func() {
-				_, err = revokeRoleMembership(db, owner, currentUser)
+				_, err = revokeRoleMembership(db, db, owner, currentUser)
 			}()
 		}
 	}
@@ -468,13 +468,13 @@ func setDBOwner(db *DBConnection, d *schema.ResourceData) error {
 	defer deferredRollback(lockTxn)
 
 	//needed in order to set the owner of the db if the connection user is not a superuser
-	ownerGranted, err := grantRoleMembership(db, owner, currentUser)
+	ownerGranted, err := grantRoleMembership(db, db, owner, currentUser)
 	if err != nil {
 		return err
 	}
 	if ownerGranted {
 		defer func() {
-			_, err = revokeRoleMembership(db, owner, currentUser)
+			_, err = revokeRoleMembership(db, db, owner, currentUser)
 		}()
 	}
 
@@ -522,13 +522,13 @@ func setAlterOwnership(db *DBConnection, d *schema.ResourceData) error {
 		return nil
 	}
 
-	currentOwnerGranted, err := grantRoleMembership(db, currentOwner, currentUser)
+	currentOwnerGranted, err := grantRoleMembership(db, db, currentOwner, currentUser)
 	if err != nil {
 		return err
 	}
 	if currentOwnerGranted {
 		defer func() {
-			_, err = revokeRoleMembership(db, currentOwner, currentUser)
+			_, err = revokeRoleMembership(db, db, currentOwner, currentUser)
 		}()
 	}
 	sql := fmt.Sprintf("REASSIGN OWNED BY %s TO %s", pq.QuoteIdentifier(currentOwner), pq.QuoteIdentifier(newOwner))
