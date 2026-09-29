@@ -136,10 +136,14 @@ func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) er
 	}
 	rolesToGrant = append(rolesToGrant, dbOwner)
 
-	schemaOwner := d.Get("owner").(string)
-	if schemaOwner != "" && schemaOwner != dbOwner {
+	// pg_database_owner cannot have explicit members: resolve it to the
+	// database owner (its implicit member), which is already in the list.
+	schemaOwners, err := resolveOwners(txn, []string{d.Get("owner").(string)})
+	if err != nil {
+		return err
+	}
+	if schemaOwner := schemaOwners[0]; schemaOwner != "" && schemaOwner != dbOwner {
 		rolesToGrant = append(rolesToGrant, schemaOwner)
-
 	}
 
 	if err := withRolesGranted(txn, rolesToGrant, func() error {
@@ -248,9 +252,12 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 		return nil
 	}
 
-	owner := d.Get("owner").(string)
+	owners, err := resolveOwners(txn, []string{d.Get("owner").(string)})
+	if err != nil {
+		return err
+	}
 
-	if err = withRolesGranted(txn, []string{owner}, func() error {
+	if err = withRolesGranted(txn, owners, func() error {
 		dropMode := "RESTRICT"
 		if d.Get(schemaDropCascade).(bool) {
 			dropMode = "CASCADE"
@@ -495,6 +502,11 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	rolesToGrant := []string{}
 	if owner != "" {
 		rolesToGrant = append(rolesToGrant, owner)
+	}
+
+	rolesToGrant, err := resolveOwners(txn, rolesToGrant)
+	if err != nil {
+		return err
 	}
 
 	return withRolesGranted(txn, rolesToGrant, func() error {
