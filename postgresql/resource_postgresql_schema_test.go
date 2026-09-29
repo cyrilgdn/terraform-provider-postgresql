@@ -282,6 +282,58 @@ resource "postgresql_schema" "public" {
 	})
 }
 
+func TestAccPostgresqlSchema_PgDatabaseOwner(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// pg_database_owner cannot have explicit members, so as a non-superuser
+	// (e.g. RDS) the provider must not try to grant it to the current user
+	// on create, policy update or delete.
+	var testAccPostgresqlSchemaConfig = `
+resource "postgresql_schema" "test" {
+  name     = "test_pg_database_owner"
+  database = "%s"
+  owner    = "pg_database_owner"
+  %s
+}
+`
+	var testAccPostgresqlSchemaPolicy = fmt.Sprintf(`
+  policy {
+    usage = true
+    role  = "%s"
+  }
+`, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featureDatabaseOwnerRole)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPostgresqlSchemaDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSchemaConfig, dbName, ""),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlSchemaExists("postgresql_schema.test", "test_pg_database_owner"),
+					testAccCheckSchemaOwner(dbName, "test_pg_database_owner", "pg_database_owner"),
+				),
+			},
+			{
+				Config: fmt.Sprintf(testAccPostgresqlSchemaConfig, dbName, testAccPostgresqlSchemaPolicy),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckSchemaOwner(dbName, "test_pg_database_owner", "pg_database_owner"),
+					resource.TestCheckResourceAttr("postgresql_schema.test", "policy.#", "1"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckPostgresqlSchemaDestroy(s *terraform.State) error {
 	client := testAccProvider.Meta().(*Client)
 
