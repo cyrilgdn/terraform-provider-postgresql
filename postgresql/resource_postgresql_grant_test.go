@@ -1414,6 +1414,50 @@ resource "postgresql_grant" "test" {
 	})
 }
 
+func TestAccPostgresqlGrantIgnoresObjectsOwnedByRole(t *testing.T) {
+	skipIfNotAcc(t)
+
+	for _, privileges := range []string{"ALL", "SELECT"} {
+		t.Run(privileges, func(t *testing.T) {
+			dbSuffix, teardown := setupTestDatabase(t, true, true)
+			defer teardown()
+
+			config := getTestConfig(t)
+			dbName, roleName := getTestDBNames(dbSuffix)
+			createTestTables(t, dbSuffix, []string{"test_schema.granted_table"}, "")
+
+			tfConfig := fmt.Sprintf(`
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		privileges  = ["%s"]
+	}`, dbName, roleName, privileges)
+
+			resource.Test(t, resource.TestCase{
+				PreCheck: func() {
+					testAccPreCheck(t)
+				},
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: tfConfig,
+					},
+					{
+						PreConfig: func() {
+							dbExecute(t, config.connStr(dbName), "CREATE TABLE test_schema.owned_table (val text)")
+							dbExecute(t, config.connStr(dbName), fmt.Sprintf("ALTER TABLE test_schema.owned_table OWNER TO %s", roleName))
+						},
+						Config:   tfConfig,
+						PlanOnly: true,
+					},
+				},
+			})
+		})
+	}
+}
+
 func TestAccPostgresqlGrantOwnerPG15(t *testing.T) {
 	skipIfNotAcc(t)
 
