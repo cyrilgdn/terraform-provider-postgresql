@@ -491,7 +491,7 @@ LEFT JOIN (
     WHERE grantee=$1
 ) privs
 USING (relname, relnamespace, relkind)
-WHERE nspname = $2 AND relkind = $3
+WHERE nspname = $2 AND relkind = $3 AND pg_class.relowner <> $1
 GROUP BY pg_class.relname
 `
 		rows, err = txn.Query(
