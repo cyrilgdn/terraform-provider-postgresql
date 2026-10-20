@@ -1,6 +1,0 @@
-provider_installation {
-  dev_overrides {
-    "cyrilgdn/postgresql" = "../../../"
-  }
-  direct {}
-}
