@@ -185,6 +185,12 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+* `lock_grants` - (Optional) If set to `true`, `postgresql_grant` create, update
+  and delete operations take a transaction-level advisory lock on the target
+  database, so only one grant change runs at a time per database. This avoids
+  `pq: tuple concurrently updated` errors when many grants are applied in
+  parallel, at the cost of slower applies. Other resources are not affected.
+  Default: `false`.
 * `aws_rds_iam_auth` - (Optional) If set to `true`, call the AWS RDS API to grab a temporary password, using AWS Credentials
   from the environment (or the given profile, see `aws_rds_iam_profile`)
 * `aws_rds_iam_profile` - (Optional) The AWS IAM Profile to use while using AWS RDS IAM Auth.

@@ -229,7 +229,7 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     defaultLockGrants,
-				Description: "Wrap GRANT/REVOKEs in a lock to avoid executing them in parallel.",
+				Description: "Serialize postgresql_grant changes within a database with an advisory lock to avoid `tuple concurrently updated` errors.",
 			},
 		},
 

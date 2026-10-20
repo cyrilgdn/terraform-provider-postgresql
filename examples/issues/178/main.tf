@@ -29,7 +29,9 @@ resource "docker_container" "postgres" {
     external = var.POSTGRES_PORT
   }
   env = [
-    "POSTGRES_PASSWORD=${var.POSTGRES_PASSWORD}"
+    "POSTGRES_USER=${var.POSTGRES_USER}",
+    "POSTGRES_PASSWORD=${var.POSTGRES_PASSWORD}",
+    "POSTGRES_DB=${var.POSTGRES_DBNAME}",
   ]
   healthcheck {
     test         = ["CMD-SHELL", "pg_isready"]
@@ -41,9 +43,6 @@ resource "docker_container" "postgres" {
   upload {
     file    = "/docker-entrypoint-initdb.d/mock-tables.sql"
     content = <<EOS
-      CREATE DATABASE "test" OWNER "${var.POSTGRES_DBNAME}";
-      \connect ${var.POSTGRES_DBNAME}
-
       DO $$
       DECLARE
         table_count int := ${var.table_count};
@@ -60,8 +59,8 @@ provider "postgresql" {
   scheme      = "postgres"
   host        = var.POSTGRES_HOST
   port        = docker_container.postgres.ports[0].external
-  database    = var.POSTGRES_PASSWORD
-  username    = var.POSTGRES_PASSWORD
+  database    = var.POSTGRES_DBNAME
+  username    = var.POSTGRES_USER
   password    = var.POSTGRES_PASSWORD
   sslmode     = "disable"
   superuser   = false
@@ -124,7 +123,7 @@ resource "postgresql_role" "readonly_users" {
 resource "postgresql_role" "readwrite_users" {
   for_each         = local.read_write_users
   name             = each.value
-  roles            = [postgresql_role.readonly_role.name]
+  roles            = [postgresql_role.readwrite_role.name]
   login            = true
   superuser        = false
   create_database  = false
