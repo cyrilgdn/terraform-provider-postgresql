@@ -598,8 +598,8 @@ func getRoleOID(db QueryAble, role string) (uint32, error) {
 
 // Lock a role and all his members to avoid concurrent updates on some resources
 func pgLockRole(txn *sql.Tx, role string) error {
-	// Disable statement timeout for this connection otherwise the lock could fail
-	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+	// Disable statement timeout for this transaction otherwise the lock could fail
+	if _, err := txn.Exec("SET LOCAL statement_timeout = 0"); err != nil {
 		return fmt.Errorf("could not disable statement_timeout: %w", err)
 	}
 	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", role); err != nil {
@@ -618,14 +618,36 @@ func pgLockRole(txn *sql.Tx, role string) error {
 
 // Lock a database and all his members to avoid concurrent updates on some resources
 func pgLockDatabase(txn *sql.Tx, database string) error {
-	// Disable statement timeout for this connection otherwise the lock could fail
-	if _, err := txn.Exec("SET statement_timeout = 0"); err != nil {
+	// Disable statement timeout for this transaction otherwise the lock could fail
+	if _, err := txn.Exec("SET LOCAL statement_timeout = 0"); err != nil {
 		return fmt.Errorf("could not disable statement_timeout: %w", err)
 	}
 	if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", database); err != nil {
 		return fmt.Errorf("could not get advisory lock for database %s: %w", database, err)
 	}
 
+	return nil
+}
+
+// withLockTimeout bounds lock waits inside fn, then restores the previous lock_timeout.
+func withLockTimeout(txn *sql.Tx, seconds int, fn func() error) error {
+	if seconds <= 0 {
+		return fn()
+	}
+
+	var previous string
+	if err := txn.QueryRow("SHOW lock_timeout").Scan(&previous); err != nil {
+		return fmt.Errorf("could not read lock_timeout: %w", err)
+	}
+	if _, err := txn.Exec("SELECT set_config('lock_timeout', $1, true)", fmt.Sprintf("%ds", seconds)); err != nil {
+		return fmt.Errorf("could not set lock_timeout: %w", err)
+	}
+	if err := fn(); err != nil {
+		return err
+	}
+	if _, err := txn.Exec("SELECT set_config('lock_timeout', $1, true)", previous); err != nil {
+		return fmt.Errorf("could not restore lock_timeout: %w", err)
+	}
 	return nil
 }
 

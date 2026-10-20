@@ -27,6 +27,7 @@ const (
 	defaultProviderMaxConnRetries                = 0
 	defaultProviderConnectionRetryTimeoutSeconds = 5
 	defaultExpectedPostgreSQLVersion             = "9.0.0"
+	defaultLockGrants                            = false
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -224,6 +225,19 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"lock_grants": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     defaultLockGrants,
+				Description: "Serialize postgresql_grant changes within a database with an advisory lock to avoid `tuple concurrently updated` errors.",
+			},
+			"lock_grants_timeout": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      0,
+				Description:  "Maximum time, in seconds, that postgresql_grant waits for its advisory locks before failing. Zero means wait indefinitely.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -414,6 +428,8 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
+		LockGrants:                      d.Get("lock_grants").(bool),
+		LockGrantsTimeoutSeconds:        d.Get("lock_grants_timeout").(int),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

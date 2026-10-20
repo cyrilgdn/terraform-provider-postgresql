@@ -177,14 +177,16 @@ func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceD
 	defer deferredRollback(txn)
 
 	role := d.Get("role").(string)
-	if err := pgLockRole(txn, role); err != nil {
-		return err
-	}
-
-	if objectType == "database" {
-		if err := pgLockDatabase(txn, database); err != nil {
+	if err := withLockTimeout(txn, db.client.config.LockGrantsTimeoutSeconds, func() error {
+		if err := pgLockRole(txn, role); err != nil {
 			return err
 		}
+		if db.IsLockGrants() || objectType == "database" {
+			return pgLockDatabase(txn, database)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	owners, err := getRolesToGrant(txn, d)
@@ -234,15 +236,18 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	defer deferredRollback(txn)
 
 	role := d.Get("role").(string)
-	if err := pgLockRole(txn, role); err != nil {
-		return err
-	}
-
 	objectType := d.Get("object_type").(string)
-	if objectType == "database" {
-		if err := pgLockDatabase(txn, database); err != nil {
+
+	if err := withLockTimeout(txn, db.client.config.LockGrantsTimeoutSeconds, func() error {
+		if err := pgLockRole(txn, role); err != nil {
 			return err
 		}
+		if db.IsLockGrants() || objectType == "database" {
+			return pgLockDatabase(txn, database)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	owners, err := getRolesToGrant(txn, d)

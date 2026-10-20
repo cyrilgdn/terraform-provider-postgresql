@@ -383,6 +383,131 @@ func TestAccPostgresqlGrant(t *testing.T) {
 	})
 }
 
+func TestAccPostgresqlGrantLockGrants(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+
+	testTables := []string{"test_schema.test_table", "test_schema.test_table2"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, _ := getTestDBNames(dbSuffix)
+
+	var roles []string
+	var dropRoles []func()
+	// Roles hold privileges in the test database, so drop them after it.
+	defer func() {
+		teardown()
+		for _, dropRole := range dropRoles {
+			dropRole()
+		}
+	}()
+	for i := range 5 {
+		role := fmt.Sprintf("tf_tests_lock_role%d_%s", i, dbSuffix)
+		dropRoles = append(dropRoles, createTestRole(t, role))
+		dbExecute(t, config.connStr(dbName), fmt.Sprintf("GRANT usage ON SCHEMA test_schema to %s", role))
+		roles = append(roles, role)
+	}
+
+	tfConfig := `
+	provider "postgresql" {
+		lock_grants = true
+	}
+	`
+	for i, role := range roles {
+		tfConfig += fmt.Sprintf(`
+	resource "postgresql_grant" "test%d" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		privileges  = ["SELECT", "INSERT"]
+	}
+	`, i, dbName, role)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig,
+				Check: func(*terraform.State) error {
+					for _, role := range roles {
+						if err := testCheckTablesPrivileges(t, dbName, role, testTables, []string{"SELECT", "INSERT"}); err != nil {
+							return err
+						}
+					}
+					return nil
+				},
+			},
+		},
+	})
+}
+
+func TestAccPostgresqlGrantLockGrantsTimeout(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	testTables := []string{"test_schema.test_table"}
+	createTestTables(t, dbSuffix, testTables, "")
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	// Advisory locks are scoped per database, so hold it from the grant's database.
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection: %v", err)
+	}
+	defer closeDB(t, db)
+
+	holder, err := db.Begin()
+	if err != nil {
+		t.Fatalf("could not start transaction: %v", err)
+	}
+	defer func() { _ = holder.Rollback() }()
+
+	if _, err := holder.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_database WHERE datname = $1", dbName); err != nil {
+		t.Fatalf("could not hold database lock: %v", err)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+	provider "postgresql" {
+		lock_grants         = true
+		lock_grants_timeout = 1
+	}
+
+	resource "postgresql_grant" "test" {
+		database    = "%s"
+		role        = "%s"
+		schema      = "test_schema"
+		object_type = "table"
+		privileges  = ["SELECT"]
+	}
+	`, dbName, roleName),
+				ExpectError: regexp.MustCompile("lock timeout"),
+			},
+		},
+	})
+}
+
 func TestAccPostgresqlGrantColumns(t *testing.T) {
 	skipIfNotAcc(t)
 
