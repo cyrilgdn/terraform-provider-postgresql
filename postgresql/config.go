@@ -198,6 +198,7 @@ type Config struct {
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
 	LockGrants                      bool
+	LockGrantsTimeoutSeconds        int
 }
 
 // Client struct holding connection string

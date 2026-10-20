@@ -191,6 +191,11 @@ The following arguments are supported:
   `pq: tuple concurrently updated` errors when many grants are applied in
   parallel, at the cost of slower applies. Other resources are not affected.
   Default: `false`.
+* `lock_grants_timeout` - (Optional) Maximum time, in seconds, that a
+  `postgresql_grant` operation waits for its advisory locks (the role lock, and
+  the database lock when `lock_grants` is enabled) before failing with a lock
+  timeout error instead of waiting indefinitely. Default: `0` (wait
+  indefinitely).
 * `aws_rds_iam_auth` - (Optional) If set to `true`, call the AWS RDS API to grab a temporary password, using AWS Credentials
   from the environment (or the given profile, see `aws_rds_iam_profile`)
 * `aws_rds_iam_profile` - (Optional) The AWS IAM Profile to use while using AWS RDS IAM Auth.

@@ -629,6 +629,28 @@ func pgLockDatabase(txn *sql.Tx, database string) error {
 	return nil
 }
 
+// withLockTimeout bounds lock waits inside fn, then restores the previous lock_timeout.
+func withLockTimeout(txn *sql.Tx, seconds int, fn func() error) error {
+	if seconds <= 0 {
+		return fn()
+	}
+
+	var previous string
+	if err := txn.QueryRow("SHOW lock_timeout").Scan(&previous); err != nil {
+		return fmt.Errorf("could not read lock_timeout: %w", err)
+	}
+	if _, err := txn.Exec("SELECT set_config('lock_timeout', $1, true)", fmt.Sprintf("%ds", seconds)); err != nil {
+		return fmt.Errorf("could not set lock_timeout: %w", err)
+	}
+	if err := fn(); err != nil {
+		return err
+	}
+	if _, err := txn.Exec("SELECT set_config('lock_timeout', $1, true)", previous); err != nil {
+		return fmt.Errorf("could not restore lock_timeout: %w", err)
+	}
+	return nil
+}
+
 func arrayDifference(a, b []any) (diff []any) {
 	m := make(map[any]bool)
 
