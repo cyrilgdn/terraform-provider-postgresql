@@ -3,15 +3,18 @@ package postgresql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
-	_ "github.com/lib/pq" // PostgreSQL db
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
+	"github.com/lib/pq"
 	"gocloud.dev/gcp"
 	"gocloud.dev/gcp/cloudsql"
 	"gocloud.dev/postgres"
@@ -46,6 +49,7 @@ const (
 	featureServer
 	featureCreateRoleSelfGrant
 	featureSecurityLabel
+	featureMaintainPrivilege
 )
 
 var (
@@ -122,6 +126,9 @@ var (
 		// https://www.postgresql.org/docs/16/release-16.html#RELEASE-16-PRIVILEGES
 		featureCreateRoleSelfGrant: semver.MustParseRange(">=16.0.0"),
 		featureSecurityLabel:       semver.MustParseRange(">=11.0.0"),
+
+		// MAINTAIN privilege on tables (PG 17+)
+		featureMaintainPrivilege: semver.MustParseRange(">=17.0.0"),
 	}
 )
 
@@ -182,6 +189,9 @@ type Config struct {
 	ApplicationName                 string
 	Timeout                         int
 	ConnectTimeoutSec               int
+	MaxConnRetries                  int
+	ConnectionRetryTimeoutSeconds   int
+	ConnMaxLifetimeSeconds          int
 	MaxConns                        int
 	ExpectedVersion                 semver.Version
 	SSLClientCert                   *ClientCertificateConfig
@@ -285,57 +295,117 @@ func (c *Config) getDatabaseUsername() string {
 // Callers must return their database resources. Use of QueryRow() or Exec() is encouraged.
 // Query() must have their rows.Close()'ed.
 func (c *Client) Connect() (*DBConnection, error) {
+	ctx := context.Background()
+	dsn := c.config.connStr(c.databaseName)
+
+	dbRegistryLock.Lock()
+	conn, found := dbRegistry[dsn]
+	dbRegistryLock.Unlock()
+	if found {
+		return conn, nil
+	}
+
+	// Dialing and retrying happen outside the lock so a slow/flaky connection
+	// to one DSN doesn't stall Connect() calls for other DSNs.
+	db, err := c.connectWithRetry(ctx, proxyDriverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// We don't want to retain connection
+	// So when we connect on a specific database which might be managed by terraform,
+	// we don't keep opened connection in case of the db has to be dropped in the plan.
+	db.SetMaxIdleConns(0)
+	db.SetMaxOpenConns(c.config.MaxConns)
+	db.SetConnMaxLifetime(time.Duration(c.config.ConnMaxLifetimeSeconds) * time.Second)
+
+	defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
+	version := &c.config.ExpectedVersion
+	if defaultVersion.Equals(c.config.ExpectedVersion) {
+		// Version hint not set by user, need to fingerprint
+		version, err = fingerprintCapabilities(db)
+		if err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("error detecting capabilities: %w", err)
+		}
+	}
+
+	conn = &DBConnection{
+		db,
+		c,
+		*version,
+	}
+
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
+	if existing, found := dbRegistry[dsn]; found {
+		// Another goroutine won the race and already published a connection
+		// for this DSN; keep that one and discard ours.
+		_ = db.Close()
+		return existing, nil
+	}
+	dbRegistry[dsn] = conn
+	return conn, nil
+}
 
-	dsn := c.config.connStr(c.databaseName)
-	conn, found := dbRegistry[dsn]
-	if !found {
+// connectWithRetry opens a connection to dsn, retrying transient failures up
+// to c.config.MaxConnRetries times or until c.config.ConnectionRetryTimeoutSeconds
+// elapses, whichever comes first. postgresDriverName is the database/sql
+// driver used for the "postgres" scheme (overridable by tests).
+func (c *Client) connectWithRetry(ctx context.Context, postgresDriverName, dsn string) (*sql.DB, error) {
+	var db *sql.DB
+	var err error
+	retryCount := 0
 
-		var db *sql.DB
-		var err error
+	connectRetryTimeout := time.Duration(c.config.ConnectionRetryTimeoutSeconds) * time.Second
+	retryError := retry.RetryContext(ctx, connectRetryTimeout, func() *retry.RetryError {
 		if c.config.Scheme == "postgres" {
-			db, err = sql.Open(proxyDriverName, dsn)
+			db, err = sql.Open(postgresDriverName, dsn)
 		} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
-			db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
+			db, err = openImpersonatedGCPDBConnection(ctx, dsn, c.config.GCPIAMImpersonateServiceAccount)
 		} else {
-			db, err = postgres.Open(context.Background(), dsn)
+			db, err = postgres.Open(ctx, dsn)
+		}
+		if err == nil {
+			err = db.PingContext(ctx)
 		}
 
 		if err == nil {
-			err = db.Ping()
-		}
-		if err != nil {
-			errString := strings.Replace(err.Error(), c.config.Password, "XXXX", 2)
-			return nil, fmt.Errorf("Error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
+			return nil
 		}
 
-		// We don't want to retain connection
-		// So when we connect on a specific database which might be managed by terraform,
-		// we don't keep opened connection in case of the db has to be dropped in the plan.
-		db.SetMaxIdleConns(0)
-		db.SetMaxOpenConns(c.config.MaxConns)
-
-		defaultVersion, _ := semver.Parse(defaultExpectedPostgreSQLVersion)
-		version := &c.config.ExpectedVersion
-		if defaultVersion.Equals(c.config.ExpectedVersion) {
-			// Version hint not set by user, need to fingerprint
-			version, err = fingerprintCapabilities(db)
-			if err != nil {
-				_ = db.Close()
-				return nil, fmt.Errorf("error detecting capabilities: %w", err)
-			}
+		if db != nil {
+			_ = db.Close()
+			db = nil
 		}
 
-		conn = &DBConnection{
-			db,
-			c,
-			*version,
+		if !isRetryableConnectionError(err) || retryCount >= c.config.MaxConnRetries {
+			return retry.NonRetryableError(err)
 		}
-		dbRegistry[dsn] = conn
+		retryCount++
+		return retry.RetryableError(err)
+	})
+	if retryError != nil {
+		errString := strings.Replace(retryError.Error(), c.config.Password, "XXXX", 2)
+		return nil, fmt.Errorf("error connecting to PostgreSQL server %s (scheme: %s): %s", c.config.Host, c.config.Scheme, errString)
 	}
 
-	return conn, nil
+	return db, nil
+}
+
+// isRetryableConnectionError reports whether a connection failure is likely
+// transient (network blips, server not ready yet) as opposed to a
+// configuration error (bad credentials, unknown database) that will not be
+// fixed by retrying.
+func isRetryableConnectionError(err error) bool {
+	if pqErr, ok := errors.AsType[*pq.Error](err); ok {
+		switch pqErr.Code.Class() {
+		case "28", // Invalid Authorization Specification
+			"3D": // Invalid Catalog Name
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) IsLockGrants() bool {
@@ -374,17 +444,17 @@ func openImpersonatedGCPDBConnection(ctx context.Context, dsn string, targetServ
 		Scopes:          []string{"https://www.googleapis.com/auth/sqlservice.admin"},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Error creating token source with service account impersonation of %s: %w", targetServiceAccountEmail, err)
+		return nil, fmt.Errorf("error creating token source with service account impersonation of %s: %w", targetServiceAccountEmail, err)
 	}
 	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), ts)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating HTTP client with service account impersonation of %s: %w", targetServiceAccountEmail, err)
+		return nil, fmt.Errorf("error creating HTTP client with service account impersonation of %s: %w", targetServiceAccountEmail, err)
 	}
 	certSource := cloudsql.NewCertSourceWithIAM(client, ts)
 	opener := gcppostgres.URLOpener{CertSource: certSource}
 	dbURL, err := url.Parse(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing connection string: %w", err)
+		return nil, fmt.Errorf("error parsing connection string: %w", err)
 	}
 	return opener.OpenPostgresURL(ctx, dbURL)
 }

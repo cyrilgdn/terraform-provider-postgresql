@@ -81,7 +81,7 @@ func resourcePostgreSQLServer() *schema.Resource {
 func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -104,8 +104,8 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 	if options, ok := d.GetOk(serverOptionsAttr); ok {
 		fmt.Fprint(b, " OPTIONS ( ")
 		cnt := 0
-		len := len(options.(map[string]interface{}))
-		for k, v := range options.(map[string]interface{}) {
+		len := len(options.(map[string]any))
+		for k, v := range options.(map[string]any) {
 			fmt.Fprint(b, " ", pq.QuoteIdentifier(k), " ", pq.QuoteLiteral(v.(string)))
 			if cnt < len-1 {
 				fmt.Fprint(b, ", ")
@@ -139,7 +139,7 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error creating server: %w", err)
+		return fmt.Errorf("error creating server: %w", err)
 	}
 
 	d.SetId(d.Get(serverNameAttr).(string))
@@ -150,7 +150,7 @@ func resourcePostgreSQLServerCreate(db *DBConnection, d *schema.ResourceData) er
 func resourcePostgreSQLServerRead(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -178,10 +178,10 @@ func resourcePostgreSQLServerReadImpl(db *DBConnection, d *schema.ResourceData) 
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading foreign server: %w", err)
+		return fmt.Errorf("error reading foreign server: %w", err)
 	}
 
-	mappedOptions := make(map[string]interface{})
+	mappedOptions := make(map[string]any)
 	for _, v := range serverOptions {
 		pair := strings.Split(v, "=")
 		mappedOptions[pair[0]] = pair[1]
@@ -201,7 +201,7 @@ func resourcePostgreSQLServerReadImpl(db *DBConnection, d *schema.ResourceData) 
 func resourcePostgreSQLServerDelete(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -225,7 +225,7 @@ func resourcePostgreSQLServerDelete(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error deleting server: %w", err)
+		return fmt.Errorf("error deleting server: %w", err)
 	}
 
 	d.SetId("")
@@ -236,7 +236,7 @@ func resourcePostgreSQLServerDelete(db *DBConnection, d *schema.ResourceData) er
 func resourcePostgreSQLServerUpdate(db *DBConnection, d *schema.ResourceData) error {
 	if !db.featureSupported(featureServer) {
 		return fmt.Errorf(
-			"Foreign Server resource is not supported for this Postgres version (%s)",
+			"foreign server resource is not supported for this Postgres version (%s)",
 			db.version,
 		)
 	}
@@ -260,7 +260,7 @@ func resourcePostgreSQLServerUpdate(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("Error updating foreign server: %w", err)
+		return fmt.Errorf("error updating foreign server: %w", err)
 	}
 
 	return resourcePostgreSQLServerReadImpl(db, d)
@@ -284,11 +284,11 @@ func setServerVersionOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error
 		oldOptions, newOptions := d.GetChange(serverOptionsAttr)
 		fmt.Fprint(b, " OPTIONS ( ")
 		cnt := 0
-		len := len(newOptions.(map[string]interface{}))
-		toRemove := oldOptions.(map[string]interface{})
-		for k, v := range newOptions.(map[string]interface{}) {
+		len := len(newOptions.(map[string]any))
+		toRemove := oldOptions.(map[string]any)
+		for k, v := range newOptions.(map[string]any) {
 			operation := "ADD"
-			if oldOptions.(map[string]interface{})[k] != nil {
+			if oldOptions.(map[string]any)[k] != nil {
 				operation = "SET"
 				delete(toRemove, k)
 			}
@@ -312,7 +312,7 @@ func setServerVersionOptionsIfChanged(txn *sql.Tx, d *schema.ResourceData) error
 
 	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating foreign server version and/or options: %w", err)
+		return fmt.Errorf("error updating foreign server version and/or options: %w", err)
 	}
 
 	return nil
@@ -330,7 +330,7 @@ func setServerNameIfChanged(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating foreign server name: %w", err)
+		return fmt.Errorf("error updating foreign server name: %w", err)
 	}
 
 	return nil
@@ -352,7 +352,7 @@ func setServerOwner(txn *sql.Tx, d *schema.ResourceData) error {
 
 	sql := b.String()
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating foreign server owner: %w", err)
+		return fmt.Errorf("error updating foreign server owner: %w", err)
 	}
 
 	return nil

@@ -130,7 +130,7 @@ func readGrantRole(db QueryAble, d *schema.ResourceData) error {
 
 	grantRoleID := d.Id()
 
-	values := []interface{}{
+	values := []any{
 		&roleName,
 		&grantRoleName,
 		&withAdminOption,
@@ -143,7 +143,7 @@ func readGrantRole(db QueryAble, d *schema.ResourceData) error {
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading grant role: %w", err)
+		return fmt.Errorf("error reading grant role: %w", err)
 	}
 
 	d.Set("role", roleName)

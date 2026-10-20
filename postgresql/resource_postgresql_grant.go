@@ -30,11 +30,12 @@ var objectTypes = map[string]string{
 	"table":    "r",
 	"sequence": "S",
 	"function": "f",
+	"routine":  "f",
 	"type":     "T",
 	"schema":   "n",
 }
 
-type ResourceSchemeGetter func(string) interface{}
+type ResourceSchemeGetter func(string) any
 
 func resourcePostgreSQLGrant() *schema.Resource {
 	return &schema.Resource{
@@ -124,7 +125,7 @@ func resourcePostgreSQLGrantRead(db *DBConnection, d *schema.ResourceData) error
 	}
 	defer deferredRollback(txn)
 
-	return readRolePrivileges(txn, d)
+	return readRolePrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLGrantCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -163,7 +164,7 @@ func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceD
 	if d.Get("objects").(*schema.Set).Len() != 1 && (objectType == "foreign_data_wrapper" || objectType == "foreign_server") {
 		return fmt.Errorf("one element must be specified in `objects` when `object_type` is `foreign_data_wrapper` or `foreign_server`")
 	}
-	if err := validatePrivileges(d); err != nil {
+	if err := validatePrivileges(db, d); err != nil {
 		return err
 	}
 
@@ -217,7 +218,7 @@ func resourcePostgreSQLGrantCreateOrUpdate(db *DBConnection, d *schema.ResourceD
 	}
 	defer deferredRollback(txn)
 
-	return readRolePrivileges(txn, d)
+	return readRolePrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -263,7 +264,7 @@ func resourcePostgreSQLGrantDelete(db *DBConnection, d *schema.ResourceData) err
 	return nil
 }
 
-func readDatabaseRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readDatabaseRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("database").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -278,13 +279,13 @@ WHERE grantee = $2
 		return fmt.Errorf("could not read privileges for database %s: %w", dbName, err)
 	}
 	granted := pgArrayToSet(privileges)
-	if !resourcePrivilegesEqual(granted, d) {
+	if !resourcePrivilegesEqual(granted, db, d) {
 		return d.Set("privileges", granted)
 	}
 	return nil
 }
 
-func readSchemaRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readSchemaRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32) error {
 	dbName := d.Get("schema").(string)
 	query := `
 SELECT array_agg(privilege_type)
@@ -300,13 +301,13 @@ WHERE grantee = $2
 	}
 
 	granted := pgArrayToSet(privileges)
-	if !resourcePrivilegesEqual(granted, d) {
+	if !resourcePrivilegesEqual(granted, db, d) {
 		return d.Set("privileges", granted)
 	}
 	return nil
 }
 
-func readForeignDataWrapperRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readForeignDataWrapperRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32) error {
 	objects := d.Get("objects").(*schema.Set).List()
 	fdwName := objects[0].(string)
 	query := `
@@ -323,13 +324,13 @@ WHERE grantee = $2
 	}
 
 	granted := pgArrayToSet(privileges)
-	if !resourcePrivilegesEqual(granted, d) {
+	if !resourcePrivilegesEqual(granted, db, d) {
 		return d.Set("privileges", granted)
 	}
 	return nil
 }
 
-func readForeignServerRolePrivileges(txn *sql.Tx, d *schema.ResourceData, roleOID uint32) error {
+func readForeignServerRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData, roleOID uint32) error {
 	objects := d.Get("objects").(*schema.Set).List()
 	srvName := objects[0].(string)
 	query := `
@@ -346,7 +347,7 @@ WHERE grantee = $2
 	}
 
 	granted := pgArrayToSet(privileges)
-	if !resourcePrivilegesEqual(granted, d) {
+	if !resourcePrivilegesEqual(granted, db, d) {
 		return d.Set("privileges", granted)
 	}
 	return nil
@@ -430,7 +431,7 @@ ORDER BY col_privs.attname
 	return nil
 }
 
-func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+func readRolePrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	objectType := d.Get("object_type").(string)
 	objects := d.Get("objects").(*schema.Set)
@@ -445,16 +446,16 @@ func readRolePrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 
 	switch objectType {
 	case "database":
-		return readDatabaseRolePrivileges(txn, d, roleOID)
+		return readDatabaseRolePrivileges(txn, db, d, roleOID)
 
 	case "schema":
-		return readSchemaRolePrivileges(txn, d, roleOID)
+		return readSchemaRolePrivileges(txn, db, d, roleOID)
 
 	case "foreign_data_wrapper":
-		return readForeignDataWrapperRolePrivileges(txn, d, roleOID)
+		return readForeignDataWrapperRolePrivileges(txn, db, d, roleOID)
 
 	case "foreign_server":
-		return readForeignServerRolePrivileges(txn, d, roleOID)
+		return readForeignServerRolePrivileges(txn, db, d, roleOID)
 
 	case "function", "procedure", "routine":
 		query = `
@@ -521,7 +522,7 @@ GROUP BY pg_class.relname
 		}
 
 		privilegesSet := pgArrayToSet(privileges)
-		if !resourcePrivilegesEqual(privilegesSet, d) {
+		if !resourcePrivilegesEqual(privilegesSet, db, d) {
 			// If any object doesn't have the same privileges as saved in the state,
 			// we return its privileges to force an update.
 			log.Printf(
@@ -709,7 +710,7 @@ func revokeRolePrivileges(txn *sql.Tx, d *schema.ResourceData, usePrevious bool)
 	getter := d.Get
 
 	if usePrevious {
-		getter = func(name string) interface{} {
+		getter = func(name string) any {
 			if d.HasChange(name) {
 				old, _ := d.GetChange(name)
 				return old

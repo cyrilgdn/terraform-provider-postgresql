@@ -73,7 +73,7 @@ func testAccCheckPostgresqlServerDestroy(s *terraform.State) error {
 		exists, err := checkServerExists(txn, rs.Primary.ID)
 
 		if err != nil {
-			return fmt.Errorf("Error checking foreign server %s", err)
+			return fmt.Errorf("error checking foreign server %s", err)
 		}
 
 		if exists {
@@ -110,7 +110,7 @@ func testAccCheckPostgresqlServerExists(n string) resource.TestCheckFunc {
 		exists, err := checkServerExists(txn, serverName)
 
 		if err != nil {
-			return fmt.Errorf("Error checking foreign server %s", err)
+			return fmt.Errorf("error checking foreign server %s", err)
 		}
 
 		if !exists {
@@ -208,7 +208,7 @@ func checkServerExists(txn *sql.Tx, serverName string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about foreign server: %s", err)
+		return false, fmt.Errorf("error reading info about foreign server: %s", err)
 	}
 
 	return true, nil

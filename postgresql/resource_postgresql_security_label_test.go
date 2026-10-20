@@ -89,7 +89,7 @@ func checkSecurityLabelExists(txn *sql.Tx, objectType string, objectName string,
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about security label: %s", err)
+		return false, fmt.Errorf("error reading info about security label: %s", err)
 	}
 
 	return true, nil
@@ -113,7 +113,7 @@ func testAccCheckPostgresqlSecurityLabelDestroy(s *terraform.State) error {
 		exists, err := checkSecurityLabelExists(txn, splitted[1], splitted[2], splitted[0])
 
 		if err != nil {
-			return fmt.Errorf("Error checking security label%s", err)
+			return fmt.Errorf("error checking security label%s", err)
 		}
 
 		if exists {
@@ -160,7 +160,7 @@ func testAccCheckPostgresqlSecurityLabelExists(n string) resource.TestCheckFunc 
 		exists, err := checkSecurityLabelExists(txn, objectType, objectName, provider)
 
 		if err != nil {
-			return fmt.Errorf("Error checking security label%s", err)
+			return fmt.Errorf("error checking security label%s", err)
 		}
 
 		if !exists {

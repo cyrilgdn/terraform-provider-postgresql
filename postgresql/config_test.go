@@ -1,9 +1,14 @@
 package postgresql
 
 import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/blang/semver"
@@ -67,5 +72,73 @@ func TestConfigConnStr(t *testing.T) {
 			t.Errorf("Config.connStr(%+v) returned %#v, want %#v", test.input, connParams, test.wantDbParams)
 		}
 
+	}
+}
+
+// flakyPingDriver is a fake database/sql/driver.Driver whose connections fail
+// to Ping a configurable number of times before succeeding, used to exercise
+// Client.connectWithRetry without a real PostgreSQL server.
+type flakyPingDriver struct {
+	failuresBeforeSuccess int32
+	attempts              atomic.Int32
+}
+
+func (d *flakyPingDriver) Open(name string) (driver.Conn, error) {
+	return &flakyPingConn{driver: d}, nil
+}
+
+type flakyPingConn struct {
+	driver *flakyPingDriver
+}
+
+func (c *flakyPingConn) Prepare(query string) (driver.Stmt, error) { return nil, driver.ErrSkip }
+func (c *flakyPingConn) Close() error                              { return nil }
+func (c *flakyPingConn) Begin() (driver.Tx, error)                 { return nil, driver.ErrSkip }
+
+func (c *flakyPingConn) Ping(ctx context.Context) error {
+	attempt := c.driver.attempts.Add(1)
+	if attempt <= c.driver.failuresBeforeSuccess {
+		return errors.New("connection refused")
+	}
+	return nil
+}
+
+func newFlakyClient(driverName string, drv *flakyPingDriver, maxConnRetries, timeoutSeconds int) *Client {
+	sql.Register(driverName, drv)
+	return &Client{
+		config: Config{
+			Scheme:                        "postgres",
+			MaxConnRetries:                maxConnRetries,
+			ConnectionRetryTimeoutSeconds: timeoutSeconds,
+		},
+	}
+}
+
+func TestConnectWithRetrySucceedsAfterTransientFailures(t *testing.T) {
+	drv := &flakyPingDriver{failuresBeforeSuccess: 2}
+	c := newFlakyClient("flaky-retry-success", drv, 5, 5)
+
+	db, err := c.connectWithRetry(context.Background(), "flaky-retry-success", "dsn")
+	if err != nil {
+		t.Fatalf("connectWithRetry() returned unexpected error: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if got := drv.attempts.Load(); got != 3 {
+		t.Errorf("expected 3 connection attempts (2 failures + 1 success), got %d", got)
+	}
+}
+
+func TestConnectWithRetryGivesUpAfterMaxConnRetries(t *testing.T) {
+	drv := &flakyPingDriver{failuresBeforeSuccess: 100}
+	c := newFlakyClient("flaky-retry-exhausted", drv, 3, 30)
+
+	_, err := c.connectWithRetry(context.Background(), "flaky-retry-exhausted", "dsn")
+	if err == nil {
+		t.Fatal("connectWithRetry() expected an error, got nil")
+	}
+
+	if got := drv.attempts.Load(); got != 4 {
+		t.Errorf("expected exactly 4 connection attempts (1 initial + MaxConnRetries), got %d", got)
 	}
 }

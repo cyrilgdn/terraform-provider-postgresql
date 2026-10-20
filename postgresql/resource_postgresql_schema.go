@@ -149,7 +149,7 @@ func resourcePostgreSQLSchemaCreate(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+		return fmt.Errorf("error committing schema: %w", err)
 	}
 
 	d.SetId(generateSchemaID(d, database))
@@ -182,7 +182,7 @@ func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
 		queries = append(queries, b.String())
 
 	case err != nil:
-		return fmt.Errorf("Error looking for schema: %w", err)
+		return fmt.Errorf("error looking for schema: %w", err)
 
 	default:
 		// The schema already exists, we just set the owner.
@@ -203,7 +203,7 @@ func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
 		schemaPolicies = make(map[RoleKey]acl.Schema, len(policiesList))
 
 		for _, policyRaw := range policiesList {
-			policyMap := policyRaw.(map[string]interface{})
+			policyMap := policyRaw.(map[string]any)
 			rolePolicy := schemaPolicyToACL(policyMap)
 
 			roleKey := RoleKey(strings.ToLower(rolePolicy.Role))
@@ -221,7 +221,7 @@ func createSchema(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) error {
 
 	for _, query := range queries {
 		if _, err = txn.Exec(query); err != nil {
-			return fmt.Errorf("Error creating schema %s: %w", schemaName, err)
+			return fmt.Errorf("error creating schema %s: %w", schemaName, err)
 		}
 	}
 
@@ -258,7 +258,7 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 
 		sql := fmt.Sprintf("DROP SCHEMA %s %s", pq.QuoteIdentifier(schemaName), dropMode)
 		if _, err = txn.Exec(sql); err != nil {
-			return fmt.Errorf("Error deleting schema: %w", err)
+			return fmt.Errorf("error deleting schema: %w", err)
 		}
 
 		return nil
@@ -267,7 +267,7 @@ func resourcePostgreSQLSchemaDelete(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+		return fmt.Errorf("error committing schema: %w", err)
 	}
 
 	d.SetId("")
@@ -298,7 +298,7 @@ func resourcePostgreSQLSchemaExists(db *DBConnection, d *schema.ResourceData) (b
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading schema: %w", err)
+		return false, fmt.Errorf("error reading schema: %w", err)
 	}
 
 	return true, nil
@@ -329,14 +329,14 @@ func resourcePostgreSQLSchemaReadImpl(db *DBConnection, d *schema.ResourceData) 
 		d.SetId("")
 		return nil
 	case err != nil:
-		return fmt.Errorf("Error reading schema: %w", err)
+		return fmt.Errorf("error reading schema: %w", err)
 	default:
 		type RoleKey string
 		schemaPolicies := make(map[RoleKey]acl.Schema, len(schemaACLs))
 		for _, aclStr := range schemaACLs {
 			aclItem, err := acl.Parse(aclStr)
 			if err != nil {
-				return fmt.Errorf("Error parsing aclitem: %w", err)
+				return fmt.Errorf("error parsing aclitem: %w", err)
 			}
 
 			schemaACL, err := acl.NewSchema(aclItem)
@@ -385,7 +385,7 @@ func resourcePostgreSQLSchemaUpdate(db *DBConnection, d *schema.ResourceData) er
 	}
 
 	if err := txn.Commit(); err != nil {
-		return fmt.Errorf("Error committing schema: %w", err)
+		return fmt.Errorf("error committing schema: %w", err)
 	}
 
 	return resourcePostgreSQLSchemaReadImpl(db, d)
@@ -400,12 +400,12 @@ func setSchemaName(txn *sql.Tx, d *schema.ResourceData, databaseName string) err
 	o := oraw.(string)
 	n := nraw.(string)
 	if n == "" {
-		return errors.New("Error setting schema name to an empty string")
+		return errors.New("error setting schema name to an empty string")
 	}
 
 	sql := fmt.Sprintf("ALTER SCHEMA %s RENAME TO %s", pq.QuoteIdentifier(o), pq.QuoteIdentifier(n))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating schema NAME: %w", err)
+		return fmt.Errorf("error updating schema NAME: %w", err)
 	}
 	d.SetId(generateSchemaID(d, databaseName))
 
@@ -421,12 +421,12 @@ func setSchemaOwner(txn *sql.Tx, d *schema.ResourceData) error {
 	schemaOwner := d.Get(schemaOwnerAttr).(string)
 
 	if schemaOwner == "" {
-		return errors.New("Error setting schema owner to an empty string")
+		return errors.New("error setting schema owner to an empty string")
 	}
 
 	sql := fmt.Sprintf("ALTER SCHEMA %s OWNER TO %s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(schemaOwner))
 	if _, err := txn.Exec(sql); err != nil {
-		return fmt.Errorf("Error updating schema OWNER: %w", err)
+		return fmt.Errorf("error updating schema OWNER: %w", err)
 	}
 
 	return nil
@@ -447,7 +447,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	dropped, added, updated, _ := schemaChangedPolicies(oldList, newList)
 
 	for _, p := range dropped {
-		pMap := p.(map[string]interface{})
+		pMap := p.(map[string]any)
 		rolePolicy := schemaPolicyToACL(pMap)
 
 		// The PUBLIC role can not be DROP'ed, therefore we do not need
@@ -460,7 +460,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 				// Don't execute this role's REVOKEs because the role
 				// was dropped first and therefore doesn't exist.
 			case err != nil:
-				return fmt.Errorf("Error reading schema: %w", err)
+				return fmt.Errorf("error reading schema: %w", err)
 			default:
 				queries = append(queries, rolePolicy.Revokes(schemaName)...)
 			}
@@ -468,25 +468,25 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	for _, p := range added {
-		pMap := p.(map[string]interface{})
+		pMap := p.(map[string]any)
 		rolePolicy := schemaPolicyToACL(pMap)
 		queries = append(queries, rolePolicy.Grants(schemaName)...)
 	}
 
 	for _, p := range updated {
-		policies := p.([]interface{})
+		policies := p.([]any)
 		if len(policies) != 2 {
 			panic("expected 2 policies, old and new")
 		}
 
 		{
-			oldPolicies := policies[0].(map[string]interface{})
+			oldPolicies := policies[0].(map[string]any)
 			rolePolicy := schemaPolicyToACL(oldPolicies)
 			queries = append(queries, rolePolicy.Revokes(schemaName)...)
 		}
 
 		{
-			newPolicies := policies[1].(map[string]interface{})
+			newPolicies := policies[1].(map[string]any)
 			rolePolicy := schemaPolicyToACL(newPolicies)
 			queries = append(queries, rolePolicy.Grants(schemaName)...)
 		}
@@ -500,7 +500,7 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 	return withRolesGranted(txn, rolesToGrant, func() error {
 		for _, query := range queries {
 			if _, err := txn.Exec(query); err != nil {
-				return fmt.Errorf("Error updating schema DCL: %w", err)
+				return fmt.Errorf("error updating schema DCL: %w", err)
 			}
 		}
 		return nil
@@ -511,12 +511,12 @@ func setSchemaPolicy(txn *sql.Tx, d *schema.ResourceData) error {
 // be executed to enact each type of state change (roles that have been dropped
 // from the policy, added to a policy, have updated privileges, or are
 // unchanged).
-func schemaChangedPolicies(old, new []interface{}) (dropped, added, update, unchanged map[string]interface{}) {
+func schemaChangedPolicies(old, new []any) (dropped, added, update, unchanged map[string]interface{}) {
 	type RoleKey string
-	oldLookupMap := make(map[RoleKey]interface{}, len(old))
+	oldLookupMap := make(map[RoleKey]any, len(old))
 	for idx := range old {
 		v := old[idx]
-		schemaPolicy := v.(map[string]interface{})
+		schemaPolicy := v.(map[string]any)
 		if roleRaw, ok := schemaPolicy[schemaPolicyRoleAttr]; ok {
 			role := roleRaw.(string)
 			roleKey := strings.ToLower(role)
@@ -524,10 +524,10 @@ func schemaChangedPolicies(old, new []interface{}) (dropped, added, update, unch
 		}
 	}
 
-	newLookupMap := make(map[RoleKey]interface{}, len(new))
+	newLookupMap := make(map[RoleKey]any, len(new))
 	for idx := range new {
 		v := new[idx]
-		schemaPolicy := v.(map[string]interface{})
+		schemaPolicy := v.(map[string]any)
 		if roleRaw, ok := schemaPolicy[schemaPolicyRoleAttr]; ok {
 			role := roleRaw.(string)
 			roleKey := strings.ToLower(role)
@@ -535,28 +535,28 @@ func schemaChangedPolicies(old, new []interface{}) (dropped, added, update, unch
 		}
 	}
 
-	droppedRoles := make(map[string]interface{}, len(old))
+	droppedRoles := make(map[string]any, len(old))
 	for kOld, vOld := range oldLookupMap {
 		if _, ok := newLookupMap[kOld]; !ok {
 			droppedRoles[string(kOld)] = vOld
 		}
 	}
 
-	addedRoles := make(map[string]interface{}, len(new))
+	addedRoles := make(map[string]any, len(new))
 	for kNew, vNew := range newLookupMap {
 		if _, ok := oldLookupMap[kNew]; !ok {
 			addedRoles[string(kNew)] = vNew
 		}
 	}
 
-	updatedRoles := make(map[string]interface{}, len(new))
-	unchangedRoles := make(map[string]interface{}, len(new))
+	updatedRoles := make(map[string]any, len(new))
+	unchangedRoles := make(map[string]any, len(new))
 	for kOld, vOld := range oldLookupMap {
 		if vNew, ok := newLookupMap[kOld]; ok {
 			if reflect.DeepEqual(vOld, vNew) {
 				unchangedRoles[string(kOld)] = vOld
 			} else {
-				updatedRoles[string(kOld)] = []interface{}{vOld, vNew}
+				updatedRoles[string(kOld)] = []any{vOld, vNew}
 			}
 		}
 	}
@@ -564,7 +564,7 @@ func schemaChangedPolicies(old, new []interface{}) (dropped, added, update, unch
 	return droppedRoles, addedRoles, updatedRoles, unchangedRoles
 }
 
-func schemaPolicyToACL(policyMap map[string]interface{}) acl.Schema {
+func schemaPolicyToACL(policyMap map[string]any) acl.Schema {
 	var rolePolicy acl.Schema
 
 	if policyMap[schemaPolicyCreateAttr].(bool) {

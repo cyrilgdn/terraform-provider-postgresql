@@ -245,7 +245,7 @@ func testAccCheckPostgresqlFunctionExists(n string, database string) resource.Te
 		exists, err := checkFunctionExists(txn, signature)
 
 		if err != nil {
-			return fmt.Errorf("Error checking function %s", err)
+			return fmt.Errorf("error checking function %s", err)
 		}
 
 		if !exists {
@@ -279,7 +279,7 @@ func testAccCheckPostgresqlFunctionDestroy(s *terraform.State) error {
 		exists, err := checkFunctionExists(txn, functionSignature)
 
 		if err != nil {
-			return fmt.Errorf("Error checking function %s", err)
+			return fmt.Errorf("error checking function %s", err)
 		}
 
 		if exists {
@@ -297,7 +297,7 @@ func checkFunctionExists(txn *sql.Tx, signature string) (bool, error) {
 	case err == sql.ErrNoRows:
 		return false, nil
 	case err != nil:
-		return false, fmt.Errorf("Error reading info about function: %s", err)
+		return false, fmt.Errorf("error reading info about function: %s", err)
 	}
 
 	return _rez, nil

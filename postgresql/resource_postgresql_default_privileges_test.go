@@ -23,10 +23,7 @@ func TestAccPostgresqlDefaultPrivileges(t *testing.T) {
 	// Set default privileges to the test role then to public (i.e.: everyone)
 	for _, role := range []string{roleName, "public"} {
 		t.Run(role, func(t *testing.T) {
-			withGrant := true
-			if role == "public" {
-				withGrant = false
-			}
+			withGrant := (role != "public")
 
 			// We set PGUSER as owner as he will create the test table
 			var tfConfig = fmt.Sprintf(`
@@ -135,7 +132,6 @@ func TestAccPostgresqlDefaultPrivileges_GrantOwner(t *testing.T) {
 	defer teardown()
 
 	config := getTestConfig(t)
-	dsn := config.connStr("postgres")
 	dbName, roleName := getTestDBNames(dbSuffix)
 
 	// We set PGUSER as owner as he will create the test table
@@ -188,7 +184,7 @@ resource "postgresql_default_privileges" "test_ro" {
 					resource.TestCheckResourceAttr("postgresql_default_privileges.test_ro", "privileges.0", "SELECT"),
 
 					// check if connected user does not have test_owner granted anymore.
-					checkUserMembership(t, dsn, config.Username, "test_owner", false),
+					checkUserMembership(t, config.Username, "test_owner", false),
 				),
 			},
 		},
@@ -349,4 +345,56 @@ resource "postgresql_default_privileges" "test_ro" {
 			})
 		})
 	}
+}
+
+func TestAccPostgresqlDefaultPrivileges_Routines(t *testing.T) {
+	skipIfNotAcc(t)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	resourceConfig := fmt.Sprintf(`
+resource "postgresql_default_privileges" "test" {
+	database          = "%s"
+	schema            = "test_schema"
+	owner             = "%s"
+	role              = "%s"
+	object_type       = "routine"
+	privileges        = ["EXECUTE"]
+}
+`, dbName, config.Username, roleName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: resourceConfig,
+				Check: resource.ComposeTestCheckFunc(
+					// Create a test function to check if default privileges are applied
+					func(*terraform.State) error {
+						dbExecute(
+							t, config.connStr(dbName),
+							"CREATE FUNCTION test_schema.test_function() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;",
+						)
+
+						db := connectAsTestRole(t, roleName, dbName)
+						defer closeDB(t, db)
+
+						if _, err := db.Exec("SELECT test_schema.test_function();"); err != nil {
+							t.Fatalf("Expected test role to be able to execute function, got error: %s", err)
+						}
+
+						return nil
+					},
+				),
+			},
+		},
+	})
 }

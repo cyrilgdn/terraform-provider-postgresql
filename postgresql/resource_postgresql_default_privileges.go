@@ -53,10 +53,11 @@ func resourcePostgreSQLDefaultPrivileges() *schema.Resource {
 					"table",
 					"sequence",
 					"function",
+					"routine",
 					"type",
 					"schema",
 				}, false),
-				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, type, schema)",
+				Description: "The PostgreSQL object type to set the default privileges on (one of: table, sequence, function, routine, type, schema)",
 			},
 			"privileges": {
 				Type:        schema.TypeSet,
@@ -87,6 +88,13 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 		)
 	}
 
+	if objectType == "routine" && !db.featureSupported(featureRoutine) {
+		return fmt.Errorf(
+			"object type ROUTINE is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	exists, err := checkRoleDBSchemaExists(db, d)
 	if err != nil {
 		return err
@@ -102,7 +110,7 @@ func resourcePostgreSQLDefaultPrivilegesRead(db *DBConnection, d *schema.Resourc
 	}
 	defer deferredRollback(txn)
 
-	return readRoleDefaultPrivileges(txn, d)
+	return readRoleDefaultPrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.ResourceData) error {
@@ -119,11 +127,18 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 		return fmt.Errorf("cannot specify `schema` when `object_type` is `schema`")
 	}
 
+	if objectType == "routine" && !db.featureSupported(featureRoutine) {
+		return fmt.Errorf(
+			"object type ROUTINE is not supported for this Postgres version (%s)",
+			db.version,
+		)
+	}
+
 	if d.Get("with_grant_option").(bool) && strings.ToLower(d.Get("role").(string)) == "public" {
 		return fmt.Errorf("with_grant_option cannot be true for role 'public'")
 	}
 
-	if err := validatePrivileges(d); err != nil {
+	if err := validatePrivileges(db, d); err != nil {
 		return err
 	}
 
@@ -170,7 +185,7 @@ func resourcePostgreSQLDefaultPrivilegesCreate(db *DBConnection, d *schema.Resou
 	}
 	defer deferredRollback(txn)
 
-	return readRoleDefaultPrivileges(txn, d)
+	return readRoleDefaultPrivileges(txn, db, d)
 }
 
 func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.ResourceData) error {
@@ -209,7 +224,7 @@ func resourcePostgreSQLDefaultPrivilegesDelete(db *DBConnection, d *schema.Resou
 	return nil
 }
 
-func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
+func readRoleDefaultPrivileges(txn *sql.Tx, db *DBConnection, d *schema.ResourceData) error {
 	role := d.Get("role").(string)
 	owner := d.Get("owner").(string)
 	pgSchema := d.Get("schema").(string)
@@ -226,7 +241,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	var query string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	if pgSchema != "" {
 		query = `SELECT array_agg(prtype) FROM (
@@ -236,7 +251,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	JOIN pg_namespace ON pg_namespace.oid = namespace
 	WHERE grantee_oid = $1 AND nspname = $2 AND pg_get_userbyid(grantor_oid) = $4;
 `
-		queryArgs = []interface{}{roleOID, pgSchema, objectTypes[objectType], owner}
+		queryArgs = []any{roleOID, pgSchema, objectTypes[objectType], owner}
 	} else {
 		query = `SELECT array_agg(prtype) FROM (
 		SELECT defaclnamespace, (aclexplode(defaclacl)).* FROM pg_default_acl
@@ -244,7 +259,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	) AS t (namespace, grantor_oid, grantee_oid, prtype, grantable)
 	WHERE grantee_oid = $1 AND namespace = 0 AND pg_get_userbyid(grantor_oid) = $3;
 `
-		queryArgs = []interface{}{roleOID, objectTypes[objectType], owner}
+		queryArgs = []any{roleOID, objectTypes[objectType], owner}
 	}
 
 	// This query aggregates the list of default privileges type (prtype)
@@ -268,7 +283,7 @@ func readRoleDefaultPrivileges(txn *sql.Tx, d *schema.ResourceData) error {
 	}
 
 	privilegesSet := pgArrayToSet(privileges)
-	privilegesEqual := resourcePrivilegesEqual(privilegesSet, d)
+	privilegesEqual := resourcePrivilegesEqual(privilegesSet, db, d)
 
 	if !privilegesEqual {
 		d.Set("privileges", privilegesSet)

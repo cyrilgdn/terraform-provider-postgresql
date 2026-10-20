@@ -22,9 +22,12 @@ import (
 )
 
 const (
-	defaultProviderMaxOpenConnections = 20
-	defaultExpectedPostgreSQLVersion  = "9.0.0"
-	defaultLockGrants                 = false
+	defaultProviderMaxOpenConnections            = 20
+	defaultProviderConnMaxLifetimeSeconds        = 0 // unlimited
+	defaultProviderMaxConnRetries                = 0
+	defaultProviderConnectionRetryTimeoutSeconds = 5
+	defaultExpectedPostgreSQLVersion             = "9.0.0"
+	defaultLockGrants                            = false
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -187,12 +190,33 @@ func Provider() *schema.Provider {
 				Description:  "Maximum wait for connection, in seconds. Zero or not specified means wait indefinitely.",
 				ValidateFunc: validation.IntAtLeast(-1),
 			},
+			"max_conn_retries": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderMaxConnRetries,
+				Description:  "Maximum number of connection retries. Zero means no retries.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
+			"connection_retry_timeout_seconds": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderConnectionRetryTimeoutSeconds,
+				Description:  "Maximum total wait, in seconds, across all connection retries.",
+				ValidateFunc: validation.IntAtLeast(0),
+			},
 			"max_connections": {
 				Type:         schema.TypeInt,
 				Optional:     true,
 				Default:      defaultProviderMaxOpenConnections,
 				Description:  "Maximum number of connections to establish to the database. Zero means unlimited.",
 				ValidateFunc: validation.IntAtLeast(-1),
+			},
+			"conn_max_lifetime_seconds": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      defaultProviderConnMaxLifetimeSeconds,
+				Description:  "Maximum lifetime of a connection, in seconds. Zero means unlimited.",
+				ValidateFunc: validation.IntAtLeast(0),
 			},
 			"expected_version": {
 				Type:         schema.TypeString,
@@ -237,7 +261,7 @@ func Provider() *schema.Provider {
 	}
 }
 
-func validateExpectedVersion(v interface{}, key string) (warnings []string, errors []error) {
+func validateExpectedVersion(v any, key string) (warnings []string, errors []error) {
 	if _, err := semver.ParseTolerant(v.(string)); err != nil {
 		errors = append(errors, fmt.Errorf("invalid version (%q): %w", v.(string), err))
 	}
@@ -308,7 +332,11 @@ func createGoogleCredsFileIfNeeded() error {
 	if err != nil {
 		return fmt.Errorf("could not create temporary file: %w", err)
 	}
-	defer tmpFile.Close()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			fmt.Printf("could not close temporary file: %v", err)
+		}
+	}()
 
 	_, err = tmpFile.WriteString(rawGoogleCredentials)
 	if err != nil {
@@ -334,7 +362,7 @@ func acquireAzureOauthToken(tenantId string) (string, error) {
 	return token.Token, nil
 }
 
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+func providerConfigure(d *schema.ResourceData) (any, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
 		sslMode = sslModeRaw.(string)
@@ -386,7 +414,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		SSLMode:                         sslMode,
 		ApplicationName:                 "Terraform provider",
 		ConnectTimeoutSec:               d.Get("connect_timeout").(int),
+		MaxConnRetries:                  d.Get("max_conn_retries").(int),
+		ConnectionRetryTimeoutSeconds:   d.Get("connection_retry_timeout_seconds").(int),
 		MaxConns:                        d.Get("max_connections").(int),
+		ConnMaxLifetimeSeconds:          d.Get("conn_max_lifetime_seconds").(int),
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
@@ -394,7 +425,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {
-		if spec, ok := value.([]interface{})[0].(map[string]interface{}); ok {
+		if spec, ok := value.([]any)[0].(map[string]interface{}); ok {
 			config.SSLClientCert = &ClientCertificateConfig{
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),

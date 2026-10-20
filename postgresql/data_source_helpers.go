@@ -18,9 +18,9 @@ const (
 )
 
 func applyPatternMatchingToQuery(patternMatchingTarget string, d *schema.ResourceData) []string {
-	likeAnyPatterns := d.Get("like_any_patterns").([]interface{})
-	likeAllPatterns := d.Get("like_all_patterns").([]interface{})
-	notLikeAllPatterns := d.Get("not_like_all_patterns").([]interface{})
+	likeAnyPatterns := d.Get("like_any_patterns").([]any)
+	likeAllPatterns := d.Get("like_all_patterns").([]any)
+	notLikeAllPatterns := d.Get("not_like_all_patterns").([]any)
 	regexPattern := d.Get("regex_pattern").(string)
 
 	filters := []string{}
@@ -46,7 +46,7 @@ func generatePatternMatchingString(patternMatchingTarget string, additionalQuery
 	return patternMatchingFilter
 }
 
-func applyTypeMatchingToQuery(objectKeyword string, objects []interface{}) string {
+func applyTypeMatchingToQuery(objectKeyword string, objects []any) string {
 	var typeFilter string
 	if len(objects) > 0 {
 		typeFilter = fmt.Sprintf("%s = %s", objectKeyword, generatePatternArrayString(objects, queryArrayKeywordAny))
@@ -55,7 +55,7 @@ func applyTypeMatchingToQuery(objectKeyword string, objects []interface{}) strin
 	return typeFilter
 }
 
-func generatePatternArrayString(patterns []interface{}, queryArrayKeyword string) string {
+func generatePatternArrayString(patterns []any, queryArrayKeyword string) string {
 	formattedPatterns := []string{}
 
 	for _, pattern := range patterns {
