@@ -2,7 +2,7 @@ module github.com/terraform-providers/terraform-provider-postgresql
 
 go 1.26.0
 
-toolchain go1.26.2
+toolchain go1.26.10
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1
