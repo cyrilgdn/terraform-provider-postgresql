@@ -804,7 +804,17 @@ func getRolesToGrant(txn *sql.Tx, d *schema.ResourceData) ([]string, error) {
 	owners := []string{}
 	objectType := d.Get("object_type")
 
-	if objectType == "database" || objectType == "foreign_data_wrapper" || objectType == "foreign_server" {
+	if objectType == "database" {
+		// Only the owner of the database (or a member of its role) can change
+		// its privileges, otherwise PostgreSQL silently ignores the GRANT/REVOKE.
+		dbOwner, err := getDatabaseOwner(txn, d.Get("database").(string))
+		if err != nil {
+			return nil, err
+		}
+		return resolveOwners(txn, []string{dbOwner})
+	}
+
+	if objectType == "foreign_data_wrapper" || objectType == "foreign_server" {
 		return owners, nil
 	}
 
