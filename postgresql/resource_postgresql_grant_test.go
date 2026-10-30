@@ -1139,6 +1139,60 @@ resource "postgresql_grant" "test" {
 	})
 }
 
+// Regression test for #681: when the provider user doesn't own the database
+// (e.g. superuser = false on RDS/Cloud SQL), the GRANT/REVOKE must be run with
+// the owner role granted, otherwise PostgreSQL silently ignores it.
+func TestAccPostgresqlGrantDatabaseNotOwner(t *testing.T) {
+	config := fmt.Sprintf(`
+resource "postgresql_role" "owner" {
+	name = "test_grant_db_owner"
+}
+
+resource "postgresql_role" "test" {
+	name     = "test_grant_role"
+	password = "%s"
+	login    = true
+}
+
+resource "postgresql_database" "test_db" {
+	depends_on = [postgresql_role.test]
+	name       = "test_grant_db"
+	owner      = postgresql_role.owner.name
+}
+
+resource "postgresql_grant" "test" {
+	database    = postgresql_database.test_db.name
+	role        = postgresql_role.test.name
+	object_type = "database"
+	privileges  = %%s
+}
+`, testRolePassword)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(config, `["CONNECT", "CREATE"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "2"),
+					testCheckDatabasesPrivileges(t, true),
+				),
+			},
+			{
+				Config: fmt.Sprintf(config, `["CONNECT"]`),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_grant.test", "privileges.#", "1"),
+					testCheckDatabasesPrivileges(t, false),
+				),
+			},
+		},
+	})
+}
+
 func TestAccPostgresqlImplicitGrants(t *testing.T) {
 	skipIfNotAcc(t)
 
