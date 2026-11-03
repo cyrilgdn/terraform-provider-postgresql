@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -127,14 +128,25 @@ func resourceCockroachDBRoleSettingExists(db *DBConnection, d *schema.ResourceDa
 	return found, err
 }
 
-// execAlterRoleSet runs ALTER ROLE <role> SET <setting> = '<value>'.
+var numericSettingValue = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+
+// roleSettingValueSQL renders the value for ALTER ROLE … SET. Numbers go unquoted:
+// CockroachDB rejects a quoted value for integer settings such as transaction_rows_read_err.
+func roleSettingValueSQL(settingValue string) string {
+	if numericSettingValue.MatchString(settingValue) {
+		return settingValue
+	}
+	return "'" + pqQuoteLiteral(settingValue) + "'"
+}
+
+// execAlterRoleSet runs ALTER ROLE <role> SET <setting> = <value>.
 func execAlterRoleSet(db *DBConnection, roleName, settingName, settingValue string) error {
 	roleRef := roleSettingRoleRef(roleName)
 	query := fmt.Sprintf(
-		"ALTER ROLE %s SET %s = '%s'",
+		"ALTER ROLE %s SET %s = %s",
 		roleRef,
 		pq.QuoteIdentifier(settingName),
-		pqQuoteLiteral(settingValue),
+		roleSettingValueSQL(settingValue),
 	)
 	if _, err := db.ExecRetry(query); err != nil {
 		return fmt.Errorf("error setting %s for role %s: %w", settingName, roleName, err)

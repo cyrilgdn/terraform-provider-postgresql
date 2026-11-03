@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.51.0 (Unreleased)
+
+### Bug Fixes
+
+- **crdb_role_setting**: Send numeric `setting_value` unquoted so integer settings such as `transaction_rows_read_err` no longer fail with "requires an integer value" ([DEV-146590](https://riskified.atlassian.net/browse/DEV-146590))
+
 ## 1.50.0 (August 27, 2026)
 
 ### Bug Fixes
