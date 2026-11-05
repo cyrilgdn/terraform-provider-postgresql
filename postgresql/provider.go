@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -115,6 +116,35 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				Default:     "",
 				Description: "MS Azure tenant ID (see: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)",
+			},
+
+			"azure_client_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_CLIENT_ID", ""),
+				Description: "MS Azure client ID for OIDC authentication",
+			},
+
+			"use_oidc": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_USE_OIDC", false),
+				Description: "Use OIDC token for Azure authentication (compatible with azurerm/azuread provider pattern)",
+			},
+
+			"oidc_token_file_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_OIDC_TOKEN_FILE_PATH", ""),
+				Description: "Path to a file containing an OIDC token for Azure authentication",
+			},
+
+			"oidc_token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("ARM_OIDC_TOKEN", ""),
+				Description: "An OIDC token for Azure authentication (alternative to oidc_token_file_path)",
+				Sensitive:   true,
 			},
 
 			"gcp_iam_impersonate_service_account": {
@@ -355,6 +385,52 @@ func acquireAzureOauthToken(tenantId string) (string, error) {
 	return token.Token, nil
 }
 
+// oidcAssertionFunc returns a callback that re-reads the token file on every call, so rotated tokens are picked up.
+func oidcAssertionFunc(oidcTokenFilePath, oidcToken string) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		if oidcTokenFilePath != "" {
+			tokenBytes, err := os.ReadFile(oidcTokenFilePath)
+			if err != nil {
+				return "", fmt.Errorf("reading OIDC token file %q: %w", oidcTokenFilePath, err)
+			}
+			token := strings.TrimSpace(string(tokenBytes))
+			if token == "" {
+				return "", fmt.Errorf("OIDC token file %q is empty", oidcTokenFilePath)
+			}
+			return token, nil
+		}
+		if oidcToken != "" {
+			return oidcToken, nil
+		}
+		return "", fmt.Errorf("use_oidc is enabled but neither oidc_token nor oidc_token_file_path yielded a token")
+	}
+}
+
+func acquireAzureOIDCToken(tenantId, clientId, oidcTokenFilePath, oidcToken string) (string, error) {
+	getAssertion := oidcAssertionFunc(oidcTokenFilePath, oidcToken)
+
+	if _, err := getAssertion(context.Background()); err != nil {
+		return "", err
+	}
+
+	credential, err := azidentity.NewClientAssertionCredential(
+		tenantId, clientId,
+		getAssertion,
+		nil,
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating OIDC credential: %w", err)
+	}
+
+	token, err := credential.GetToken(context.Background(), policy.TokenRequestOptions{
+		Scopes: []string{"https://ossrdbms-aad.database.windows.net/.default"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("acquiring token via OIDC: %w", err)
+	}
+	return token.Token, nil
+}
+
 func providerConfigure(d *schema.ResourceData) (any, error) {
 	var sslMode string
 	if sslModeRaw, ok := d.GetOk("sslmode"); ok {
@@ -379,6 +455,22 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		role := d.Get("aws_rds_iam_provider_role_arn").(string)
 		var err error
 		password, err = getRDSAuthToken(region, profile, role, username, host, port)
+		if err != nil {
+			return nil, err
+		}
+	} else if d.Get("use_oidc").(bool) {
+		tenantId := d.Get("azure_tenant_id").(string)
+		if tenantId == "" {
+			return nil, fmt.Errorf("postgresql: use_oidc is enabled, azure_tenant_id must be provided")
+		}
+		clientId := d.Get("azure_client_id").(string)
+		if clientId == "" {
+			return nil, fmt.Errorf("postgresql: use_oidc is enabled, azure_client_id must be provided")
+		}
+		oidcTokenFilePath := d.Get("oidc_token_file_path").(string)
+		oidcToken := d.Get("oidc_token").(string)
+		var err error
+		password, err = acquireAzureOIDCToken(tenantId, clientId, oidcTokenFilePath, oidcToken)
 		if err != nil {
 			return nil, err
 		}

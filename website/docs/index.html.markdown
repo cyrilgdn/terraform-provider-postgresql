@@ -191,7 +191,11 @@ The following arguments are supported:
 * `aws_rds_iam_region` - (Optional) The AWS region to use while using AWS RDS IAM Auth.
 * `aws_rds_iam_provider_role_arn` - (Optional) AWS IAM role to assume while using AWS RDS IAM Auth.
 * `azure_identity_auth` - (Optional) If set to `true`, call the Azure OAuth token endpoint for temporary token
-* `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `azure_tenant_id` - (Optional) (Required if `azure_identity_auth` or `use_oidc` is `true`) Azure tenant ID [read more](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config.html)
+* `use_oidc` - (Optional) If set to `true`, authenticate to Azure using an OIDC token (workload identity federation) instead of `DefaultAzureCredential`. Can also be set with the `ARM_USE_OIDC` environment variable. Takes precedence over `azure_identity_auth`.
+* `azure_client_id` - (Optional) (Required if `use_oidc` is `true`) Azure application (client) ID with a federated credential. Can also be set with the `ARM_CLIENT_ID` environment variable.
+* `oidc_token_file_path` - (Optional) Path to a file containing the OIDC token. Re-read whenever a new Azure token is requested. Can also be set with the `ARM_OIDC_TOKEN_FILE_PATH` environment variable. Takes precedence over `oidc_token`.
+* `oidc_token` - (Optional) The OIDC token itself, as an alternative to `oidc_token_file_path`. Can also be set with the `ARM_OIDC_TOKEN` environment variable.
 
 ## GoCloud
 
