@@ -517,6 +517,7 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleCreateDBAttr, roleCreateDB)
 	d.Set(roleCreateRoleAttr, roleCreateRole)
 	d.Set(roleEncryptedPassAttr, true)
+	d.Set(roleHashPasswordAttr, d.Get(roleHashPasswordAttr).(bool))
 	d.Set(roleInheritAttr, roleInherit)
 	d.Set(roleLoginAttr, roleCanLogin)
 	d.Set(roleSkipDropRoleAttr, d.Get(roleSkipDropRoleAttr).(bool))

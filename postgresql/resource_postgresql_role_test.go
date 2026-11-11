@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
@@ -598,6 +599,55 @@ resource "postgresql_role" "hash_pwd_role" {
 					}),
 					testAccCheckRoleCanLogin(t, "hash_pwd_role", "pencil"),
 				),
+			},
+		},
+	})
+}
+
+// A role created by a version of the provider without hash_password must not
+// be updated when the provider is upgraded: the role's update revokes and
+// grants again all its memberships.
+func TestAccPostgresqlRole_HashPassword_ProviderUpgrade(t *testing.T) {
+	config := `
+resource "postgresql_role" "upgraded_role" {
+  name                = "upgraded_role"
+  login               = true
+  password_wo         = "pass1"
+  password_wo_version = "1"
+
+  lifecycle {
+    ignore_changes = [roles]
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testCheckCompatibleVersion(t, featurePrivileges)
+		},
+		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
+		Steps: []resource.TestStep{
+			{
+				// The latest release without hash_password
+				ExternalProviders: map[string]resource.ExternalProvider{
+					"postgresql": {
+						Source:            "cyrilgdn/postgresql",
+						VersionConstraint: "1.27.0",
+					},
+				},
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPostgresqlRoleExists("upgraded_role", nil, nil),
+					resource.TestCheckNoResourceAttr("postgresql_role.upgraded_role", "hash_password"),
+				),
+			},
+			{
+				ProviderFactories: map[string]func() (*schema.Provider, error){
+					"postgresql": func() (*schema.Provider, error) { return testAccProvider, nil },
+				},
+				Config:   config,
+				PlanOnly: true,
 			},
 		},
 	})
