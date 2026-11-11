@@ -110,7 +110,9 @@ resource "postgresql_role" "hashed_password_role" {
 server's `password_encryption` setting is, so the role's clients must support
 SCRAM-SHA-256 authentication. As the server only receives a hash, it cannot check
 the strength of the password (e.g. with the `passwordcheck` module). Changing
-`hash_password` alone does not send the password again.
+`hash_password` alone does not send the password again: it applies the next time
+the password changes. Like any other change to the role, it revokes the role's
+memberships and grants its `roles` again.
 
 ## Argument Reference
 

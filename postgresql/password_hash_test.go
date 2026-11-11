@@ -74,6 +74,61 @@ func TestScramSHA256Password(t *testing.T) {
 			password: "\u05D0abc",
 			expected: "SCRAM-SHA-256$4096:ylTYggKWmWbq607V6FryHg==$wVJfgzEDJfftLpP+F7k9ZL0jX4hFZ4Kg+MDWjUIFTwg=:eKf6tHIDnm5c4NP8nBvChEyxmSknSjL7SD61q7pKf0o=",
 		},
+		{
+			name:     "a zero width space is mapped to a space",
+			password: "a\u200Bb",
+			expected: "SCRAM-SHA-256$4096:J1Lkqo7NRMxfDAly3QweMw==$g7vYqXULyyV5soL+AcuyJ4HpJzBVQN+sYXpfdNKMGmM=:Rwpmfz6bYNUdigKzVSLAqARKrU4y0aQbE8AV28LyUJ0=",
+		},
+		{
+			name:     "U+1806 is mapped to nothing",
+			password: "a\u1806b",
+			expected: "SCRAM-SHA-256$4096:9h2AMDiiEe4syxzC1BOZuA==$OI3RKTjpiPHqjYc7wIHQi+qcQIj0df0mqdyzXcbXmII=:Z7qOU9hzEXgVaPk0WjO9MXZUD/gCZABGnkDw8WXzrwg=",
+		},
+		{
+			name:     "a password mapped to nothing is kept as-is",
+			password: "\u00AD",
+			expected: "SCRAM-SHA-256$4096:k5ALuuSoC3NmB4vAig84GQ==$o2yljVKkKYCN1/fv4u8snDKPYKOdYCO0dMJhfTipwQg=:Mju46AJ2tNJ0byMXybN/RW8idf5M1BE+dHCt/vt4zE8=",
+		},
+		{
+			name:     "characters Unicode 3.2 does not assign are kept as-is",
+			password: "\u1D2C\u1D2E",
+			expected: "SCRAM-SHA-256$4096:hOoJOeeYrQv1w9oUKDgs1g==$f15RIYVEeB/Jvqf0y7bIwrmmRnYKvyKotL/UI5hntNo=:Z+IFBQz8I9tdzap/HrVnu4hDs9r5L3rFEjTfd+UKzDk=",
+		},
+		{
+			name:     "the direction is checked before the normalization",
+			password: "a\u2135b",
+			expected: "SCRAM-SHA-256$4096:UJG8frqYu3GV1deG86kaxQ==$rsudUHhAOxB+Yn7eAcBKjsuXYFwgGhtGNBql20zZL38=:/XqbIXISxAa6n86aFjDqhPwF27sKMHc+r7N0KGDKKMY=",
+		},
+		{
+			name:     "right-to-left string",
+			password: "\u05D0\u05D1",
+			expected: "SCRAM-SHA-256$4096:9xvIj5ZLkciho85LSAyNtw==$e8BRn0W+7WkByzFw8c4xgjWXHcAqLgWJYxIHOYB7jPI=:JE4CL2xeKzi3VtuXUVqD93nZYGkHVKTu/otn43N1M0k=",
+		},
+		{
+			name:     "combining characters are composed",
+			password: "a\u0323\u0302",
+			expected: "SCRAM-SHA-256$4096:nxwpwjC5La3bBK1ugwijjQ==$Kda5QDnF4bwPvXbwax2ybD/5JxQAZ5DXtAbTXs4VsMg=:dyJbWDKmgxfz950V0MXVfSmFeXq0Kw+XKXdbAE+NZqc=",
+		},
+		{
+			name:     "Hangul jamo are composed",
+			password: "\u1100\u1161\u11A8",
+			expected: "SCRAM-SHA-256$4096:1+Cs2jrQjlYzNLousZ7jsA==$NUIqidQuCPXpIh6KVl0TWBhN+2KHaHW4zc5WmoeJGTo=:k8zTdZvHemHLz9GAexefZ+/qOjkvAudwcx5YHtZRKEY=",
+		},
+		{
+			name:     "a character outside of the BMP is not composed",
+			password: "\U00020041\u0301",
+			expected: "SCRAM-SHA-256$4096:wj1c5WluLN9uhlZs3kjQIw==$H5RAhFUPb8zHp7y3fwNEkhVlGPCpBvvKKswwcdhjJNM=:z5AH4ISvggK6mpe/R5/wirpMHqvXEWxO0e983+H5gHw=",
+		},
+		{
+			name:     "U+05D2 U+0307 is not composed",
+			password: "\u05D2\u0307\u05D0",
+			expected: "SCRAM-SHA-256$4096:y6Xwdw33YX2TO6zs7t1j5Q==$RZ/VrVXUWA6/RZL1UIusiyyVt40nVqG+3fjefby0dKs=:DUA4rNb8HvPMfa2J7woT2E7UL6hG7HxPAEYoMubh6wI=",
+		},
+		{
+			name:     "a starter blocks the composition",
+			password: "I\u09BE\u0316\u0307",
+			expected: "SCRAM-SHA-256$4096:b195lMhv6RVlBO3SMZ93tQ==$RWC9EZxr5iydDHLtbNTYlY6KFTueT/sos+uxKMkLoPA=:QSCf9nUdirvRaNON2ZyW+D3AOFkbrUTfa97Sbdox5JE=",
+		},
 	}
 
 	for _, test := range tests {
@@ -90,6 +145,36 @@ func TestScramSHA256Password(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, test.expected, actual)
 			assert.True(t, isHashedPassword(actual))
+		})
+	}
+}
+
+// What PostgreSQL makes of a password before hashing it, as given by its
+// pg_saslprep() function.
+func TestSaslprepPassword(t *testing.T) {
+	var tests = []struct {
+		name     string
+		password string
+		expected string
+	}{
+		{"ASCII", "pencil", "pencil"},
+		{"invalid UTF-8 is kept as-is", "pass\xffword", "pass\xffword"},
+		{"a zero width space is mapped to a space", "a\u200Bb", "a b"},
+		{"U+1806 is mapped to nothing", "a\u1806b", "ab"},
+		{"a password mapped to nothing is kept as-is", "\u00AD", "\u00AD"},
+		{"characters Unicode 3.2 does not assign are kept as-is", "\u1D2C\u1D2E", "\u1D2C\u1D2E"},
+		{"the direction is checked before the normalization", "a\u2135b", "a\u05D0b"},
+		{"right-to-left string", "\u05D0\u05D1", "\u05D0\u05D1"},
+		{"combining characters are composed", "a\u0323\u0302", "\u1EAD"},
+		{"Hangul jamo are composed", "\u1100\u1161\u11A8", "\uAC01"},
+		{"a character outside of the BMP is not composed", "\U00020041\u0301", "\U00020041\u0301"},
+		{"U+05D2 U+0307 is not composed", "\u05D2\u0307\u05D0", "\u05D2\u0307\u05D0"},
+		{"a starter blocks the composition", "I\u09BE\u0316\u0307", "I\u09BE\u0316\u0307"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, saslprepPassword(test.password))
 		})
 	}
 }
@@ -118,10 +203,22 @@ func TestIsHashedPassword(t *testing.T) {
 		{"md5pass", false},
 		{"md5C98CBFEB6A347A47EB8E96CFB4C4B890", false},
 		{"md5c98cbfeb6a347a47eb8e96cfb4c4b890a", false},
-		// A clear-text password which only looks like a SCRAM-SHA-256 one
+		// What PostgreSQL 17 stores as-is too
+		{"SCRAM-SHA-256$4096:c2Fs$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", true},
+		{"SCRAM-SHA-256$+4096:c2FsdA==$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", true},
+		// A clear-text password which only looks like a SCRAM-SHA-256 one:
+		// PostgreSQL 17 hashes these
 		{"SCRAM-SHA-256", false},
 		{"SCRAM-SHA-256$mypass", false},
 		{"SCRAM-SHA-256$4096:salt", false},
+		{"SCRAM-SHA-256$4096:c2FsdA==$YQ==:YQ==", false},
+		{"SCRAM-SHA-256$4096:c2FsdA==$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao", false},
+		{"SCRAM-SHA-256$4096:c2FsdA==$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=:extra", false},
+		{"SCRAM-SHA-256$4096:sa!t$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", false},
+		{"SCRAM-SHA-256$4096:$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", false},
+		{"SCRAM-SHA-256$4096x:c2FsdA==$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", false},
+		{"SCRAM-SHA-256$:c2FsdA==$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", false},
+		{"SCRAM-SHA-512$4096:c2FsdA==$kGNAwejTyDeIo7PF3ThjzBaKwu6Dw5If2OYxTD2AstI=:U/rTZUu3HZekCvxnzF65xDuso9CTdPudq8r2EvaCHao=", false},
 	}
 
 	for _, test := range tests {

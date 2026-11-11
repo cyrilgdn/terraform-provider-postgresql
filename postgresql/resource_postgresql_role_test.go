@@ -516,10 +516,21 @@ func TestAccPostgresqlRole_HashPassword(t *testing.T) {
 
 	isScramSHA256 := func(storedPassword string) error {
 		if !scramSHA256PasswordRegexp.MatchString(storedPassword) {
-			return fmt.Errorf("password is not stored as a SCRAM-SHA-256 hash")
+			return fmt.Errorf("password is not stored as a SCRAM-SHA-256 hash: the provider has sent it in clear text")
 		}
 		return nil
 	}
+	isMD5 := func(storedPassword string) error {
+		if !md5PasswordRegexp.MatchString(storedPassword) {
+			return fmt.Errorf("password is not stored as a MD5 hash: the server does not hash with MD5")
+		}
+		return nil
+	}
+
+	// The server hashes the clear-text passwords it receives in the sessions of
+	// this test with MD5, so a password stored as a SCRAM-SHA-256 hash has been
+	// hashed by the provider.
+	t.Setenv("PGOPTIONS", "-c password_encryption=md5")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -529,6 +540,20 @@ func TestAccPostgresqlRole_HashPassword(t *testing.T) {
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
 		Steps: []resource.TestStep{
+			{
+				// Without hash_password, the server hashes the password
+				Config: `
+resource "postgresql_role" "server_hashed_pwd_role" {
+  name     = "server_hashed_pwd_role"
+  login    = true
+  password = "pass0"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.server_hashed_pwd_role", "hash_password", "false"),
+					testAccCheckRoleStoredPassword("server_hashed_pwd_role", isMD5),
+				),
+			},
 			{
 				// The role is created with a password hashed by the provider
 				Config: `
@@ -559,6 +584,21 @@ resource "postgresql_role" "hash_pwd_role" {
 `,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("postgresql_role.hash_pwd_role", "password", "pass2"),
+					testAccCheckRoleStoredPassword("hash_pwd_role", isScramSHA256),
+					testAccCheckRoleCanLogin(t, "hash_pwd_role", "pass2"),
+				),
+			},
+			{
+				// Changing hash_password alone does not send the password again
+				Config: `
+resource "postgresql_role" "hash_pwd_role" {
+  name     = "hash_pwd_role"
+  login    = true
+  password = "pass2"
+}
+`,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("postgresql_role.hash_pwd_role", "hash_password", "false"),
 					testAccCheckRoleStoredPassword("hash_pwd_role", isScramSHA256),
 					testAccCheckRoleCanLogin(t, "hash_pwd_role", "pass2"),
 				),
@@ -619,6 +659,12 @@ resource "postgresql_role" "upgraded_role" {
     ignore_changes = [roles]
   }
 }
+
+resource "postgresql_role" "upgraded_password_role" {
+  name     = "upgraded_password_role"
+  login    = true
+  password = "pass1"
+}
 `
 
 	resource.Test(t, resource.TestCase{
@@ -639,7 +685,9 @@ resource "postgresql_role" "upgraded_role" {
 				Config: config,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPostgresqlRoleExists("upgraded_role", nil, nil),
+					testAccCheckPostgresqlRoleExists("upgraded_password_role", nil, nil),
 					resource.TestCheckNoResourceAttr("postgresql_role.upgraded_role", "hash_password"),
+					resource.TestCheckNoResourceAttr("postgresql_role.upgraded_password_role", "hash_password"),
 				),
 			},
 			{
