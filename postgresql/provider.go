@@ -292,18 +292,13 @@ func getRDSAuthToken(region string, profile string, role string, username string
 			return "", fmt.Errorf("could not assume AWS role: %w", err)
 		}
 
-		awscfg, err = awsConfig.LoadDefaultConfig(ctx,
-			awsConfig.WithCredentialsProvider(
-				aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(
-					*roleOutput.Credentials.AccessKeyId,
-					*roleOutput.Credentials.SecretAccessKey,
-					*roleOutput.Credentials.SessionToken,
-				)),
-			),
-		)
-		if err != nil {
-			return "", fmt.Errorf("could not load AWS default config: %w", err)
-		}
+		// Swap the credentials in place rather than reloading the config, which discards
+		// the region resolved above and leaves BuildAuthToken signing without one.
+		awscfg.Credentials = aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(
+			*roleOutput.Credentials.AccessKeyId,
+			*roleOutput.Credentials.SecretAccessKey,
+			*roleOutput.Credentials.SessionToken,
+		))
 	}
 
 	token, err := auth.BuildAuthToken(ctx, endpoint, awscfg.Region, username, awscfg.Credentials)
