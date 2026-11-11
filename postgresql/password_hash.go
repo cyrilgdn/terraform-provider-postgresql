@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"cmp"
 	"crypto/hmac"
 	"crypto/pbkdf2"
 	"crypto/rand"
@@ -8,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"unicode/utf8"
 
@@ -183,22 +185,44 @@ func saslprepPassword(password string) string {
 //
 // norm.NFKC cannot be used for it, its composition is wrong for some sequences.
 // It looks compositions up by the low 16 bits of the two characters: U+20041
-// U+0301 gives U+00C1, the composition of U+0041 and U+0301, and U+05D2 U+0307
-// gives U+105C9, the composition of U+105D2 and U+0307. It also composes a
-// character with a combining character another starter separates it from: "I"
-// U+09BE U+0316 U+0307 gives U+0130 U+09BE U+0316. So only its decomposition
-// is used, and the result is recomposed the way PostgreSQL does it.
+// U+0301 gives U+00C1, the composition of U+0041 and U+0301 (and, with the
+// tables of Unicode 16 or later, U+05D2 U+0307 gives U+105C9, the composition
+// of U+105D2 and U+0307). It also composes a character with a combining
+// character another starter separates it from: "I" U+09BE U+0316 U+0307 gives
+// U+0130 U+09BE U+0316.
+//
+// norm.NFKD cannot be used on the whole string either: it inserts U+034F after
+// 30 combining characters in a row and orders each part on its own (the
+// stream-safe text format), while PostgreSQL orders the whole run. So each
+// character is decomposed on its own (no decomposition has more than 3
+// combining characters in a row), every run of combining characters is put in
+// canonical order the way PostgreSQL does it (a stable sort by combining
+// class), and the result is recomposed the way PostgreSQL does it.
 func nfkc(s string) string {
-	decomposed := []rune(norm.NFKD.String(s))
+	decomposed := make([]rune, 0, len(s))
+	for _, char := range s {
+		decomposed = append(decomposed, []rune(norm.NFKD.String(string(char)))...)
+	}
 	if len(decomposed) == 0 {
 		return ""
+	}
+
+	for start := 0; start < len(decomposed); start++ {
+		end := start
+		for end < len(decomposed) && combiningClass(decomposed[end]) != 0 {
+			end++
+		}
+		slices.SortStableFunc(decomposed[start:end], func(a, b rune) int {
+			return cmp.Compare(combiningClass(a), combiningClass(b))
+		})
+		start = end
 	}
 
 	composed := make([]rune, 1, len(decomposed))
 	composed[0] = decomposed[0]
 	starter, lastClass := 0, -1
 	for _, char := range decomposed[1:] {
-		class := int(norm.NFKD.PropertiesString(string(char)).CCC())
+		class := int(combiningClass(char))
 		if lastClass < class {
 			if composite, ok := composePair(composed[starter], char); ok {
 				composed[starter] = composite
@@ -213,6 +237,12 @@ func nfkc(s string) string {
 		composed = append(composed, char)
 	}
 	return string(composed)
+}
+
+// combiningClass returns the canonical combining class of a character, 0 for
+// a starter.
+func combiningClass(char rune) uint8 {
+	return norm.NFKD.PropertiesString(string(char)).CCC()
 }
 
 // composePair returns the character two characters compose into, if any.

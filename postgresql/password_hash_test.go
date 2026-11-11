@@ -129,6 +129,26 @@ func TestScramSHA256Password(t *testing.T) {
 			password: "I\u09BE\u0316\u0307",
 			expected: "SCRAM-SHA-256$4096:b195lMhv6RVlBO3SMZ93tQ==$RWC9EZxr5iydDHLtbNTYlY6KFTueT/sos+uxKMkLoPA=:QSCf9nUdirvRaNON2ZyW+D3AOFkbrUTfa97Sbdox5JE=",
 		},
+		{
+			name:     "31 combining characters in a row are all ordered",
+			password: "a" + strings.Repeat("\u0301", 31),
+			expected: "SCRAM-SHA-256$4096:P7PT96J6+1YpKyqcjymcMA==$shch6yf7B79M9w+0/QBoVuCHnjbTO/bBQKaMjw8LC50=:Bw/qKbEWnNZjFESh2TknOZVw30wVFwfKmgpVvk4C494=",
+		},
+		{
+			name:     "a long run of two classes is ordered as a whole",
+			password: "a" + strings.Repeat("\u0323\u0301", 16),
+			expected: "SCRAM-SHA-256$4096:Euyx2kWr+8nGMrJ3DWQBKQ==$3O+HeX9g/AylMvEwOGYd/rchBO2o0nfzk3BDzBIZbCY=:sTnglz3pPHl85bWBb6drY2JPfyCS5h2/GzZcumfZ4p8=",
+		},
+		{
+			name:     "a long run of three classes is ordered as a whole",
+			password: "o" + strings.Repeat("\u0301", 14) + strings.Repeat("\u0323", 14) + strings.Repeat("\u0334", 14),
+			expected: "SCRAM-SHA-256$4096:mADTZFeqf3dHfNV/ju/REA==$D7jDAjzgkQ4fcUS3vhfzX7jFzxDLt+hhzC3hTVQ/0cA=:ENs1g54mJj+JV3MD8rtj9o3lTD+yFNZwG4/8ZwWJLaM=",
+		},
+		{
+			name:     "a long run after a Hangul syllable is ordered as a whole",
+			password: "\uAC00" + strings.Repeat("\u0301\u0323", 17),
+			expected: "SCRAM-SHA-256$4096:+YrJykBhhKShYB6MgmsEEw==$yjvDJQEtyBE09cbQl+iSAzJqQG3uwGoRXAFSzSxUrr0=:9f2RaPmhgUuUx8tHKhdBbbiYeCOZQMcmb7q0mymgeGg=",
+		},
 	}
 
 	for _, test := range tests {
@@ -170,6 +190,10 @@ func TestSaslprepPassword(t *testing.T) {
 		{"a character outside of the BMP is not composed", "\U00020041\u0301", "\U00020041\u0301"},
 		{"U+05D2 U+0307 is not composed", "\u05D2\u0307\u05D0", "\u05D2\u0307\u05D0"},
 		{"a starter blocks the composition", "I\u09BE\u0316\u0307", "I\u09BE\u0316\u0307"},
+		{"31 combining characters in a row are all ordered", "a" + strings.Repeat("\u0301", 31), "\u00E1" + strings.Repeat("\u0301", 30)},
+		{"a long run of two classes is ordered as a whole", "a" + strings.Repeat("\u0323\u0301", 16), "\u1EA1" + strings.Repeat("\u0323", 15) + strings.Repeat("\u0301", 16)},
+		{"a long run of three classes is ordered as a whole", "o" + strings.Repeat("\u0301", 14) + strings.Repeat("\u0323", 14) + strings.Repeat("\u0334", 14), "\u1ECD" + strings.Repeat("\u0334", 14) + strings.Repeat("\u0323", 13) + strings.Repeat("\u0301", 14)},
+		{"a long run after a Hangul syllable is ordered as a whole", "\uAC00" + strings.Repeat("\u0301\u0323", 17), "\uAC00" + strings.Repeat("\u0323", 17) + strings.Repeat("\u0301", 17)},
 	}
 
 	for _, test := range tests {
