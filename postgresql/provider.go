@@ -224,6 +224,16 @@ func Provider() *schema.Provider {
 				Description:  "Specify the expected version of PostgreSQL.",
 				ValidateFunc: validateExpectedVersion,
 			},
+			"password_authentication": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "password",
+				Description: "When set to `scram-sha-256`, the passwords of the roles are hashed by the provider and stored as-is by PostgreSQL. When set to `password`, they are sent to PostgreSQL in plaintext format and may appear in PostgreSQL logs as-is.",
+				ValidateFunc: validation.StringInSlice([]string{
+					"password",
+					"scram-sha-256",
+				}, false),
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -414,6 +424,7 @@ func providerConfigure(d *schema.ResourceData) (any, error) {
 		ExpectedVersion:                 version,
 		SSLRootCertPath:                 d.Get("sslrootcert").(string),
 		GCPIAMImpersonateServiceAccount: d.Get("gcp_iam_impersonate_service_account").(string),
+		PasswordAuthentication:          d.Get("password_authentication").(string),
 	}
 
 	if value, ok := d.GetOk("clientcert"); ok {

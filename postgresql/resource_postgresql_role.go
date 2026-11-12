@@ -22,7 +22,6 @@ const (
 	roleCreateDBAttr                        = "create_database"
 	roleCreateRoleAttr                      = "create_role"
 	roleEncryptedPassAttr                   = "encrypted_password"
-	roleHashPasswordAttr                    = "hash_password"
 	roleIdleInTransactionSessionTimeoutAttr = "idle_in_transaction_session_timeout"
 	roleInheritAttr                         = "inherit"
 	roleLoginAttr                           = "login"
@@ -109,12 +108,6 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Default:     true,
 				Description: "Control whether the password is stored encrypted in the system catalogs",
-			},
-			roleHashPasswordAttr: {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Default:     false,
-				Description: "Hash the password with SCRAM-SHA-256 before sending it to PostgreSQL, so the clear-text password never reaches the server nor its logs",
 			},
 			roleValidUntilAttr: {
 				Type:        schema.TypeString,
@@ -297,7 +290,7 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 			if strings.ToUpper(val) == "NULL" {
 				createOpts = append(createOpts, "PASSWORD NULL")
 			} else {
-				if d.Get(roleHashPasswordAttr).(bool) {
+				if db.client.config.PasswordAuthentication == "scram-sha-256" {
 					if val, err = hashRolePassword(db, txn, val); err != nil {
 						return err
 					}
@@ -517,7 +510,6 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleCreateDBAttr, roleCreateDB)
 	d.Set(roleCreateRoleAttr, roleCreateRole)
 	d.Set(roleEncryptedPassAttr, true)
-	d.Set(roleHashPasswordAttr, d.Get(roleHashPasswordAttr).(bool))
 	d.Set(roleInheritAttr, roleInherit)
 	d.Set(roleLoginAttr, roleCanLogin)
 	d.Set(roleSkipDropRoleAttr, d.Get(roleSkipDropRoleAttr).(bool))
@@ -818,7 +810,7 @@ func setRolePassword(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) erro
 		return nil
 	}
 
-	if d.Get(roleHashPasswordAttr).(bool) {
+	if db.client.config.PasswordAuthentication == "scram-sha-256" {
 		var err error
 		if password, err = hashRolePassword(db, txn, password); err != nil {
 			return err
@@ -839,7 +831,7 @@ func setRolePassword(db *DBConnection, txn *sql.Tx, d *schema.ResourceData) erro
 // A password which is already hashed is returned as-is.
 func hashRolePassword(db *DBConnection, txn *sql.Tx, password string) (string, error) {
 	if !db.featureSupported(featureScramSHA256) {
-		return "", fmt.Errorf("%s requires PostgreSQL 10 or later (SCRAM-SHA-256 support)", roleHashPasswordAttr)
+		return "", errors.New(`password_authentication = "scram-sha-256" requires PostgreSQL 10 or later`)
 	}
 
 	if isHashedPassword(password) {

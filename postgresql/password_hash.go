@@ -108,7 +108,7 @@ var saslprep = stringprep.Profile{
 	CheckBiDi: true,
 }
 
-var errLongCombiningSequence = errors.New("hash_password does not support a password with more than 30 combining characters in a row, as it cannot be normalized the way PostgreSQL does")
+var errLongCombiningSequence = errors.New(`password_authentication = "scram-sha-256" does not support a password with more than 30 combining characters in a row, as it cannot be normalized the way PostgreSQL does`)
 
 // saslprepPassword returns the password PostgreSQL actually hashes: the
 // password prepared with SASLprep, or the password as it is when it cannot be

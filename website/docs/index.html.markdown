@@ -185,6 +185,18 @@ The following arguments are supported:
   Version](https://www.postgresql.org/support/versioning/) or `current`.  Once a
   connection has been established, Terraform will fingerprint the actual
   version.  Default: `9.0.0`.
+* `password_authentication` - (Optional) When set to `scram-sha-256`, the
+  passwords of the roles (`password` and `password_wo` of `postgresql_role`)
+  are hashed by the provider and stored as-is by PostgreSQL. Using
+  `scram-sha-256` requires a minimum version of PostgreSQL 10. Available options
+  are `scram-sha-256` and `password`. The default is `password`. When set to
+  `password`, passwords are sent to PostgreSQL in plaintext format and may
+  appear in PostgreSQL logs as-is (e.g. with `log_statement = 'ddl'`). With
+  `scram-sha-256`, a password which is already hashed is sent as-is, a password
+  with more than 30 combining characters in a row is refused, and the server
+  cannot check the strength of the passwords (e.g. with `passwordcheck`).
+  Changing this setting does not change any resource: it applies the next time
+  a password is set.
 * `aws_rds_iam_auth` - (Optional) If set to `true`, call the AWS RDS API to grab a temporary password, using AWS Credentials
   from the environment (or the given profile, see `aws_rds_iam_profile`)
 * `aws_rds_iam_profile` - (Optional) The AWS IAM Profile to use while using AWS RDS IAM Auth.

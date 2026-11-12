@@ -533,54 +533,81 @@ func TestAccPostgresqlRole_HashPassword(t *testing.T) {
 	// hashed by the provider.
 	t.Setenv("PGOPTIONS", "-c password_encryption=md5")
 
+	providerConfig := `
+provider "postgresql" {
+  password_authentication = "scram-sha-256"
+}
+`
+	defaultConfig := `
+resource "postgresql_role" "hash_pwd_role" {
+  name     = "hash_pwd_role"
+  login    = true
+  password = "pass0"
+}
+`
+
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testCheckCompatibleVersion(t, featureScramSHA256)
 		},
-		Providers:    testAccProviders,
+		// Unlike Providers, ProviderFactories lets the steps configure the provider
+		ProviderFactories: map[string]func() (*schema.Provider, error){
+			"postgresql": func() (*schema.Provider, error) { return testAccProvider, nil },
+		},
 		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
 		Steps: []resource.TestStep{
 			{
-				// Without hash_password, the server hashes the password
-				Config: `
-resource "postgresql_role" "server_hashed_pwd_role" {
-  name     = "server_hashed_pwd_role"
+				// With the default password_authentication, the server hashes the password
+				Config: defaultConfig,
+				Check:  testAccCheckRoleStoredPassword("hash_pwd_role", isMD5),
+			},
+			{
+				// Changing password_authentication alone plans no change
+				Config:             providerConfig + defaultConfig,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+			{
+				// The provider keeps its connections, and the configuration they
+				// were opened with, for the life of the process, which the steps
+				// of a test share: drop them so this configuration is used.
+				PreConfig: func() {
+					dbRegistryLock.Lock()
+					defer dbRegistryLock.Unlock()
+					dbRegistry = make(map[string]*DBConnection, 1)
+				},
+				// The password re-sent on rename is hashed, and so is the
+				// password of a role created
+				Config: providerConfig + `
+resource "postgresql_role" "hash_pwd_role" {
+  name     = "hash_pwd_role_renamed"
   login    = true
   password = "pass0"
 }
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_role.server_hashed_pwd_role", "hash_password", "false"),
-					testAccCheckRoleStoredPassword("server_hashed_pwd_role", isMD5),
-				),
-			},
-			{
-				// The role is created with a password hashed by the provider
-				Config: `
-resource "postgresql_role" "hash_pwd_role" {
-  name          = "hash_pwd_role"
-  login         = true
-  password      = "pass1"
-  hash_password = true
+
+resource "postgresql_role" "hash_pwd_created_role" {
+  name     = "hash_pwd_created_role"
+  login    = true
+  password = "pass1"
 }
 `,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("hash_pwd_role", nil, nil),
-					resource.TestCheckResourceAttr("postgresql_role.hash_pwd_role", "hash_password", "true"),
-					resource.TestCheckResourceAttr("postgresql_role.hash_pwd_role", "password", "pass1"),
-					testAccCheckRoleStoredPassword("hash_pwd_role", isScramSHA256),
-					testAccCheckRoleCanLogin(t, "hash_pwd_role", "pass1"),
+					testAccCheckPostgresqlRoleExists("hash_pwd_created_role", nil, nil),
+					resource.TestCheckResourceAttr("postgresql_role.hash_pwd_created_role", "password", "pass1"),
+					testAccCheckRoleStoredPassword("hash_pwd_created_role", isScramSHA256),
+					testAccCheckRoleCanLogin(t, "hash_pwd_created_role", "pass1"),
+					testAccCheckRoleStoredPassword("hash_pwd_role_renamed", isScramSHA256),
+					testAccCheckRoleCanLogin(t, "hash_pwd_role_renamed", "pass0"),
 				),
 			},
 			{
 				// The password is updated
-				Config: `
+				Config: providerConfig + `
 resource "postgresql_role" "hash_pwd_role" {
-  name          = "hash_pwd_role"
-  login         = true
-  password      = "pass2"
-  hash_password = true
+  name     = "hash_pwd_role"
+  login    = true
+  password = "pass2"
 }
 `,
 				Check: resource.ComposeTestCheckFunc(
@@ -590,29 +617,13 @@ resource "postgresql_role" "hash_pwd_role" {
 				),
 			},
 			{
-				// Changing hash_password alone does not send the password again
-				Config: `
-resource "postgresql_role" "hash_pwd_role" {
-  name     = "hash_pwd_role"
-  login    = true
-  password = "pass2"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("postgresql_role.hash_pwd_role", "hash_password", "false"),
-					testAccCheckRoleStoredPassword("hash_pwd_role", isScramSHA256),
-					testAccCheckRoleCanLogin(t, "hash_pwd_role", "pass2"),
-				),
-			},
-			{
 				// The write-only password is hashed too
-				Config: `
+				Config: providerConfig + `
 resource "postgresql_role" "hash_pwd_role" {
   name                = "hash_pwd_role"
   login               = true
   password_wo         = "pass3"
   password_wo_version = "1"
-  hash_password       = true
 }
 `,
 				Check: resource.ComposeTestCheckFunc(
@@ -623,12 +634,11 @@ resource "postgresql_role" "hash_pwd_role" {
 			},
 			{
 				// A password which is already hashed is sent as-is
-				Config: fmt.Sprintf(`
+				Config: providerConfig + fmt.Sprintf(`
 resource "postgresql_role" "hash_pwd_role" {
-  name          = "hash_pwd_role"
-  login         = true
-  password      = "%s"
-  hash_password = true
+  name     = "hash_pwd_role"
+  login    = true
+  password = "%s"
 }
 `, hashedPassword),
 				Check: resource.ComposeTestCheckFunc(
@@ -643,72 +653,14 @@ resource "postgresql_role" "hash_pwd_role" {
 			},
 			{
 				// A password norm.NFKC cannot normalize like PostgreSQL is refused
-				Config: fmt.Sprintf(`
+				Config: providerConfig + fmt.Sprintf(`
 resource "postgresql_role" "hash_pwd_role" {
-  name          = "hash_pwd_role"
-  login         = true
-  password      = "a%s"
-  hash_password = true
-}
-`, strings.Repeat(`\u0301`, 31)),
-				ExpectError: regexp.MustCompile("more than 30 combining characters in a row"),
-			},
-		},
-	})
-}
-
-// A role created by a version of the provider without hash_password must not
-// be updated when the provider is upgraded: the role's update revokes and
-// grants again all its memberships.
-func TestAccPostgresqlRole_HashPassword_ProviderUpgrade(t *testing.T) {
-	config := `
-resource "postgresql_role" "upgraded_role" {
-  name                = "upgraded_role"
-  login               = true
-  password_wo         = "pass1"
-  password_wo_version = "1"
-
-  lifecycle {
-    ignore_changes = [roles]
-  }
-}
-
-resource "postgresql_role" "upgraded_password_role" {
-  name     = "upgraded_password_role"
+  name     = "hash_pwd_role"
   login    = true
-  password = "pass1"
+  password = "a%s"
 }
-`
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testCheckCompatibleVersion(t, featurePrivileges)
-		},
-		CheckDestroy: testAccCheckPostgresqlRoleDestroy,
-		Steps: []resource.TestStep{
-			{
-				// The latest release without hash_password
-				ExternalProviders: map[string]resource.ExternalProvider{
-					"postgresql": {
-						Source:            "cyrilgdn/postgresql",
-						VersionConstraint: "1.27.0",
-					},
-				},
-				Config: config,
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPostgresqlRoleExists("upgraded_role", nil, nil),
-					testAccCheckPostgresqlRoleExists("upgraded_password_role", nil, nil),
-					resource.TestCheckNoResourceAttr("postgresql_role.upgraded_role", "hash_password"),
-					resource.TestCheckNoResourceAttr("postgresql_role.upgraded_password_role", "hash_password"),
-				),
-			},
-			{
-				ProviderFactories: map[string]func() (*schema.Provider, error){
-					"postgresql": func() (*schema.Provider, error) { return testAccProvider, nil },
-				},
-				Config:   config,
-				PlanOnly: true,
+`, strings.Repeat(`́`, 31)),
+				ExpectError: regexp.MustCompile("more than 30 combining characters in a row"),
 			},
 		},
 	})

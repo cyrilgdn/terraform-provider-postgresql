@@ -85,35 +85,6 @@ resource "postgresql_role" "app_user" {
 # password_wo_version = "2"
 ```
 
-## Hashing the password
-
-By default the provider sends the password in clear text and lets PostgreSQL hash
-it. The statement, including the password, ends up in the PostgreSQL logs if the
-server logs it (e.g. with `log_statement = 'ddl'` or `'all'`, or when the
-statement fails and `log_min_error_statement` covers it).
-
-With `hash_password = true` the provider hashes the password with SCRAM-SHA-256
-itself and only sends the hash, so the clear-text password never reaches the
-server:
-
-```hcl
-resource "postgresql_role" "hashed_password_role" {
-  name                = "hashed_password_role"
-  login               = true
-  password_wo         = "secure_password_123"
-  password_wo_version = "1"
-  hash_password       = true
-}
-```
-
-~> **Note:** The role's password is stored as a SCRAM-SHA-256 hash whatever the
-server's `password_encryption` setting is, so the role's clients must support
-SCRAM-SHA-256 authentication. As the server only receives a hash, it cannot check
-the strength of the password (e.g. with the `passwordcheck` module). Changing
-`hash_password` alone does not send the password again: it applies the next time
-the password changes. Like any other change to the role, it revokes the role's
-memberships and grants its `roles` again.
-
 ## Argument Reference
 
 * `name` - (Required) The name of the role. Must be unique on the PostgreSQL
@@ -153,18 +124,6 @@ memberships and grants its `roles` again.
   is always set (to the conservative and safe value), but may interfere with the
   behavior of
   [PostgreSQL's `password_encryption` setting](https://www.postgresql.org/docs/current/static/runtime-config-connection.html#GUC-PASSWORD-ENCRYPTION).
-
-* `hash_password` - (Optional) Defines whether the provider hashes the password
-  with SCRAM-SHA-256 before sending it to PostgreSQL.  By default the password is
-  sent in clear text in the `CREATE ROLE` / `ALTER ROLE` statement, which
-  PostgreSQL may write to its logs (e.g. with `log_statement = 'ddl'`, or when the
-  statement fails).  When set to `true` only the hash is sent, like `psql`'s
-  `\password` command does, and the role still logs in with the clear-text
-  password.  It applies to both `password` and `password_wo`; a password which is
-  already hashed is sent as-is.  A password with more than 30 combining
-  characters in a row is refused, as it cannot be hashed the way PostgreSQL
-  does.  Requires PostgreSQL 10 or later.  Default value is `false`.  See
-  [Hashing the password](#hashing-the-password).
 
 * `password` - (Optional) Sets the role's password. A password is only of use
   for roles having the `login` attribute set to true.

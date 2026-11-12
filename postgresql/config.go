@@ -201,6 +201,7 @@ type Config struct {
 	SSLClientCert                   *ClientCertificateConfig
 	SSLRootCertPath                 string
 	GCPIAMImpersonateServiceAccount string
+	PasswordAuthentication          string
 }
 
 // Client struct holding connection string
