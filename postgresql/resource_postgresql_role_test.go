@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -639,6 +640,18 @@ resource "postgresql_role" "hash_pwd_role" {
 					}),
 					testAccCheckRoleCanLogin(t, "hash_pwd_role", "pencil"),
 				),
+			},
+			{
+				// A password norm.NFKC cannot normalize like PostgreSQL is refused
+				Config: fmt.Sprintf(`
+resource "postgresql_role" "hash_pwd_role" {
+  name          = "hash_pwd_role"
+  login         = true
+  password      = "a%s"
+  hash_password = true
+}
+`, strings.Repeat(`\u0301`, 31)),
+				ExpectError: regexp.MustCompile("more than 30 combining characters in a row"),
 			},
 		},
 	})

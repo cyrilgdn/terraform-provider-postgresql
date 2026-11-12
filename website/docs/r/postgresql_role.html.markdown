@@ -161,8 +161,10 @@ memberships and grants its `roles` again.
   statement fails).  When set to `true` only the hash is sent, like `psql`'s
   `\password` command does, and the role still logs in with the clear-text
   password.  It applies to both `password` and `password_wo`; a password which is
-  already hashed is sent as-is.  Requires PostgreSQL 10 or later.  Default value
-  is `false`.  See [Hashing the password](#hashing-the-password).
+  already hashed is sent as-is.  A password with more than 30 combining
+  characters in a row is refused, as it cannot be hashed the way PostgreSQL
+  does.  Requires PostgreSQL 10 or later.  Default value is `false`.  See
+  [Hashing the password](#hashing-the-password).
 
 * `password` - (Optional) Sets the role's password. A password is only of use
   for roles having the `login` attribute set to true.
