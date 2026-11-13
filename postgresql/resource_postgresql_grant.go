@@ -437,20 +437,23 @@ ORDER BY col_privs.attname
 // surplus afterwards; on schemas with many relations this avoids transferring
 // rows that are immediately dropped. An empty objects set means "all objects in
 // the schema", so the predicate is only added when objects are listed — the
-// empty case returns the original query and three-argument bind list.
+// empty case returns the query without it and a three-argument bind list.
+//
+// The ACL is exploded per selected relation through LEFT JOIN LATERAL rather
+// than in a subquery over the whole pg_class joined back by name: with the
+// relname filter the planner turned that join into a nested loop that re-ran
+// aclexplode over every relation in the catalog once per matched object.
+// Relations without an ACL entry for the role (including a NULL relacl) still
+// produce a row with an empty privilege array.
 func buildReadTableRolePrivilegesQuery(roleOID uint32, schemaName, relkind string, objects *schema.Set) (string, []interface{}) {
 	query := `
-SELECT pg_class.relname, array_remove(array_agg(privilege_type), NULL)
-FROM pg_class
-JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-LEFT JOIN (
-    SELECT acls.* FROM (
-        SELECT relname, relnamespace, relkind, (aclexplode(relacl)).* FROM pg_class c
-    ) as acls
-    WHERE grantee=$1
-) privs
-USING (relname, relnamespace, relkind)
-WHERE nspname = $2 AND relkind = $3`
+SELECT c.relname, array_remove(array_agg(a.privilege_type), NULL)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN LATERAL (
+    SELECT privilege_type FROM aclexplode(c.relacl) WHERE grantee = $1
+) a ON true
+WHERE n.nspname = $2 AND c.relkind = $3`
 	args := []interface{}{roleOID, schemaName, relkind}
 
 	if objects.Len() > 0 {
@@ -458,10 +461,10 @@ WHERE nspname = $2 AND relkind = $3`
 		for _, o := range objects.List() {
 			objectNames = append(objectNames, o.(string))
 		}
-		query += " AND pg_class.relname = ANY($4)"
+		query += " AND c.relname = ANY($4)"
 		args = append(args, pq.Array(objectNames))
 	}
-	query += "\nGROUP BY pg_class.relname\n"
+	query += "\nGROUP BY c.relname\n"
 
 	return query, args
 }
