@@ -3,7 +3,9 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -12,6 +14,193 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/lib/pq"
 )
+
+// TestBuildReadTableRolePrivilegesQuery locks in the table/sequence Read query
+// shape. With an empty objects set the query must stay unfiltered and bind
+// exactly three arguments ("empty means all objects in the schema"). With an
+// explicit objects list the relname filter must be pushed into SQL as
+// "relname = ANY($4)" with a fourth bind argument, so the whole schema is not
+// transferred only to be discarded by the Go filter afterwards. In both cases
+// the ACL must be exploded per selected relation (LEFT JOIN LATERAL), not for
+// every relation of pg_class in a subquery that is then joined back: with
+// objects listed the planner re-ran that subquery once per matched relation.
+func TestBuildReadTableRolePrivilegesQuery(t *testing.T) {
+	roleOID := uint32(1234)
+
+	emptyQuery, emptyArgs := buildReadTableRolePrivilegesQuery(
+		roleOID, "test_schema", "r", schema.NewSet(schema.HashString, nil),
+	)
+	if strings.Contains(emptyQuery, "ANY(") {
+		t.Fatalf("empty objects must not push a relname filter, got: %q", emptyQuery)
+	}
+	if len(emptyArgs) != 3 {
+		t.Fatalf("empty objects must bind 3 args, got %d: %#v", len(emptyArgs), emptyArgs)
+	}
+
+	objects := schema.NewSet(schema.HashString, []interface{}{"test_table", "test_table2"})
+	query, args := buildReadTableRolePrivilegesQuery(roleOID, "test_schema", "r", objects)
+	if !strings.Contains(query, "AND c.relname = ANY($4)") {
+		t.Fatalf("explicit objects must push relname = ANY($4), got: %q", query)
+	}
+	if len(args) != 4 {
+		t.Fatalf("explicit objects must bind 4 args, got %d: %#v", len(args), args)
+	}
+
+	for _, q := range []string{emptyQuery, query} {
+		if !strings.Contains(q, "SELECT c.relname, array_remove(array_agg(a.privilege_type), NULL)") {
+			t.Fatalf("query changed its selected columns: %q", q)
+		}
+		if !strings.Contains(q, "LEFT JOIN LATERAL (\n    SELECT privilege_type FROM aclexplode(c.relacl) WHERE grantee = $1\n) a ON true") {
+			t.Fatalf("ACL must be exploded per selected relation: %q", q)
+		}
+		if strings.Count(q, "pg_class") != 1 {
+			t.Fatalf("query must scan pg_class once: %q", q)
+		}
+		if !strings.Contains(q, "WHERE n.nspname = $2 AND c.relkind = $3") {
+			t.Fatalf("query missing schema/relkind filter: %q", q)
+		}
+		if !strings.Contains(q, "GROUP BY c.relname") {
+			t.Fatalf("query missing GROUP BY c.relname: %q", q)
+		}
+	}
+}
+
+// TestAccPostgresqlGrantReadTablePrivilegesQuery pins the rows returned by the
+// table/sequence Read query against a real catalog: one row per relation of the
+// requested relkind in the schema (or per listed object that exists), with the
+// privileges granted to the role, and an empty array for relations with a NULL
+// ACL or an ACL without an entry for the role. PUBLIC is read with grantee 0.
+func TestAccPostgresqlGrantReadTablePrivilegesQuery(t *testing.T) {
+	skipIfNotAcc(t)
+
+	config := getTestConfig(t)
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	db, err := sql.Open("postgres", config.connStr(dbName))
+	if err != nil {
+		t.Fatalf("could not open connection pool for db %s: %v", dbName, err)
+	}
+	defer closeDB(t, db)
+
+	for _, stmt := range []string{
+		"CREATE TABLE test_schema.t_default (val text)",
+		"CREATE TABLE test_schema.t_granted (val text)",
+		"CREATE TABLE test_schema.t_public (val text)",
+		"CREATE TABLE test_schema.t_revoked (val text)",
+		"CREATE VIEW test_schema.v_granted AS SELECT 1 AS val",
+		"CREATE SEQUENCE test_schema.s_default",
+		"CREATE SEQUENCE test_schema.s_granted",
+		"CREATE TABLE dev_schema.t_granted (val text)",
+		fmt.Sprintf("GRANT SELECT, INSERT ON test_schema.t_granted TO %s", roleName),
+		"GRANT SELECT ON test_schema.t_public TO PUBLIC",
+		fmt.Sprintf("GRANT SELECT ON test_schema.t_revoked TO %s", roleName),
+		fmt.Sprintf("REVOKE ALL ON test_schema.t_revoked FROM %s", roleName),
+		fmt.Sprintf("GRANT SELECT ON test_schema.v_granted TO %s", roleName),
+		fmt.Sprintf("GRANT USAGE ON SEQUENCE test_schema.s_granted TO %s", roleName),
+		fmt.Sprintf("GRANT UPDATE ON dev_schema.t_granted TO %s", roleName),
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("could not execute %q: %v", stmt, err)
+		}
+	}
+
+	roleOID, err := getRoleOID(db, roleName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name     string
+		roleOID  uint32
+		schema   string
+		relkind  string
+		objects  []any
+		expected map[string][]string
+	}{
+		{
+			name: "all tables", roleOID: roleOID, schema: "test_schema", relkind: "r",
+			expected: map[string][]string{
+				"t_default": {}, "t_granted": {"INSERT", "SELECT"}, "t_public": {}, "t_revoked": {},
+			},
+		},
+		{
+			name: "listed tables", roleOID: roleOID, schema: "test_schema", relkind: "r",
+			objects:  []any{"t_granted", "t_default", "t_missing"},
+			expected: map[string][]string{"t_default": {}, "t_granted": {"INSERT", "SELECT"}},
+		},
+		{
+			name: "listed table with ACL but no entry for the role", roleOID: roleOID, schema: "test_schema", relkind: "r",
+			objects:  []any{"t_revoked"},
+			expected: map[string][]string{"t_revoked": {}},
+		},
+		{
+			name: "public", roleOID: 0, schema: "test_schema", relkind: "r",
+			expected: map[string][]string{
+				"t_default": {}, "t_granted": {}, "t_public": {"SELECT"}, "t_revoked": {},
+			},
+		},
+		{
+			name: "listed public", roleOID: 0, schema: "test_schema", relkind: "r",
+			objects:  []any{"t_public"},
+			expected: map[string][]string{"t_public": {"SELECT"}},
+		},
+		{
+			name: "all sequences", roleOID: roleOID, schema: "test_schema", relkind: "S",
+			expected: map[string][]string{"s_default": {}, "s_granted": {"USAGE"}},
+		},
+		{
+			name: "listed sequences", roleOID: roleOID, schema: "test_schema", relkind: "S",
+			objects:  []any{"s_granted"},
+			expected: map[string][]string{"s_granted": {"USAGE"}},
+		},
+		{
+			name: "other schema", roleOID: roleOID, schema: "dev_schema", relkind: "r",
+			expected: map[string][]string{"t_granted": {"UPDATE"}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, args := buildReadTableRolePrivilegesQuery(
+				tc.roleOID, tc.schema, tc.relkind, schema.NewSet(schema.HashString, tc.objects),
+			)
+			rows, err := db.Query(query, args...)
+			if err != nil {
+				t.Fatalf("could not run read query: %v", err)
+			}
+			defer func() {
+				if err := rows.Close(); err != nil {
+					t.Errorf("could not close rows: %v", err)
+				}
+			}()
+
+			got := map[string][]string{}
+			for rows.Next() {
+				var objName string
+				var privileges pq.ByteaArray
+				if err := rows.Scan(&objName, &privileges); err != nil {
+					t.Fatalf("could not scan row: %v", err)
+				}
+				privs := make([]string, 0, len(privileges))
+				for _, p := range privileges {
+					privs = append(privs, string(p))
+				}
+				sort.Strings(privs)
+				got[objName] = privs
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatalf("could not read rows: %v", err)
+			}
+
+			if !reflect.DeepEqual(got, tc.expected) {
+				t.Fatalf("unexpected read result:\n got: %v\nwant: %v", got, tc.expected)
+			}
+		})
+	}
+}
 
 func TestCreateGrantQuery(t *testing.T) {
 	var databaseName = "foo"
