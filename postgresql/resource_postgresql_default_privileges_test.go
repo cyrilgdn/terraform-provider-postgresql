@@ -1,10 +1,13 @@
 package postgresql
 
 import (
+	"database/sql"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
@@ -396,5 +399,97 @@ resource "postgresql_default_privileges" "test" {
 				),
 			},
 		},
+	})
+}
+
+// Create takes an advisory lock on the owner role so that concurrent writes on the same
+// owner are serialized. Read must not take it: a refresh or plan should not queue behind
+// another session that holds the lock.
+func TestAccPostgresqlDefaultPrivileges_OwnerLock(t *testing.T) {
+	skipIfNotAcc(t)
+	testAccPreCheck(t)
+	testCheckCompatibleVersion(t, featurePrivileges)
+
+	dbSuffix, teardown := setupTestDatabase(t, true, true)
+	defer teardown()
+
+	config := getTestConfig(t)
+	dbName, roleName := getTestDBNames(dbSuffix)
+
+	db, err := testAccProvider.Meta().(*Client).Connect()
+	if err != nil {
+		t.Fatalf("could not connect to database: %v", err)
+	}
+
+	newResourceData := func() *schema.ResourceData {
+		return schema.TestResourceDataRaw(t, resourcePostgreSQLDefaultPrivileges().Schema, map[string]any{
+			"database":    dbName,
+			"owner":       config.Username,
+			"role":        roleName,
+			"schema":      "test_schema",
+			"object_type": "table",
+			"privileges":  []any{"SELECT"},
+		})
+	}
+
+	// lockOwner takes, from another session, the advisory lock that pgLockRole takes on the owner.
+	// Advisory locks are scoped to a database, so it connects to the test database.
+	lockOwner := func(t *testing.T) (unlock func()) {
+		lockDB, err := sql.Open("postgres", config.connStr(dbName))
+		if err != nil {
+			t.Fatalf("could not open connection pool: %v", err)
+		}
+		txn, err := lockDB.Begin()
+		if err != nil {
+			t.Fatalf("could not start transaction: %v", err)
+		}
+		if _, err := txn.Exec("SELECT pg_advisory_xact_lock(oid::bigint) FROM pg_roles WHERE rolname = $1", config.Username); err != nil {
+			t.Fatalf("could not lock owner role: %v", err)
+		}
+		return func() {
+			_ = txn.Rollback()
+			closeDB(t, lockDB)
+		}
+	}
+
+	t.Run("create waits for the lock", func(t *testing.T) {
+		unlock := lockOwner(t)
+		done := make(chan error, 1)
+		go func() { done <- resourcePostgreSQLDefaultPrivilegesCreate(db, newResourceData()) }()
+
+		select {
+		case err := <-done:
+			unlock()
+			t.Fatalf("create finished while another session held the owner lock (err: %v)", err)
+		case <-time.After(2 * time.Second):
+		}
+
+		unlock()
+		if err := <-done; err != nil {
+			t.Fatalf("could not create default privileges: %v", err)
+		}
+	})
+
+	t.Run("read does not wait for the lock", func(t *testing.T) {
+		unlock := lockOwner(t)
+		d := newResourceData()
+		done := make(chan error, 1)
+		go func() { done <- resourcePostgreSQLDefaultPrivilegesRead(db, d) }()
+
+		select {
+		case err := <-done:
+			unlock()
+			if err != nil {
+				t.Fatalf("could not read default privileges: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			unlock()
+			<-done
+			t.Fatal("read waited for the owner lock held by another session")
+		}
+
+		if d.Id() == "" {
+			t.Fatal("read did not find the default privileges created by the previous step")
+		}
 	})
 }

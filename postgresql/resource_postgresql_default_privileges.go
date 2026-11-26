@@ -231,10 +231,8 @@ func readRoleDefaultPrivileges(txn *sql.Tx, db *DBConnection, d *schema.Resource
 	objectType := d.Get("object_type").(string)
 	privilegesInput := d.Get("privileges").(*schema.Set).List()
 
-	if err := pgLockRole(txn, owner); err != nil {
-		return err
-	}
-
+	// No pgLockRole here: this only reads the catalog, and Create and Delete
+	// take the owner lock before they write.
 	roleOID, err := getRoleOID(txn, role)
 	if err != nil {
 		return err
